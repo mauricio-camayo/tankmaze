@@ -25,99 +25,108 @@ Third-party observers can watch any live match or replay any past match with ful
 
 ### 3.1 What a Tank Is
 
-A tank submission is a JavaScript module that exports two things:
+A tank submission is a **Go package** compiled to **WebAssembly (WASM)**. The platform provides a typed SDK package (`tankmaze`) that the author imports. The author implements two things:
 
-- **`config`** — declares the tank's stat allocation.
-- **`tick(sensors, memory)`** — a function called by the server every game tick. It receives sensor data and must return a single action.
+- **`Config`** — a package-level variable declaring the tank's stat allocation.
+- **`Tick(sensors Sensors) Action`** — a function called by the server every game tick. It receives sensor data and must return a single action.
 
-The `memory` object persists across ticks within a single match, giving the tank a private scratchpad to build internal state (e.g., a partial map, a turn counter, a direction history).
+Because the WASM module is loaded once per match and stays resident between tick calls, **package-level variables naturally persist across ticks** — they are the tank's memory. No explicit memory parameter is needed.
 
 ### 3.2 Tank Module Format
 
-```javascript
-// config: allocate exactly 15 points across 5 stats (each 1–5)
-export const config = {
-  name: "My Tank",
-  speed:       3,   // movement rate
-  sensorRange: 4,   // ray-cast distance
-  damage:      2,   // damage per projectile
-  armor:       3,   // damage reduction
-  fireRate:    3,   // shots per second
-  // speed + sensorRange + damage + armor + fireRate must equal 15
-};
+```go
+package tank
 
-// tick: called once per server game tick (~100 ms)
-// sensors: current environment data (see §3.3)
-// memory:  plain object — read/write freely, persists across ticks
-// returns: one Action (see §3.4)
-export function tick(sensors, memory) {
-  if (!memory.initialized) {
-    memory.initialized = true;
-    memory.stepsTaken = 0;
-  }
+import . "github.com/tankmaze/sdk"
 
-  if (sensors.proximityAlert && sensors.fireCooldown === 0) {
-    return { action: "FIRE" };
-  }
+// Config: allocate exactly 15 points across 5 stats (each 1–5).
+var Config = TankConfig{
+    Name:        "My Tank",
+    Speed:       3, // movement rate
+    SensorRange: 4, // ray-cast distance
+    Damage:      2, // damage per projectile
+    Armor:       3, // damage reduction
+    FireRate:    3, // shots per second
+    // Speed + SensorRange + Damage + Armor + FireRate must equal 15
+}
 
-  if (sensors.wallDistances[sensors.facing] > 1 && sensors.moveCooldown === 0) {
-    memory.stepsTaken++;
-    return { action: "MOVE", direction: "FORWARD" };
-  }
+// Package-level state persists across ticks for the duration of a match.
+var (
+    stepsTaken  int
+    initialized bool
+)
 
-  return { action: "ROTATE", direction: "RIGHT" };
+// Tick is called once per server game tick (~100 ms).
+// It receives the current sensor readings and must return exactly one Action.
+func Tick(s Sensors) Action {
+    if !initialized {
+        initialized = true
+    }
+
+    if s.ProximityAlert && s.FireCooldown == 0 {
+        return Action{Type: Fire}
+    }
+
+    if s.WallDistances[s.Facing] > 1 && s.MoveCooldown == 0 {
+        stepsTaken++
+        return Action{Type: Move, Direction: Forward}
+    }
+
+    return Action{Type: Rotate, Direction: Right}
 }
 ```
 
-### 3.3 Sensor Data Object
+### 3.3 Sensor Data (`Sensors` struct)
 
-Passed to `tick()` as `sensors` each tick. Contains only what the tank's hardware can detect — not the full maze.
+Passed to `Tick()` each tick. Contains only what the tank's hardware can detect — not the full maze.
 
-| Field | Type | Description |
+| Field | Go Type | Description |
 |---|---|---|
-| `facing` | `"N"\|"S"\|"E"\|"W"` | Current heading |
-| `position` | `{ x: number, y: number }` | Tank's own cell coordinates |
-| `hp` | `number` | Current hit points (0–100) |
-| `wallDistances` | `{ N, S, E, W: number }` | Cells to nearest wall in each direction (capped at sensor range) |
-| `proximityAlert` | `boolean` | Opponent tank is within sensor range |
-| `opponentBearing` | `string \| null` | 8-compass direction to opponent (`"NE"`, `"W"`, etc.) — `null` if not in range |
-| `moveCooldown` | `number` | Milliseconds until next move is allowed (0 = ready) |
-| `fireCooldown` | `number` | Milliseconds until next shot is allowed (0 = ready) |
-| `tick` | `number` | Current tick counter (monotonically increasing) |
+| `Facing` | `Direction` (`N\|S\|E\|W`) | Current heading |
+| `Position` | `Point{X, Y int}` | Tank's own cell coordinates |
+| `HP` | `int` | Current hit points (0–100) |
+| `WallDistances` | `map[Direction]int` | Cells to nearest wall in each direction (capped at sensor range) |
+| `ProximityAlert` | `bool` | Opponent tank is within sensor range |
+| `OpponentBearing` | `*Direction` | 8-compass direction to opponent — `nil` if not in range |
+| `MoveCooldown` | `int` | Milliseconds until next move is allowed (0 = ready) |
+| `FireCooldown` | `int` | Milliseconds until next shot is allowed (0 = ready) |
+| `Tick` | `int` | Current tick counter (monotonically increasing) |
 
 **What sensors cannot reveal:**
 - Maze layout beyond sensor range
-- Opponent's HP, facing direction, or archetype
+- Opponent's HP, facing direction, or stat profile
 - Opponent's position coordinates (only bearing and proximity)
 
 ### 3.4 Actions
 
-`tick()` must return exactly one action object per call. Returning `null`, `undefined`, or an invalid action defaults to `IDLE`.
+`Tick()` must return exactly one `Action`. An invalid or zero-value return defaults to `Idle`.
 
-| Action | Object | Effect |
+| Action | Value | Effect |
 |---|---|---|
-| Move | `{ action: "MOVE", direction: "FORWARD"\|"BACKWARD" }` | Advance or retreat one cell |
-| Rotate | `{ action: "ROTATE", direction: "LEFT"\|"RIGHT" }` | Turn 90° |
-| Fire | `{ action: "FIRE" }` | Launch projectile in current facing direction |
-| Scan | `{ action: "SCAN" }` | Explicit sensor refresh; returns updated `sensors` on next tick at no action cost |
-| Idle | `{ action: "IDLE" }` | Do nothing this tick |
+| Move forward/backward | `Action{Type: Move, Direction: Forward\|Backward}` | Advance or retreat one cell |
+| Rotate | `Action{Type: Rotate, Direction: Left\|Right}` | Turn 90° |
+| Fire | `Action{Type: Fire}` | Launch projectile in current facing direction |
+| Scan | `Action{Type: Scan}` | Explicit sensor refresh; no cooldown consumed |
+| Idle | `Action{Type: Idle}` | Do nothing this tick |
 
-> **Note:** Sensors are always refreshed each tick regardless of whether `SCAN` is used. `SCAN` does not consume the move or fire cooldown slot — it is an explicit no-op that guarantees updated data arrives before the next decision.
+> **Note:** Sensors are refreshed every tick regardless of `Scan`. `Scan` is an explicit no-op that consumes no move or fire cooldown — useful when the tank wants to observe one more tick before committing to an action.
 
 ### 3.5 Sandbox Constraints
 
-User code runs inside an isolated server-side sandbox. The following constraints are enforced:
+Tank code is compiled to WASM and executed by **Wazero** (a pure-Go WASM runtime) inside the game-tick Lambda. WASM's architecture enforces the most critical constraints by design — tank code has no access to the host filesystem, network, or OS. Additional limits enforced by the platform:
 
 | Constraint | Limit |
 |---|---|
-| Execution time per tick | 50 ms (tank auto-IDLEs if exceeded) |
-| `memory` object size | 64 KB |
-| Code size | 100 KB |
-| Network access | None |
-| File system access | None |
-| Globals available | `Math`, `JSON`, `Array`, `Object`, `Map`, `Set`, `console.log` (capped at 10 lines/tick) |
+| Execution time per tick | 50 ms (enforced by Wazero fuel limit; tank auto-IDLEs if exceeded) |
+| WASM linear memory | 4 MB per match instance |
+| Compiled WASM binary size | 5 MB |
+| Go source code size | 200 KB |
+| Filesystem access | None (WASM default) |
+| Network access | None (WASM default) |
+| Allowed imports | `tankmaze` SDK only; `fmt` for log output (capped at 10 lines/tick) |
+| Syscall access | None — WASI syscalls are blocked by Wazero host configuration |
 
-Violations (timeout, exception) are logged and result in an `IDLE` action for that tick. Repeated timeouts (>20% of ticks) disqualify the tank from ranked matchmaking.
+Violations (timeout, panic) are logged and result in an `Idle` action for that tick. Repeated timeouts (>20% of ticks in a match) disqualify the tank from ranked Game Days until the Author submits a fixed version.
 
 ### 3.6 Stat System
 
@@ -184,14 +193,19 @@ TankMaze uses a two-tier version scheme:
 
 ### 5.3 Submission Flow
 
-1. Tank Author opens the in-browser **code editor** (Monaco-based).
-2. Author writes or edits their tank module (config + tick function).
-3. Author clicks **Save & Validate** — platform runs:
-   - Stat points sum to 15.
-   - `tick` is a valid exported function.
-   - No disallowed globals.
-   - Sandbox dry-run against 5 ticks of simulated sensor data.
-4. On success, a new minor version is saved (e.g., `v0.3`). No match is started automatically.
+1. Tank Author opens the in-browser **code editor** (Monaco-based, Go syntax).
+2. Author writes or edits their tank Go source (Config + Tick function).
+3. Author clicks **Save & Validate** — platform runs these checks in order:
+
+   | Step | Check | On failure |
+   |---|---|---|
+   | Static | `Config` stat points sum to 15 | Rejected immediately; no compilation |
+   | Static | `Tick` function signature matches SDK | Rejected immediately |
+   | Static | No imports other than `tankmaze` SDK and `fmt` | Rejected immediately |
+   | Compile | `go build` → WASM (`GOOS=wasip1 GOARCH=wasm`) | Compilation error shown in editor |
+   | Runtime | Wazero dry-run: 5 ticks of simulated sensor data | Panic / timeout shown in editor |
+
+4. On success, the compiled WASM binary is stored in S3 and a new minor version is saved (e.g., `v0.3`). No match is started automatically.
 5. Author can then:
    - Continue editing (next save → `v0.4`).
    - Click **Test vs. AI** to run an unranked match against a built-in AI tank.
@@ -657,7 +671,7 @@ Every match (ranked, test, or informal) is recorded server-side as the maze seed
 
 ## 13. Out of Scope (v1)
 
-- Languages other than JavaScript (Python, TypeScript compilation, WASM — future)
+- Languages other than Go (Python, Rust, TypeScript — future via WASM compilation)
 - More than 2 tanks per match
 - Power-ups or collectibles
 - Non-grid (free-movement) navigation
