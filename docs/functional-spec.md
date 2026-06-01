@@ -2,9 +2,11 @@
 
 ## 1. Overview
 
-TankMaze is a **code-battle platform** built on AWS. Users write autonomous tank programs in JavaScript, test them freely against built-in AI opponents, and — when ready — register them for **Game Day**: a scheduled competition window (configured via a cron-like parameter) when ranked matches between registered tanks are run automatically.
+TankMaze is a **code-battle platform** built on AWS. Users write autonomous tank programs in **Go**, compile them to WebAssembly, and submit them to the platform. They test freely against built-in AI opponents or their own other tanks, and — when ready — register them for **Game Day**: a scheduled, multi-phase tournament (configured via cron-like parameters) where registered tanks compete in round-robin groups followed by a single-elimination bracket.
 
 The tank's code decides everything — when to scan, when to move, when to fire — without any real-time input from the user once a match begins. Users compete through the quality of their code, not their reflexes.
+
+Game Day results feed a **global ranking** where tanks accumulate placement points that remain valid for a configurable period (default: 1 year), creating a rolling competitive leaderboard.
 
 Third-party observers can watch any live match or replay any past match with full map visibility, sensor overlays, and per-tank debug output.
 
