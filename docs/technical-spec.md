@@ -96,6 +96,10 @@ Tank-level identity and aggregated stats. Never reset by version promotions.
 | `gameDaysCount` | Number | Game Days participated in (within validity window) |
 | `lastActiveAt` | Number | Unix timestamp of last Game Day match |
 | `createdAt` | Number | Unix timestamp of first major version promotion |
+| `forkedFromTankId` | String | tankId of the source tank if this tank was created by forking (null otherwise) |
+| `forkedFromVersion` | String | Version of the source tank used as the fork origin (e.g. `"v2.1"`) |
+| `scoreTransferredTo` | String | tankId that received this tank's score via a score transfer (null if not transferred) |
+| `scoreTransferredFrom` | String | tankId this tank received its score from via a score transfer (null if not received) |
 
 GSI: `userId-index` on `userId` — list all tanks for a user.
 
@@ -139,7 +143,7 @@ One record per match of any type.
 | `tankA` | Map | `{ tankId, version }` |
 | `tankB` | Map | `{ tankId, version }` |
 | `tickLogS3Key` | String | S3 key of full tick log (written on match end) |
-| `result` | Map | `{ winner, reason, damageA, damageB, movesA, movesB, ticksElapsed, flawless }` |
+| `result` | Map | `{ winner, reason, damageA, damageB, movesA, movesB, ticksElapsed, flawless }` — `winner` is `null` and `reason` is `"both_lose"` when §10.4 rule 5 applies |
 | `createdAt` | Number | Unix timestamp |
 | `ttl` | Number | Auto-expire active-only fields 2h after creation; completed matches kept indefinitely |
 
@@ -169,7 +173,7 @@ One record per scheduled Game Day tournament.
 | `phases` | Map | Per-phase status: `{ roundRobin, elimR1, …, final }` each with `{ status, startedAt, endedAt }` |
 | `registeredTanks` | List | `[{ tankId, version }]` — locked at `registration_close` |
 | `groups` | List | Round-robin group assignments post-seeding |
-| `bracket` | Map | Elimination bracket state (seeds, match results per round) |
+| `bracket` | Map | Elimination bracket state (seeds, match results per round). Each slot carries `{ tankId, version, status }` where `status` is `"playing"` \| `"won"` \| `"lost"` \| `"both_lose"` \| `"bye"`. A `"bye"` slot is created automatically when the opposing slot resolves to `"both_lose"` |
 | `placementPoints` | Map | `{ tankId: points }` — final placement points awarded |
 | `createdAt` | Number | Unix timestamp |
 
@@ -276,12 +280,30 @@ Triggered by EventBridge Scheduler rules — one rule per Game Day phase. Phase 
 |---|---|
 | `registration_close` | Lock `registeredTanks` list; compute pot seeding by Global Rank |
 | `round_robin` | Assign groups; invoke `match-runner` for all group matches (parallel) |
-| `elimination_rN` | Read round N results; update bracket; invoke `match-runner` for next-round pairs |
-| `final` | Run final match; determine champion; invoke `ranking-updater` |
+| `elimination_rN` | Read round N results; update bracket; resolve byes; invoke `match-runner` for next-round pairs |
+| `final` | Run final match (or award bye-champion if slot is empty); invoke `ranking-updater` |
+
+**Both-lose bracket resolution** (runs after each elimination match completes):
+1. If `result.reason == "both_lose"`: mark both bracket slots as `"both_lose"`.
+2. Find the opposing bracket slot that would have faced one of the eliminated tanks in the next round.
+3. Mark that opposing slot as `"bye"` — its occupant advances without playing.
+4. If the `"bye"` slot itself is also `"both_lose"` (cascade), walk up the bracket until a live tank or the root is reached; if no live tanks remain in that half, the other bracket half's survivor is champion.
+5. If all remaining slots are `"both_lose"` with no survivors anywhere, set `gameDayId.champion = null` and skip 1st/2nd placement point awards.
 
 ### 5.4 `ranking-updater`
 
 Invoked async after each Game Day completes. Computes placements, awards points per §6.6 formula, writes to `tankmaze-rankings`, and recalculates `globalScore` on all participating `tankmaze-tanks` records.
+
+**Score transfer logic** (invoked as part of `POST /tanks/{id}/score-transfer`):
+1. Validate source tank has `globalScore > 0` and target tank belongs to the same user.
+2. Validate target tank has no existing `tankmaze-rankings` records (score lineages cannot be merged).
+3. Atomically (DynamoDB transaction):
+   - Copy all `tankmaze-rankings` records from source `tankId` to target `tankId` (same `gameDayId`, `points`, `placement`, `expiresAt`, `ttl`).
+   - Set source tank `globalScore = 0`, `bestFinish = null`, `gameDaysCount = 0`, `scoreTransferredTo = targetTankId`.
+   - Set target tank `globalScore`, `bestFinish`, `gameDaysCount` from source values; set `scoreTransferredFrom = sourceTankId`.
+4. Delete source `tankmaze-rankings` records after successful copy.
+
+**No-champion edge case:** if `gameDay.champion == null` (all elimination matches produced both-lose with no survivors), skip 1st and 2nd placement point awards. All other placements (3rd onwards) are awarded normally based on the round each tank reached.
 
 ### 5.5 `tank-api`
 
@@ -289,7 +311,10 @@ HTTP API (REST). All endpoints require Cognito JWT except replay reads.
 
 | Method | Path | Description |
 |---|---|---|
+| Method | Path | Description |
+|---|---|---|
 | `POST` | `/tanks` | Create new tank |
+| `POST` | `/tanks?forkFrom={tankId}&forkVersion={v}` | Create new tank pre-loaded with source from an existing version |
 | `GET` | `/tanks` | List authenticated user's tanks |
 | `GET` | `/tanks/{id}` | Tank detail + version history |
 | `POST` | `/tanks/{id}/versions` | Submit Go source → triggers CodeBuild |
@@ -297,6 +322,7 @@ HTTP API (REST). All endpoints require Cognito JWT except replay reads.
 | `POST` | `/tanks/{id}/versions/{v}/promote` | Promote minor → next major |
 | `POST` | `/tanks/{id}/versions/{v}/register` | Register major for next Game Day |
 | `DELETE` | `/tanks/{id}/versions/{v}/register` | Withdraw Game Day registration |
+| `POST` | `/tanks/{id}/score-transfer` | Transfer Global Score + ranking history to another tank — body: `{ targetTankId }` |
 | `POST` | `/matches` | Start test match (vs AI, vs own tank) |
 | `GET` | `/matches/{id}` | Match metadata + result |
 | `GET` | `/matches/{id}/ticks` | Full tick log (streams from S3) |
@@ -367,14 +393,15 @@ Written to S3 as gzip-compressed JSON after each match. Used for replay and data
     }
   ],
   "result": {
-    "winner": "a",
-    "reason": "opponent_destroyed",
+    "winner": "a",           // "a" | "b" | null (null when reason = "both_lose")
+    "reason": "opponent_destroyed", // "opponent_destroyed" | "code_crash" | "damage_tiebreak"
+                                    // | "moves_tiebreak" | "both_lose"
     "damageA": 0,
     "damageB": 60,
     "movesA": 14,
     "movesB": 9,
     "ticksElapsed": 43,
-    "flawless": true
+    "flawless": true         // true only when winner destroyed opponent with zero damage received
   }
 }
 ```
@@ -400,7 +427,7 @@ Tanks are autonomous — no client-to-server actions exist for controlling tanks
 | `MATCH_SNAPSHOT` | Full match state | Sent immediately on observer join |
 | `TICK_UPDATE` | `{ tick, tankA, tankB, projectiles }` | State update each tick (live) or streamed (replay) |
 | `HIT` | `{ victim, damage, remainingHP }` | Damage event |
-| `MATCH_OVER` | `{ winner, reason, stats }` | Match ended |
+| `MATCH_OVER` | `{ winner, reason, stats }` | Match ended — `winner` is `null` when `reason` is `"both_lose"`; downstream bracket gives a bye to next opponent |
 | `ERROR` | `{ code, message }` | Connection or request error |
 
 ---
@@ -416,7 +443,10 @@ packages/frontend/src/
 │   ├── TankDetail.tsx           # Version history, per-version stats
 │   ├── Watch.tsx                # Live match + replay viewer
 │   ├── Leaderboard.tsx          # Global ranking table
-│   └── GameDay.tsx              # Bracket viewer, phase status
+│   └── GameDay.tsx              # Bracket viewer, phase status (bye slots shown for both-lose outcomes)
+├── components/
+│   ├── ForkDialog.tsx           # Shown on fork creation: "Keep score on source" vs "Transfer score"
+│   └── ScoreTransferConfirm.tsx # Standalone confirmation modal — irreversibility warning
 ├── game/
 │   ├── scenes/
 │   │   ├── MatchScene.ts        # Phaser: maze + tank rendering (observer view)
