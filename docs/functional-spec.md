@@ -193,6 +193,15 @@ TankMaze uses a two-tier version scheme:
 - Only major versions (`v1`, `v2`, …) are eligible for Game Day registration and ranked statistics.
 - `v0.x` and all minor versions can be used for unlimited test matches against AI, against built-in tanks, or against the Author's own other tanks in informal (unranked) matches.
 
+**Forking into a new tank:**
+An Author can create a new tank by loading any version of an existing tank as a starting point (forking). The new tank is an independent identity — it always starts at Global Score = 0 and has no ranking history, regardless of the source tank's score.
+
+If the source tank has a non-zero Global Score, the platform presents a one-time **Score Transfer** option at fork time:
+- **Keep score on source tank** (default) — the new tank starts at 0; the source tank retains its score and ranking history.
+- **Transfer score to new tank** — the source tank's Global Score and ranking history move to the new tank permanently; the source tank is reset to 0. This is irreversible.
+
+Only one tank per Author can hold a given score lineage. The platform enforces this by preventing a Score Transfer if the new tank already has its own accumulated points.
+
 ### 5.3 Submission Flow
 
 1. Tank Author opens the in-browser **code editor** (Monaco-based, Go syntax).
@@ -333,8 +342,19 @@ All advancing tanks are **globally re-ranked** by their round-robin points (then
 1. Advancing tanks are seeded globally: rank 1 (highest points) through rank N (lowest points).
 2. The bracket pairs **best against worst**: seed 1 vs seed N, seed 2 vs seed N−1, seed 3 vs seed N−2, and so on.
 3. If the number of advancing tanks is not a power of 2, the top-seeded tanks receive **byes** in round 1 (they advance automatically to round 2). Byes are assigned to the highest seeds first.
-4. Each elimination match is a single game. Losers are out; winners advance.
-5. The last tank standing is the **Game Day Champion**.
+4. Each elimination match is a single game. The loser is eliminated; the winner advances.
+5. **Both-lose outcome in elimination:** if a match ends with both tanks losing (§10.4 rule 5), both are eliminated. The slot they would have filled in the next round becomes a **Bye** — the next opponent on that bracket path advances automatically without playing.
+6. The last tank standing is the **Game Day Champion**.
+
+**Both-lose cascade example (8 tanks, semifinal stage):**
+```
+Semifinal 1: Seed 1 vs Seed 4 → both lose → neither advances
+Semifinal 2: Seed 2 vs Seed 3 → Seed 2 wins
+
+Final: Seed 2 would face the winner of Semifinal 1
+       → no winner exists → Seed 2 receives a Bye → Seed 2 is Champion
+```
+If both semifinal matches produce a both-lose result, no Final is played. The champion is determined by the highest round-robin seed among all surviving finalists; if none survive, the Game Day ends with no champion and no placement points are awarded for 1st or 2nd place.
 
 **Elimination bracket example (8 advancing tanks):**
 
@@ -418,7 +438,7 @@ The subtraction doubles with each successive placement. Points are floored at 0 
 
 **Byes:** a tank that received a bye in Round 1 of elimination and then lost in Round 2 is placed alongside the other Round 2 losers (no separate treatment).
 
-**Both-lose in elimination:** both tanks receive the loser's placement for that round — same as a normal loss.
+**Both-lose in elimination:** both tanks are eliminated and receive the loser's placement for that round. The next opponent in their bracket path receives a Bye (see §6.3 Phase 2, rule 5).
 
 ---
 
