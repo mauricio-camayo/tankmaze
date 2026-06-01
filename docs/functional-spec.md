@@ -201,22 +201,25 @@ TankMaze uses a two-tier version scheme:
 
 ### 5.4 Tank Dashboard (per tank)
 
-Visible to the Tank Author on their profile. Stats are shown per major version; minor versions are listed in a collapsible history.
+Visible to the Tank Author on their profile. Stats are split into two scopes:
 
-| Field | Description |
-|---|---|
-| **Name** | Tank name from config |
-| **Active Major Version** | The major version currently registered (or last used) for Game Day |
-| **Global Rank** | Current position on the global leaderboard (see §6.7) |
-| **Global Score** | Sum of all valid placement points (links to per-Game-Day breakdown with expiry dates) |
-| **Version History** | List of all major versions; each expandable to show its minor chain |
-| **Submitted Since** | Date the first major version was promoted (age shown as "X days ago") |
-| **Win Rate** *(per major)* | Wins ÷ ranked matches for that version (%) |
-| **Matches Played** *(per major)* | Total Game Day matches for that version |
-| **Avg. Damage Dealt** *(per major)* | Average damage output per ranked match |
-| **Avg. Survival Time** *(per major)* | Average time alive per ranked match |
-| **Test Matches** *(per minor)* | Count of AI test matches run for that minor version |
-| **Last Match** | Link to most recent replay (any type) |
+- **Tank-level** — accumulated across all versions and never reset by a promotion.
+- **Version-level** — tracked independently per major version; reset to zero when a new major version is promoted.
+
+| Field | Scope | Description |
+|---|---|---|
+| **Name** | Tank | Tank name from config |
+| **Active Major Version** | Tank | The major version currently registered (or last used) for Game Day |
+| **Global Rank** | Tank | Current position on the global leaderboard — persists across version promotions (see §6.7) |
+| **Global Score** | Tank | Sum of all valid placement points across all versions — persists across promotions (links to per-Game-Day breakdown with expiry dates) |
+| **Submitted Since** | Tank | Date the first major version was promoted (age shown as "X days ago") |
+| **Version History** | Tank | List of all major versions; each expandable to show its minor chain and version-level stats |
+| **Win Rate** | Major version | Wins ÷ ranked matches for this version (%) |
+| **Matches Played** | Major version | Total Game Day matches for this version |
+| **Avg. Damage Dealt** | Major version | Average damage output per ranked match for this version |
+| **Avg. Survival Time** | Major version | Average time alive per ranked match for this version |
+| **Test Matches** | Minor version | Count of test matches run for that minor version |
+| **Last Match** | Tank | Link to most recent replay (any type, any version) |
 
 ---
 
@@ -405,7 +408,7 @@ The subtraction doubles with each successive placement. Points are floored at 0 
 
 ### 6.7 Global Ranking
 
-Each tank's **Global Ranking score** is the sum of all valid placement points it has accumulated across Game Days.
+Each tank's **Global Ranking score** is the sum of all valid placement points it has accumulated across Game Days, regardless of which major version competed in each Game Day. Promoting to a new major version does not reset or affect the Global Score or Global Rank.
 
 **Points validity:** placement points from a Game Day are valid for a configurable period (default: **1 year**) from the date of that Game Day. Once expired, those points are dropped from the score and the global ranking is recalculated automatically.
 
