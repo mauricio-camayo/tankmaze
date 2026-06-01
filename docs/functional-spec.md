@@ -2,7 +2,9 @@
 
 ## 1. Overview
 
-TankMaze is a real-time, browser-based tactical game where one or two players navigate a randomly generated labyrinth inside armored vehicles (tanks). Players have limited, sensor-based awareness of their surroundings — no full-map view. A third-party observer role provides a god's-eye view of the entire arena in real time.
+TankMaze is a **code-battle platform** built on AWS. Users write autonomous tank programs in JavaScript, submit them to the platform, and watch them fight inside a randomly generated labyrinth. The tank's code decides everything — when to scan, when to move, when to fire — without any real-time input from the user after submission. Users compete through the quality of their code, not their reflexes.
+
+A match starts automatically as soon as two tanks are available (either two user-submitted tanks or one user-submitted tank paired with a built-in AI opponent). Third-party observers can watch any match live with full map visibility.
 
 ---
 
@@ -10,180 +12,314 @@ TankMaze is a real-time, browser-based tactical game where one or two players na
 
 | Role | Description | Auth Required |
 |---|---|---|
-| **Player** | Controls a tank inside the labyrinth | Yes (Cognito) |
-| **Observer** | Watches the game with full map visibility | No (session link) |
+| **Tank Author** | Writes, submits, and manages tank programs | Yes (Cognito) |
+| **Observer** | Watches a live match with full map visibility | No (session link) |
+
+> There is no "manual player" role. Tank Authors never control their tanks in real time.
 
 ---
 
-## 3. Game Modes
+## 3. Tank Programming Model
 
-| Mode | Players | Description |
+### 3.1 What a Tank Is
+
+A tank submission is a JavaScript module that exports two things:
+
+- **`config`** — declares the tank's stat allocation.
+- **`tick(sensors, memory)`** — a function called by the server every game tick. It receives sensor data and must return a single action.
+
+The `memory` object persists across ticks within a single match, giving the tank a private scratchpad to build internal state (e.g., a partial map, a turn counter, a direction history).
+
+### 3.2 Tank Module Format
+
+```javascript
+// config: allocate exactly 15 points across 5 stats (each 1–5)
+export const config = {
+  name: "My Tank",
+  speed:       3,   // movement rate
+  sensorRange: 4,   // ray-cast distance
+  damage:      2,   // damage per projectile
+  armor:       3,   // damage reduction
+  fireRate:    3,   // shots per second
+  // speed + sensorRange + damage + armor + fireRate must equal 15
+};
+
+// tick: called once per server game tick (~100 ms)
+// sensors: current environment data (see §3.3)
+// memory:  plain object — read/write freely, persists across ticks
+// returns: one Action (see §3.4)
+export function tick(sensors, memory) {
+  if (!memory.initialized) {
+    memory.initialized = true;
+    memory.stepsTaken = 0;
+  }
+
+  if (sensors.proximityAlert && sensors.fireCooldown === 0) {
+    return { action: "FIRE" };
+  }
+
+  if (sensors.wallDistances[sensors.facing] > 1 && sensors.moveCooldown === 0) {
+    memory.stepsTaken++;
+    return { action: "MOVE", direction: "FORWARD" };
+  }
+
+  return { action: "ROTATE", direction: "RIGHT" };
+}
+```
+
+### 3.3 Sensor Data Object
+
+Passed to `tick()` as `sensors` each tick. Contains only what the tank's hardware can detect — not the full maze.
+
+| Field | Type | Description |
 |---|---|---|
-| Solo | 1 | Player vs AI-controlled opponent |
-| Duel | 2 | Player vs Player |
+| `facing` | `"N"\|"S"\|"E"\|"W"` | Current heading |
+| `position` | `{ x: number, y: number }` | Tank's own cell coordinates |
+| `hp` | `number` | Current hit points (0–100) |
+| `wallDistances` | `{ N, S, E, W: number }` | Cells to nearest wall in each direction (capped at sensor range) |
+| `proximityAlert` | `boolean` | Opponent tank is within sensor range |
+| `opponentBearing` | `string \| null` | 8-compass direction to opponent (`"NE"`, `"W"`, etc.) — `null` if not in range |
+| `moveCooldown` | `number` | Milliseconds until next move is allowed (0 = ready) |
+| `fireCooldown` | `number` | Milliseconds until next shot is allowed (0 = ready) |
+| `tick` | `number` | Current tick counter (monotonically increasing) |
 
----
+**What sensors cannot reveal:**
+- Maze layout beyond sensor range
+- Opponent's HP, facing direction, or archetype
+- Opponent's position coordinates (only bearing and proximity)
 
-## 4. Authentication & Session Flow
+### 3.4 Actions
 
-1. Player signs up / logs in via AWS Cognito (email + password or social provider).
-2. Authenticated player creates a **game session** (generates a unique Session ID).
-3. Second player joins using the Session ID, or AI is spawned for Solo mode.
-4. Observer joins by navigating to `/?session=<ID>` — no login required.
-5. Session is destroyed when all players disconnect or the game ends.
+`tick()` must return exactly one action object per call. Returning `null`, `undefined`, or an invalid action defaults to `IDLE`.
 
----
+| Action | Object | Effect |
+|---|---|---|
+| Move | `{ action: "MOVE", direction: "FORWARD"\|"BACKWARD" }` | Advance or retreat one cell |
+| Rotate | `{ action: "ROTATE", direction: "LEFT"\|"RIGHT" }` | Turn 90° |
+| Fire | `{ action: "FIRE" }` | Launch projectile in current facing direction |
+| Scan | `{ action: "SCAN" }` | Explicit sensor refresh; returns updated `sensors` on next tick at no action cost |
+| Idle | `{ action: "IDLE" }` | Do nothing this tick |
 
-## 5. Labyrinth
+> **Note:** Sensors are always refreshed each tick regardless of whether `SCAN` is used. `SCAN` does not consume the move or fire cooldown slot — it is an explicit no-op that guarantees updated data arrives before the next decision.
 
-- Grid-based: configurable size (default **25 × 25 cells**).
-- Randomly generated per session using the **Recursive Backtracking** algorithm.
-- Guaranteed to be fully connected (every cell reachable from every other).
-- Start positions for both tanks are placed at opposite corners of the maze.
-- The full maze layout is **never sent to players** — only sensor readings are sent.
-- Observers receive the full maze layout on join.
+### 3.5 Sandbox Constraints
 
-### 5.1 Cell Types
+User code runs inside an isolated server-side sandbox. The following constraints are enforced:
 
-| Cell | Description |
+| Constraint | Limit |
 |---|---|
-| Open | Passable space |
-| Wall | Impassable; blocks movement and sensor beams |
-| Spawn | Designated starting cell per player |
+| Execution time per tick | 50 ms (tank auto-IDLEs if exceeded) |
+| `memory` object size | 64 KB |
+| Code size | 100 KB |
+| Network access | None |
+| File system access | None |
+| Globals available | `Math`, `JSON`, `Array`, `Object`, `Map`, `Set`, `console.log` (capped at 10 lines/tick) |
 
----
+Violations (timeout, exception) are logged and result in an `IDLE` action for that tick. Repeated timeouts (>20% of ticks) disqualify the tank from ranked matchmaking.
 
-## 6. Vehicle System
+### 3.6 Stat System
 
-Players choose one of three tank archetypes before the session starts. Each archetype distributes 15 stat points differently across five attributes.
+Each tank allocates exactly **15 points** across 5 stats. No stat may be below 1 or above 5. Submissions that don't sum to 15 are rejected.
 
-### 6.1 Tank Archetypes
-
-| Archetype | Speed | Sensor Range | Damage | Armor | Fire Rate | Playstyle |
-|---|---|---|---|---|---|---|
-| **Scout** | 5 | 3 | 2 | 2 | 3 | Hit-and-run; outmaneuver the opponent |
-| **Ranger** | 3 | 5 | 3 | 2 | 2 | Intel advantage; control space with information |
-| **Bruiser** | 2 | 2 | 5 | 5 | 1 | Absorb hits; eliminate with brute force |
-
-Stat scale: 1 (lowest) → 5 (highest).
-
-### 6.2 Derived Stat Values
-
-| Stat | Scale (per point) |
+| Stat | Effect (per point) |
 |---|---|
-| Speed | 1 pt = 1.0 cell/s movement rate |
-| Sensor Range | 1 pt = 2 cells of ray-cast distance |
-| Damage | 1 pt = 10 HP damage per projectile |
-| Armor | 1 pt = 10% damage reduction |
-| Fire Rate | 1 pt = 0.5 shots/s |
+| `speed` | Move cooldown: `1000 / (speed × 2)` ms between moves |
+| `sensorRange` | Ray-cast max distance: `speed × 2` cells |
+| `damage` | Damage per projectile: `speed × 10` HP |
+| `armor` | Damage reduction: `speed × 10`% |
+| `fireRate` | Fire cooldown: `1000 / (fireRate × 0.5)` ms between shots |
 
 All tanks start with **100 HP**.
 
 ---
 
-## 7. Movement & Controls
+## 4. Built-in AI Tanks
 
-### 7.1 Player Input Actions
+Three reference tank implementations are built into the platform. They serve two purposes:
 
-| Action | Effect |
+1. **Opponent for testing** — a submitted tank can be matched against a built-in AI to run immediately without waiting for another user's submission.
+2. **Inspiration / learning resource** — their source code is publicly readable in the platform's documentation.
+
+| Name | Speed | Sensor | Damage | Armor | Fire Rate | Strategy |
+|---|---|---|---|---|---|---|
+| **Scout** | 5 | 3 | 2 | 2 | 3 | Evades walls; circles opponent once detected |
+| **Ranger** | 3 | 5 | 3 | 2 | 2 | Patrols until opponent in range; precision firing |
+| **Bruiser** | 2 | 2 | 5 | 5 | 1 | Straight-line approach; fires on contact |
+
+Built-in tanks do not appear in ranked leaderboards. They cannot be beaten by the system to claim a rank.
+
+---
+
+## 5. Tank Submission & Lifecycle
+
+### 5.1 Submission Flow
+
+1. Tank Author opens the in-browser **code editor** (Monaco-based).
+2. Author writes or pastes their tank module (config + tick function).
+3. Author clicks **Validate** — platform runs a static check:
+   - Stat points sum to 15.
+   - `tick` is a valid exported function.
+   - No disallowed globals.
+   - Sandbox dry-run against 3 ticks of simulated sensor data.
+4. If validation passes, Author clicks **Submit**. A new tank version is created under their account.
+5. Tank enters **matchmaking queue**.
+6. Author may optionally click **Test vs. AI** to immediately start a match against a built-in AI tank.
+
+### 5.2 Versioning
+
+- Each submission creates a new **version** (v1, v2, v3, …).
+- All versions are stored and their stats are tracked independently.
+- The Author's **active version** is the one currently queued for ranked matchmaking.
+- Authors can switch their active version at any time (takes effect on the next queued match).
+- Previous versions can be viewed, re-edited as a starting point, and re-submitted.
+
+### 5.3 Tank Dashboard (per tank, per version)
+
+Visible to the Tank Author on their profile:
+
+| Stat | Description |
 |---|---|
-| Move Forward | Advance 1 cell in facing direction (blocked by wall) |
-| Move Backward | Retreat 1 cell opposite to facing direction |
-| Rotate Left | Turn 90° counter-clockwise |
-| Rotate Right | Turn 90° clockwise |
-| Fire | Launch projectile in facing direction |
-
-Movement is **discrete** (cell-to-cell). Speed stat controls the cooldown between moves (lower cooldown = faster movement).
-
-### 7.2 Collision
-
-- A move into a wall is rejected server-side; client receives a `MOVE_REJECTED` event.
-- A move into the opponent's cell results in a collision — both tanks stop, and each takes 5 HP of contact damage.
+| **Name** | Tank name from config |
+| **Version** | v1, v2, … |
+| **Submitted** | Date first submitted (age shown as "X days ago") |
+| **Win Rate** | Wins ÷ total completed matches (%) |
+| **Matches Played** | Total completed matches for this version |
+| **Avg. Damage Dealt** | Average damage output per match |
+| **Avg. Survival Time** | Average time alive per match |
+| **Last Match** | Link to last match replay |
 
 ---
 
-## 8. Sensors
+## 6. Matchmaking
 
-Players see only what their sensors reveal — not the full map.
+### 6.1 Queue
 
-### 8.1 Sensor Outputs (sent each tick)
+- When a tank is submitted (or its active version is changed), it is placed in the **ranked queue**.
+- The server pairs the two longest-waiting tanks. Match starts within seconds.
+- If the queue has only one tank, it is offered the option to **play vs. AI** immediately or wait up to 5 minutes for a human opponent before being auto-matched to a built-in AI.
 
-| Sensor | Description |
+### 6.2 Match Types
+
+| Type | Trigger | Affects Rank Stats |
+|---|---|---|
+| Ranked | Two user tanks matched from queue | Yes |
+| vs. AI (Test) | User clicks "Test vs. AI" | No |
+| Rematch | Both authors agree to rematch after a ranked game | Yes |
+
+### 6.3 Match Notification
+
+When a match is found, both Tank Authors receive a notification (browser push or email, per preference). A live watch link is included. Authors are not required to watch — the match runs regardless.
+
+---
+
+## 7. Labyrinth
+
+- Grid-based: **25 × 25 cells** (configurable per match type in future versions).
+- Randomly generated per match using the **Recursive Backtracking** algorithm with a random seed.
+- Guaranteed to be fully connected (every cell reachable from every other).
+- Both tanks spawn at diagonally opposite corners.
+- The full maze is **never sent to tank code** — only sensor readings are passed to `tick()`.
+- The maze seed is recorded with the match for replay purposes.
+
+### 7.1 Cell Types
+
+| Cell | Description |
 |---|---|
-| **Wall Distance** | Distances to nearest wall in 4 cardinal directions (in cells) |
-| **Proximity Alert** | Boolean: opponent tank within sensor range |
-| **Opponent Bearing** | Direction of opponent relative to own heading (if in range) |
-| **Own Health** | Current HP |
-| **Cooldowns** | Move cooldown remaining (ms), fire cooldown remaining (ms) |
-
-Sensor data is computed server-side and sent only to the respective player. Observers receive all sensor data for both players plus the full map state.
+| Open | Passable space |
+| Wall | Impassable; blocks movement and projectiles |
+| Spawn | Starting cell per tank |
 
 ---
 
-## 9. Combat
+## 8. Combat
 
-- **Projectiles** travel cell-by-cell each server tick in the direction the tank was facing when fired.
-- A projectile is destroyed upon hitting a wall or an opponent tank.
-- On hit: `damage = archetype_damage × (1 − opponent_armor_reduction)`.
-- A tank reaching 0 HP is **destroyed**. The session ends immediately.
-- **Friendly fire**: not applicable in 2-player mode; in Solo mode the AI can also be hit.
-
----
-
-## 10. Observer Mode
-
-Observers connect via a shareable URL: `https://<domain>/observe?session=<ID>`
-
-Observer receives (real-time via WebSocket):
-- Full maze layout (walls and open cells)
-- Both tanks: position, facing direction, HP, archetype
-- Projectiles in flight: position, direction
-- Game events: shots fired, hits, game start/end
-
-Observers cannot interact with the game session.
+- **Projectiles** travel one cell per server tick in the tank's facing direction at fire time.
+- A projectile is destroyed on hitting a wall or an opponent tank.
+- On hit: `effective_damage = attacker_damage_stat × 10 × (1 − defender_armor_reduction)`.
+- A tank reaching 0 HP is **destroyed**; the match ends immediately.
+- A move into the opponent's cell causes a **collision**: both tanks are pushed back, each takes 5 HP contact damage.
 
 ---
 
-## 11. Game Lifecycle
+## 9. Observer Mode
+
+Observers connect via a shareable link generated at match start:  
+`https://<domain>/watch?match=<matchId>`
+
+Observer receives in real time (WebSocket):
+- Full maze layout
+- Both tanks: position, facing direction, current HP, stat profile
+- Projectiles in flight
+- Game events: moves, shots, hits, match end
+
+Observers also see a **debug panel** per tank (togglable):
+- Last action returned by `tick()`
+- Current sensor readings
+- `console.log` output from tank code (last 10 lines)
+
+Observers cannot interact with the match.
+
+---
+
+## 10. Game Lifecycle
 
 ```
-[Lobby] → [Tank Selection] → [Countdown 3s] → [Active Game] → [Game Over] → [Rematch? / Exit]
+[Submission / Queue] → [Match Found] → [Countdown 3s] → [Active Match]
+      → [Match Over] → [Stats Recorded] → [Rematch? / Back to Queue]
 ```
 
 | State | Description |
 |---|---|
-| Lobby | Players join; waiting for both players ready |
-| Tank Selection | Each player picks archetype (30s timer) |
-| Countdown | 3-second start countdown |
-| Active Game | Game ticks running; inputs accepted |
-| Game Over | Winner announced; session stats displayed |
+| Queued | Tank waiting for opponent |
+| Match Found | Opponent paired; maze generated; notification sent |
+| Countdown | 3-second start countdown visible to observers |
+| Active | Server calls `tick()` on both tanks every 100 ms |
+| Match Over | Win condition met; stats persisted |
 
-### 11.1 Win Conditions
+### 10.1 Win Conditions
 
 | Condition | Winner |
 |---|---|
-| Opponent tank destroyed | Surviving player |
-| Opponent disconnects | Remaining player (after 10s grace period) |
-| Timeout (10 min) | Player with highest remaining HP |
+| Opponent tank HP reaches 0 | Surviving tank |
+| Opponent tank code crashes unrecoverably | Surviving tank |
+| Timeout (10 min) | Tank with higher remaining HP |
+| Tie (equal HP at timeout) | Draw — no rank change |
 
 ---
 
-## 12. Post-Game Stats
+## 11. Post-Match Summary
 
-Displayed to both players and observers at game end:
+Displayed on the match result page (accessible to both Authors and any observer):
 
-- Winner / Loser
-- Damage dealt / received
-- Shots fired / hits landed (accuracy %)
-- Total moves made
-- Game duration
+| Metric | Description |
+|---|---|
+| Winner / Loser | Tank name, author, version |
+| Final HP | Both tanks |
+| Damage dealt / received | Per tank |
+| Shots fired / hits / accuracy | Per tank |
+| Moves made | Per tank |
+| Match duration | Wall-clock time |
+| Tick violations | Timeout or exception count per tank |
+| Replay link | Full match replay (persistent) |
+
+---
+
+## 12. Match Replay
+
+Every match is recorded server-side (maze seed + full action log per tick). Replays are:
+- Stored indefinitely (or until the Author deletes their account).
+- Accessible via permanent URL.
+- Playable at 1×, 2×, 4× speed or step-by-step.
+- Include the debug panel (sensor data + console output per tick).
 
 ---
 
 ## 13. Out of Scope (v1)
 
-- Persistent leaderboards
-- More than 2 players
+- Languages other than JavaScript (Python, TypeScript compilation, WASM — future)
+- More than 2 tanks per match
 - Power-ups or collectibles
 - Non-grid (free-movement) navigation
+- Public leaderboard / global ranking system
 - Mobile native app
+- Tank-to-tank communication (multi-tank alliances)

@@ -4,10 +4,14 @@ A real-time browser-based tactical game. One or two players navigate a randomly 
 
 ## Game Concept
 
-- **Players** drive tanks with no full-map view — only sensor readings (wall distances, proximity alerts).
-- **Three tank archetypes**: Scout (fast), Ranger (long sensors), Bruiser (high damage/armor).
-- **Combat**: fire projectiles that travel through the maze until hitting a wall or the opponent.
-- **Observers**: see the full maze, both tanks, health bars, and projectiles via a shareable link.
+TankMaze is a **code-battle platform**. You don't play the game — you program your tank, submit it, and watch it fight autonomously.
+
+- **Write a tank**: define a `tick(sensors, memory)` function in JavaScript. It runs every 100 ms and returns one action (move, rotate, fire, scan, or idle).
+- **Allocate stats**: distribute 15 points across speed, sensor range, damage, armor, and fire rate. No free lunch — fast tanks see less, hard-hitting tanks move slowly.
+- **Submit and queue**: your tank enters ranked matchmaking automatically. No real-time input after submission.
+- **Watch it fight**: get notified when a match starts; watch live with full map visibility, sensor overlays, and your tank's console output.
+- **Iterate**: study the replay, improve your code, submit a new version.
+- **Built-in AI tanks** (Scout, Ranger, Bruiser) are available for testing and serve as open-source reference implementations.
 
 ## Tech Stack
 
