@@ -2,9 +2,11 @@
 
 ## 1. Overview
 
-TankMaze is a **code-battle platform** built on AWS. Users write autonomous tank programs in JavaScript, submit them to the platform, and watch them fight inside a randomly generated labyrinth. The tank's code decides everything — when to scan, when to move, when to fire — without any real-time input from the user after submission. Users compete through the quality of their code, not their reflexes.
+TankMaze is a **code-battle platform** built on AWS. Users write autonomous tank programs in JavaScript, test them freely against built-in AI opponents, and — when ready — register them for **Game Day**: a scheduled competition window (configured via a cron-like parameter) when ranked matches between registered tanks are run automatically.
 
-A match starts automatically as soon as two tanks are available (either two user-submitted tanks or one user-submitted tank paired with a built-in AI opponent). Third-party observers can watch any match live with full map visibility.
+The tank's code decides everything — when to scan, when to move, when to fire — without any real-time input from the user once a match begins. Users compete through the quality of their code, not their reflexes.
+
+Third-party observers can watch any live match or replay any past match with full map visibility, sensor overlays, and per-tank debug output.
 
 ---
 
@@ -152,63 +154,110 @@ Built-in tanks do not appear in ranked leaderboards. They cannot be beaten by th
 
 ## 5. Tank Submission & Lifecycle
 
-### 5.1 Submission Flow
+### 5.1 Workflow Overview
 
-1. Tank Author opens the in-browser **code editor** (Monaco-based).
-2. Author writes or pastes their tank module (config + tick function).
-3. Author clicks **Validate** — platform runs a static check:
-   - Stat points sum to 15.
-   - `tick` is a valid exported function.
-   - No disallowed globals.
-   - Sandbox dry-run against 3 ticks of simulated sensor data.
-4. If validation passes, Author clicks **Submit**. A new tank version is created under their account.
-5. Tank enters **matchmaking queue**.
-6. Author may optionally click **Test vs. AI** to immediately start a match against a built-in AI tank.
+```
+[Edit code] → [Validate] → [Save minor version] → [Test vs. AI]
+     ↑                                                    ↓
+     └──────────────── iterate ──────────────── [Watch replay / debug]
+
+[Promote to major version] → [Register for Game Day] → [Game Day runs]
+```
 
 ### 5.2 Versioning
 
-- Each submission creates a new **version** (v1, v2, v3, …).
-- All versions are stored and their stats are tracked independently.
-- The Author's **active version** is the one currently queued for ranked matchmaking.
-- Authors can switch their active version at any time (takes effect on the next queued match).
-- Previous versions can be viewed, re-edited as a starting point, and re-submitted.
+TankMaze uses a two-tier version scheme:
 
-### 5.3 Tank Dashboard (per tank, per version)
+| Tier | Format | Created by | Ranked? |
+|---|---|---|---|
+| **Major** | `v1`, `v2`, `v3`, … | Author explicitly clicks **Promote** | Yes — eligible for Game Day |
+| **Minor** | `v1.1`, `v1.2`, … | Auto-incremented on each save during development | No — test-only |
 
-Visible to the Tank Author on their profile:
+**Rules:**
+- A fresh tank starts at `v1.0` (the first working save after initial validation).
+- Every subsequent save/validate cycle bumps the minor number (`v1.1`, `v1.2`, …).
+- When the Author clicks **Promote to Major**, the current minor becomes the next whole version (`v1.x → v2`), and the minor counter resets to `0`.
+- Authors can branch from any previous minor or major version and continue editing — the branch starts a new minor chain off that version.
+- Only major versions are eligible for Game Day registration and ranked statistics.
+- Minor versions can be used for unlimited test matches against AI or in informal (unranked) matches.
 
-| Stat | Description |
+### 5.3 Submission Flow
+
+1. Tank Author opens the in-browser **code editor** (Monaco-based).
+2. Author writes or edits their tank module (config + tick function).
+3. Author clicks **Save & Validate** — platform runs:
+   - Stat points sum to 15.
+   - `tick` is a valid exported function.
+   - No disallowed globals.
+   - Sandbox dry-run against 5 ticks of simulated sensor data.
+4. On success, a new minor version is saved (e.g., `v1.3`). No match is started automatically.
+5. Author can then:
+   - Continue editing (next save → `v1.4`).
+   - Click **Test vs. AI** to run an unranked match immediately.
+   - Click **Promote to Major** to create `v2` and make it eligible for Game Day.
+   - Click **Register for Game Day** to enter the current major version in the next scheduled competition window.
+
+### 5.4 Tank Dashboard (per tank)
+
+Visible to the Tank Author on their profile. Stats are shown per major version; minor versions are listed in a collapsible history.
+
+| Field | Description |
 |---|---|
 | **Name** | Tank name from config |
-| **Version** | v1, v2, … |
-| **Submitted** | Date first submitted (age shown as "X days ago") |
-| **Win Rate** | Wins ÷ total completed matches (%) |
-| **Matches Played** | Total completed matches for this version |
-| **Avg. Damage Dealt** | Average damage output per match |
-| **Avg. Survival Time** | Average time alive per match |
-| **Last Match** | Link to last match replay |
+| **Active Major Version** | The major version currently registered (or last used) for Game Day |
+| **Version History** | List of all major versions; each expandable to show its minor chain |
+| **Submitted Since** | Date the first major version was promoted (age shown as "X days ago") |
+| **Win Rate** *(per major)* | Wins ÷ ranked matches for that version (%) |
+| **Matches Played** *(per major)* | Total Game Day matches for that version |
+| **Avg. Damage Dealt** *(per major)* | Average damage output per ranked match |
+| **Avg. Survival Time** *(per major)* | Average time alive per ranked match |
+| **Test Matches** *(per minor)* | Count of AI test matches run for that minor version |
+| **Last Match** | Link to most recent replay (any type) |
 
 ---
 
-## 6. Matchmaking
+## 6. Game Day & Scheduling
 
-### 6.1 Queue
+### 6.1 Game Day Schedule
 
-- When a tank is submitted (or its active version is changed), it is placed in the **ranked queue**.
-- The server pairs the two longest-waiting tanks. Match starts within seconds.
-- If the queue has only one tank, it is offered the option to **play vs. AI** immediately or wait up to 5 minutes for a human opponent before being auto-matched to a built-in AI.
+Game Day is a configurable scheduled window during which all registered tanks compete. The schedule is controlled by a **cron-like parameter** in the platform configuration — it can be set to any combination of days and hours without code changes.
 
-### 6.2 Match Types
+```
+# Examples (standard cron syntax: minute hour day-of-month month day-of-week)
+0 20 * * 6       # Every Saturday at 8 PM
+0 18 * * 2,4     # Every Tuesday and Thursday at 6 PM
+0 14 * * 0,6     # Every Saturday and Sunday at 2 PM
+```
 
-| Type | Trigger | Affects Rank Stats |
+This parameter is managed by the platform administrator and can be changed at any time. All users see the next scheduled Game Day on their dashboard.
+
+### 6.2 Registration
+
+- At any point before a Game Day window opens, a Tank Author can **register** their current major version for the next competition.
+- Registration is explicit — tanks are never entered automatically.
+- The Author can withdraw their registration at any time before the window opens.
+- If the Author promotes a new major version after registering, they must re-register the new version; the old registration is not transferred automatically.
+
+### 6.3 Match Execution During Game Day
+
+1. When the Game Day window opens (cron trigger fires), the platform collects all registered tanks.
+2. Tanks are paired round-robin (each tank plays every other registered tank once per Game Day).
+3. Matches run sequentially or in parallel (up to platform concurrency limits).
+4. Match results and stats are recorded after each match.
+5. When the window closes (or all matches are complete), a **Game Day summary** is published.
+
+### 6.4 Match Types
+
+| Type | Trigger | Affects Ranked Stats |
 |---|---|---|
-| Ranked | Two user tanks matched from queue | Yes |
-| vs. AI (Test) | User clicks "Test vs. AI" | No |
-| Rematch | Both authors agree to rematch after a ranked game | Yes |
+| **Ranked** | Game Day execution, two registered user tanks | Yes |
+| **Test vs. AI** | Author clicks "Test vs. AI" at any time | No |
+| **Informal** | Author invites another author to an unranked match | No |
+| **Rematch** | Both authors agree to re-run a previous Game Day matchup | No |
 
-### 6.3 Match Notification
+### 6.5 Match Notification
 
-When a match is found, both Tank Authors receive a notification (browser push or email, per preference). A live watch link is included. Authors are not required to watch — the match runs regardless.
+When a Game Day match involving a tank starts, both Tank Authors receive a notification (browser push notification or email, configurable per user). A live watch link is included. Authors are not required to watch — the match runs regardless of whether anyone is observing.
 
 ---
 
@@ -241,49 +290,146 @@ When a match is found, both Tank Authors receive a notification (browser push or
 
 ---
 
-## 9. Observer Mode
+## 9. Observer & Replay Mode
 
-Observers connect via a shareable link generated at match start:  
+### 9.1 Live Observer
+
+When a match is actively running, observers connect via a shareable link:  
 `https://<domain>/watch?match=<matchId>`
 
-Observer receives in real time (WebSocket):
+Live observer receives in real time (WebSocket):
 - Full maze layout
-- Both tanks: position, facing direction, current HP, stat profile
+- Both tanks: position, facing direction, current HP, stat profile, version
 - Projectiles in flight
 - Game events: moves, shots, hits, match end
 
-Observers also see a **debug panel** per tank (togglable):
-- Last action returned by `tick()`
-- Current sensor readings
-- `console.log` output from tank code (last 10 lines)
+### 9.2 Replay Mode
 
-Observers cannot interact with the match.
+Every completed match (ranked, test, or informal) can be replayed via its permanent URL:  
+`https://<domain>/watch?match=<matchId>&replay=true`
+
+Replay is the primary tool for **debugging and iterating** on tank code. Key capabilities:
+
+**Playback controls:**
+
+| Control | Description |
+|---|---|
+| Play / Pause | Start or stop playback |
+| Step Forward | Advance exactly one tick |
+| Step Backward | Rewind exactly one tick |
+| Jump to tick | Enter a tick number to seek directly |
+| Speed selector | Choose playback rate (see §9.3) |
+
+**What replay shows** (same as live observer plus):
+- Tick counter (current tick / total ticks)
+- Full timeline scrubber
+- Ability to jump to any tick instantly
+
+### 9.3 Playback Speeds
+
+Tick speed is adjustable independently of the original match speed. This is especially useful for data analysis and debugging slow or subtle decision patterns.
+
+| Mode | Speed | Use case |
+|---|---|---|
+| Step-by-step | Manual | Deep debugging; inspect every sensor value and action |
+| 0.25× | 1 tick / 400 ms | Slow motion; trace complex movement sequences |
+| 0.5× | 1 tick / 200 ms | Careful review |
+| 1× | 1 tick / 100 ms | Original match speed |
+| 2× | 1 tick / 50 ms | Quick review |
+| 4× | 1 tick / 25 ms | Scan for patterns across a long match |
+| 8× | 1 tick / 12 ms | Fast scrub |
+
+### 9.4 Debug Panel (per tank, togglable)
+
+Available in both live and replay mode. Shows the internal state of each tank at the current tick:
+
+| Field | Description |
+|---|---|
+| Action returned | The exact object `tick()` returned this tick |
+| Sensor snapshot | Full `sensors` object passed to `tick()` this tick |
+| Memory snapshot | Current state of the `memory` object |
+| Console output | `console.log` lines emitted this tick (up to 10) |
+| Tick duration | Time (ms) the `tick()` function took to execute |
+| Violations | Whether this tick timed out or threw an exception |
+
+### 9.5 Data Export
+
+From any replay, the Tank Author (and only the Author of a participating tank) can export the full match data as a JSON file:
+
+```json
+{
+  "matchId": "...",
+  "mazeSeed": "...",
+  "maze": [[...], ...],
+  "tanks": { "a": { "version": "v2", "config": {...} }, "b": {...} },
+  "ticks": [
+    {
+      "tick": 0,
+      "a": { "sensors": {...}, "memory": {...}, "action": {...}, "durationMs": 12 },
+      "b": { "sensors": {...}, "memory": {...}, "action": {...}, "durationMs": 8 }
+    },
+    ...
+  ]
+}
+```
+
+This export enables offline analysis with any external tool (spreadsheets, Python notebooks, etc.).
+
+### 9.6 Access Rules
+
+| Content | Tank Author | Opponent Author | Any Observer |
+|---|---|---|---|
+| Live match (Game Day / Test) | ✓ | ✓ (Game Day only) | ✓ (via link) |
+| Replay — own tank's debug panel | ✓ | — | — |
+| Replay — opponent's debug panel | — | — | — |
+| Replay — map + positions + HP | ✓ | ✓ | ✓ |
+| Data export | ✓ (own tank's data only) | ✓ (own tank's data only) | — |
+
+> Opponent's `memory` and `console.log` are never exposed to the other author — these may contain proprietary strategy logic.
 
 ---
 
 ## 10. Game Lifecycle
 
+### 10.1 Development Lifecycle (any time)
+
 ```
-[Submission / Queue] → [Match Found] → [Countdown 3s] → [Active Match]
-      → [Match Over] → [Stats Recorded] → [Rematch? / Back to Queue]
+[Edit / Save] → [minor version saved] → [Test vs. AI]
+      ↑                                        ↓
+      └──────── iterate ───────── [Replay & debug] ──────┐
+                                                          ↓
+                                              [Promote to Major version]
+                                                          ↓
+                                              [Register for Game Day]
 ```
+
+### 10.2 Game Day Lifecycle (on schedule)
+
+```
+[Game Day window opens] → [Collect registered tanks] → [Generate pairings]
+      → [Run matches] → [Record stats] → [Publish Game Day summary]
+      → [Window closes] → [Authors review replays]
+```
+
+### 10.3 Match States
 
 | State | Description |
 |---|---|
-| Queued | Tank waiting for opponent |
-| Match Found | Opponent paired; maze generated; notification sent |
-| Countdown | 3-second start countdown visible to observers |
+| Scheduled | Match is queued within the Game Day window; not yet started |
+| Countdown | 3-second countdown; observers can join |
 | Active | Server calls `tick()` on both tanks every 100 ms |
-| Match Over | Win condition met; stats persisted |
+| Match Over | Win condition met; stats persisted; replay available |
 
-### 10.1 Win Conditions
+### 10.4 Win Conditions
 
+| Condition | Winner |
+|---|---|
 | Condition | Winner |
 |---|---|
 | Opponent tank HP reaches 0 | Surviving tank |
 | Opponent tank code crashes unrecoverably | Surviving tank |
 | Timeout (10 min) | Tank with higher remaining HP |
-| Tie (equal HP at timeout) | Draw — no rank change |
+| Tie (equal HP at timeout) | Draw — no ranked stat change |
 
 ---
 
@@ -304,13 +450,13 @@ Displayed on the match result page (accessible to both Authors and any observer)
 
 ---
 
-## 12. Match Replay
+## 12. Match Recording
 
-Every match is recorded server-side (maze seed + full action log per tick). Replays are:
+Every match (ranked, test, or informal) is recorded server-side as the maze seed plus a full tick-by-tick log of sensor inputs, memory snapshots, actions returned, and execution timing. Recordings are:
 - Stored indefinitely (or until the Author deletes their account).
-- Accessible via permanent URL.
-- Playable at 1×, 2×, 4× speed or step-by-step.
-- Include the debug panel (sensor data + console output per tick).
+- Accessible via permanent URL immediately after the match ends.
+- The primary debugging tool for tank authors — see §9 for full replay capabilities.
+- Exportable as JSON for offline analysis (§9.5).
 
 ---
 
