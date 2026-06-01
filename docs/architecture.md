@@ -88,6 +88,22 @@
 
 ---
 
+## ADR-012: Score transfer via DynamoDB transactional write
+
+**Decision:** Moving Global Score and ranking history from a source tank to a forked tank is executed as a single DynamoDB `TransactWriteItems` call covering all affected records.
+
+**Rationale:** A score transfer touches multiple tables (`tankmaze-tanks` for both source and target, all rows in `tankmaze-rankings` for the source). Without atomicity, a partial failure would leave both tanks in an inconsistent state — e.g., the source zeroed but the target not yet updated. DynamoDB transactions guarantee all-or-nothing across up to 100 items, which is sufficient for any realistic ranking history. The transfer is also gated by a precondition check (target must have zero existing rankings) enforced as a `ConditionExpression` inside the same transaction, making it impossible to accidentally merge two score lineages.
+
+---
+
+## ADR-013: Elimination bracket as an explicit slot state machine
+
+**Decision:** Each bracket slot carries an explicit `status` field (`playing`, `won`, `lost`, `both_lose`, `bye`) rather than inferring slot state from match results at query time.
+
+**Rationale:** The both-lose outcome creates a structural gap in the bracket — a slot that has no winner. Inferring this at query time (joining match results to bracket position) requires complex logic that must be re-evaluated every time the bracket is read. Storing status explicitly on each slot makes the bracket self-describing: `tournament-scheduler` can walk the bracket tree once per phase, detect `both_lose` slots, propagate `bye` to the opposing next-round slot, and detect the no-survivors edge case (all remaining slots are `both_lose`) without re-querying match records. It also makes the bracket display on the frontend a straightforward read with no server-side inference.
+
+---
+
 ## Sequence Diagrams
 
 ### Tank Submission & Compilation
@@ -227,17 +243,78 @@ EventBridge Scheduler (elimination_rN cron)
   └─► tournament-scheduler Lambda
         ├─ Read current bracket from tankmaze-gamedays
         ├─ Seed next round: best vs worst (global re-rank)
-        ├─ Invoke match-runner for each bracket pair
-        └─ Update bracket with results
+        ├─ For each bracket pair: invoke match-runner
+        │
+        └─ For each completed match: resolve bracket slots
+              ├─ result.reason != "both_lose"
+              │     └─ winner slot → "won", loser slot → "lost"
+              │
+              └─ result.reason == "both_lose"
+                    ├─ Both slots → "both_lose"
+                    ├─ Find opposing next-round slot → set to "bye"
+                    │     (opposing slot's occupant advances without playing)
+                    └─ If all remaining slots are "both_lose" (no survivors)
+                          └─ Set gameday.champion = null
+                             Skip to ranking-updater (no Final played)
 
-[Final phase completes]
-  └─► tournament-scheduler → async invoke ranking-updater { gameDayId }
+[Final phase — or champion already determined by both-lose cascade]
+  └─► tournament-scheduler
+        ├─ If two live finalists: invoke match-runner for Final
+        ├─ If one finalist + one "bye" slot: that finalist is champion
+        └─ If gameday.champion == null: no champion, skip 1st/2nd points
+              └─ Async invoke ranking-updater { gameDayId }
 
 ranking-updater Lambda
-  ├─ Compute final placements from bracket
+  ├─ Compute final placements from bracket slot states
   ├─ Apply points formula: 1st=n, kth=max(0, n−2^(k−1))
-  ├─ Write tankmaze-rankings records (one per tank, with TTL = expiresAt)
+  │     └─ Skip 1st and 2nd if gameday.champion == null
+  ├─ Write tankmaze-rankings records (one per tank, TTL = expiresAt)
   └─ Recompute globalScore for each participating tank
         └─ Sum tankmaze-rankings where expiresAt > now()
            Update tankmaze-tanks.globalScore, bestFinish, gameDaysCount
+```
+
+---
+
+### Tank Fork & Score Transfer
+
+```
+Browser (Author)
+  │  POST /tanks?forkFrom={sourceTankId}&forkVersion={v}
+  ▼
+tank-api Lambda
+  ├─ Load source tank + version from DynamoDB
+  ├─ Copy source.go from S3 → new tankId S3 path
+  ├─ Create tankmaze-tanks record { tankId: newId, globalScore: 0,
+  │    forkedFromTankId: sourceTankId, forkedFromVersion: v }
+  ├─ Create tankmaze-tank-versions record (status: "pending")
+  ├─ Trigger CodeBuild for new tank
+  │
+  ├─ If source tank globalScore > 0:
+  │     Return 201 Created { tankId: newId, scorePending: true }
+  │     → Frontend shows ForkDialog: "Keep score on source" (default)
+  │                                   or "Transfer score to new tank"
+  │
+  └─ If source tank globalScore == 0:
+        Return 201 Created { tankId: newId, scorePending: false }
+        → No dialog needed; new tank starts at 0 normally
+
+[Author selects "Transfer score" in ForkDialog]
+  │
+  │  POST /tanks/{sourceTankId}/score-transfer { targetTankId: newId }
+  ▼
+tank-api Lambda
+  ├─ Validate: same userId, target has no existing tankmaze-rankings
+  ├─ Load all tankmaze-rankings records for sourceTankId
+  │
+  └─ DynamoDB TransactWriteItems (all-or-nothing):
+        ├─ PUT tankmaze-rankings for each record (tankId → newId, same data)
+        ├─ UPDATE tankmaze-tanks (source): globalScore=0, bestFinish=null,
+        │    gameDaysCount=0, scoreTransferredTo=newId
+        ├─ UPDATE tankmaze-tanks (target): globalScore, bestFinish,
+        │    gameDaysCount from source; scoreTransferredFrom=sourceTankId
+        └─ DELETE tankmaze-rankings records for sourceTankId
+
+  └─ Return 200 OK { transferred: true }
+        → Frontend dismisses dialog; both tank dashboards refresh
 ```
