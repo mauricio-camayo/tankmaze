@@ -242,11 +242,89 @@ This parameter is managed by the platform administrator and can be changed at an
 
 ### 6.3 Match Execution During Game Day
 
-1. When the Game Day window opens (cron trigger fires), the platform collects all registered tanks.
-2. Tanks are paired round-robin (each tank plays every other registered tank once per Game Day).
-3. Matches run sequentially or in parallel (up to platform concurrency limits).
-4. Match results and stats are recorded after each match.
-5. When the window closes (or all matches are complete), a **Game Day summary** is published.
+Game Day runs in two sequential phases: **Round Robin** and **Elimination**.
+
+---
+
+#### Phase 1 — Round Robin (Groups of 8)
+
+1. When the Game Day window opens, the platform collects all registered tanks and shuffles them randomly into groups of 8.
+   - If the total number of tanks is not a multiple of 8, the last group may have 6 or 7 tanks (never fewer than 6).
+2. Within each group, every tank plays every other tank exactly once (full round-robin). A group of 8 produces 28 matches.
+3. Matches within a group run in parallel up to platform concurrency limits.
+
+**Points per match result:**
+
+| Outcome | Points awarded |
+|---|---|
+| Win (opponent destroyed or tiebreaker) | 3 pts |
+| Loss | 0 pts |
+| Both tanks lose (§10.5 rule 5) | 0 pts each |
+
+**Group standings tiebreakers** (applied in order when two tanks have equal points):
+1. Total damage dealt across all group matches
+2. Total moves made across all group matches
+3. Random draw (documented in the Game Day summary)
+
+---
+
+#### Phase 1 → Phase 2 Qualification
+
+The number of tanks that advance to elimination depends on the total field size:
+
+| Total registered tanks | Advancement rule |
+|---|---|
+| **≤ 64** | All tanks advance (entire field enters elimination) |
+| **> 64** | Top **⌊2/3⌋** of tanks from each group advance |
+
+For the standard group of 8 with > 64 total tanks: `⌊8 × 2/3⌋ = 5` tanks advance per group. The bottom 3 in each group are eliminated.
+
+All advancing tanks are **globally re-ranked** by their round-robin points (then by the tiebreakers above) before the elimination bracket is seeded.
+
+---
+
+#### Phase 2 — Elimination Bracket (Single Elimination)
+
+1. Advancing tanks are seeded globally: rank 1 (highest points) through rank N (lowest points).
+2. The bracket pairs **best against worst**: seed 1 vs seed N, seed 2 vs seed N−1, seed 3 vs seed N−2, and so on.
+3. If the number of advancing tanks is not a power of 2, the top-seeded tanks receive **byes** in round 1 (they advance automatically to round 2). Byes are assigned to the highest seeds first.
+4. Each elimination match is a single game. Losers are out; winners advance.
+5. The last tank standing is the **Game Day Champion**.
+
+**Elimination bracket example (8 advancing tanks):**
+
+```
+Round 1          Semifinal        Final
+Seed 1 ──┐
+          ├── winner ──┐
+Seed 8 ──┘             │
+                        ├── winner ──┐
+Seed 4 ──┐             │            │
+          ├── winner ──┘            ├── Champion
+Seed 5 ──┘                         │
+                                    │
+Seed 2 ──┐                         │
+          ├── winner ──┐            │
+Seed 7 ──┘             │            │
+                        ├── winner ──┘
+Seed 3 ──┐             │
+          ├── winner ──┘
+Seed 6 ──┘
+```
+
+---
+
+#### Phase 2 — Scoring for Tank Stats
+
+- Elimination round wins and losses are recorded against the tank's ranked stats separately from round-robin results.
+- The final ranking for a Game Day is: Champion first, then finalists, then semi-finalists, then by round-robin seed for all first-round eliminations.
+- A tank that qualifies but receives a bye is credited with an unplayed round-1 win for stat purposes.
+
+---
+
+#### End of Game Day
+
+When all elimination matches are complete (or the scheduled window closes — whichever comes first), the platform publishes a **Game Day summary** containing full bracket, all match replays, and updated tank stats.
 
 ### 6.4 Match Types
 
