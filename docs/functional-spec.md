@@ -255,8 +255,8 @@ Game Day runs in two sequential phases: **Round Robin** and **Elimination**.
 
 #### Phase 1 — Round Robin (Groups of 8)
 
-1. When the Game Day window opens, the platform collects all registered tanks and ranks them by **Win Rate** (wins ÷ total ranked matches played by that major version), highest first.
-   - Tanks with no prior ranked matches (e.g., newly promoted major versions) are treated as Win Rate = 0 and sorted among themselves randomly at the bottom of the ranking.
+1. When the Game Day window opens, the platform collects all registered tanks and ranks them by **Global Rank** (§6.7), best rank first. Win Rate (wins ÷ total ranked matches for that major version) is used as the tiebreaker when two tanks share the same Global Rank.
+   - Tanks with no Global Score (e.g., newly promoted major versions that have never competed) are placed at the bottom of the ranking, sorted among themselves by Win Rate, then randomly if Win Rate is also equal.
 2. The ranked list is distributed into groups of 8 using **pot seeding**: tanks are divided into pots of equal size (one pot per group slot), and one tank is drawn from each pot per group — ensuring every group contains exactly one tank from each tier of the field.
 
    ```
