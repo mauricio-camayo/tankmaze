@@ -248,10 +248,25 @@ Game Day runs in two sequential phases: **Round Robin** and **Elimination**.
 
 #### Phase 1 — Round Robin (Groups of 8)
 
-1. When the Game Day window opens, the platform collects all registered tanks and shuffles them randomly into groups of 8.
-   - If the total number of tanks is not a multiple of 8, the last group may have 6 or 7 tanks (never fewer than 6).
-2. Within each group, every tank plays every other tank exactly once (full round-robin). A group of 8 produces 28 matches.
-3. Matches within a group run in parallel up to platform concurrency limits.
+1. When the Game Day window opens, the platform collects all registered tanks and ranks them by **Win Rate** (wins ÷ total ranked matches played by that major version), highest first.
+   - Tanks with no prior ranked matches (e.g., newly promoted major versions) are treated as Win Rate = 0 and sorted among themselves randomly at the bottom of the ranking.
+2. The ranked list is distributed into groups of 8 using **pot seeding**: tanks are divided into pots of equal size (one pot per group slot), and one tank is drawn from each pot per group — ensuring every group contains exactly one tank from each tier of the field.
+
+   ```
+   Example: 24 tanks → 3 groups of 8, 8 pots of 3
+
+   Pot 1 (ranks 1–3):   one goes to Group A, one to B, one to C
+   Pot 2 (ranks 4–6):   one goes to Group A, one to B, one to C
+   ...
+   Pot 8 (ranks 22–24): one goes to Group A, one to B, one to C
+   ```
+
+   Within each pot, assignment to groups is random. This guarantees each group has a balanced spread of Win Rates — no group is stacked with top-ranked tanks.
+
+   - If the total number of tanks is not a multiple of 8, the last group may have 6 or 7 tanks (never fewer than 6). Pot sizes adjust proportionally for non-uniform group counts.
+
+3. Within each group, every tank plays every other tank exactly once (full round-robin). A group of 8 produces 28 matches.
+4. Matches within a group run in parallel up to platform concurrency limits.
 
 **Points per match result:**
 
