@@ -1,0 +1,26 @@
+{
+  "name": "@tankmaze/frontend",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@8.15.9",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "aws-amplify": "^6.0.0",
+    "phaser": "^3.60.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "zustand": "^4.5.0"
+  },
+  "devDependencies": {
+    "@monaco-editor/react": "^4.6.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "typescript": "^5.4.0",
+    "vite": "^5.2.0"
+  }
+}

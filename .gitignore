@@ -5,5 +5,7 @@ dist/
 cdk.out/
 *.js.map
 *.d.ts
-!packages/shared/src/
 .DS_Store
+
+# Go build artifacts
+/dist/

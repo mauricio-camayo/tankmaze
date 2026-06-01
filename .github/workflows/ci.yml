@@ -7,52 +7,102 @@ on:
     branches: [main]
 
 jobs:
-  build-and-test:
-    name: Build & Test
+  backend:
+    name: Backend (Go)
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Vet
+        run: go vet ./...
+
+  frontend:
+    name: Frontend (TypeScript)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/frontend
     steps:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v3
         with:
-          version: 9
+          version: 8
 
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
+          cache-dependency-path: packages/frontend/pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Type check
-        run: pnpm -r typecheck
-
-      - name: Test
-        run: pnpm -r test
+        run: pnpm typecheck
 
       - name: Build
-        run: pnpm -r build
+        run: pnpm build
 
-  cdk-diff:
-    name: CDK Diff
+  infrastructure:
+    name: Infrastructure (CDK)
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    needs: build-and-test
-    permissions:
-      id-token: write
-      contents: read
+    defaults:
+      run:
+        working-directory: packages/infrastructure
     steps:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v3
         with:
-          version: 9
+          version: 8
 
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
+          cache-dependency-path: packages/infrastructure/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+  cdk-diff:
+    name: CDK Diff
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    needs: [backend, frontend, infrastructure]
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: packages/infrastructure
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 8
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: packages/infrastructure/pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -64,30 +114,32 @@ jobs:
           aws-region: us-east-1
 
       - name: CDK Diff
-        run: cd packages/infrastructure && pnpm cdk diff
+        run: pnpm cdk diff
 
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    needs: build-and-test
+    needs: [backend, frontend, infrastructure]
     permissions:
       id-token: write
       contents: read
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
       - uses: pnpm/action-setup@v3
         with:
-          version: 9
+          version: 8
 
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -95,15 +147,29 @@ jobs:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: us-east-1
 
+      - name: Build Lambda binaries
+        run: |
+          for cmd in packages/backend/cmd/*/; do
+            name=$(basename "$cmd")
+            GOOS=linux GOARCH=arm64 go build -o "dist/$name/bootstrap" "./$cmd"
+          done
+
       - name: Deploy infrastructure
-        run: cd packages/infrastructure && pnpm cdk deploy --all --require-approval never
+        working-directory: packages/infrastructure
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm cdk deploy --all --require-approval never
 
       - name: Build frontend
-        run: cd packages/frontend && pnpm build
+        working-directory: packages/frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
         env:
           VITE_USER_POOL_ID: ${{ secrets.VITE_USER_POOL_ID }}
           VITE_USER_POOL_CLIENT_ID: ${{ secrets.VITE_USER_POOL_CLIENT_ID }}
           VITE_WS_ENDPOINT: ${{ secrets.VITE_WS_ENDPOINT }}
+          VITE_API_ENDPOINT: ${{ secrets.VITE_API_ENDPOINT }}
 
       - name: Sync frontend to S3
         run: |
