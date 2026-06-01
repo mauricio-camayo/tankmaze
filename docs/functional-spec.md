@@ -257,9 +257,13 @@ Game Day runs in two sequential phases: **Round Robin** and **Elimination**.
 
 | Outcome | Points awarded |
 |---|---|
-| Win (opponent destroyed or tiebreaker) | 3 pts |
+| Win (opponent destroyed or tiebreaker win) | 1 pt |
+| Flawless win (opponent destroyed + zero damage received) | 2 pts |
 | Loss | 0 pts |
 | Both tanks lose (§10.5 rule 5) | 0 pts each |
+| Bye (automatic advancement, no match played) | 1 pt |
+
+> Flawless wins are not possible on byes — the 2-point bonus requires an opponent to be destroyed in an actual match.
 
 **Group standings tiebreakers** (applied in order when two tanks have equal points):
 1. Total damage dealt across all group matches
