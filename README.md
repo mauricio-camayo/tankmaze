@@ -1,30 +1,41 @@
 # TankMaze
 
-A real-time browser-based tactical game. One or two players navigate a randomly generated labyrinth inside armored tanks with limited, sensor-based awareness. A third-party observer can watch the full arena in real time.
+A code-battle platform built on AWS. Write an autonomous tank in Go, compile it to WebAssembly, and watch it compete in a randomly generated labyrinth — no real-time input after submission.
 
 ## Game Concept
 
-TankMaze is a **code-battle platform**. You don't play the game — you program your tank, submit it, and watch it fight autonomously.
+You don't play TankMaze. You program your tank, submit it, and watch it fight.
 
-- **Write a tank**: define a `tick(sensors, memory)` function in JavaScript. It runs every 100 ms and returns one action (move, rotate, fire, scan, or idle).
-- **Allocate stats**: distribute 15 points across speed, sensor range, damage, armor, and fire rate. No free lunch — fast tanks see less, hard-hitting tanks move slowly.
-- **Submit and queue**: your tank enters ranked matchmaking automatically. No real-time input after submission.
-- **Watch it fight**: get notified when a match starts; watch live with full map visibility, sensor overlays, and your tank's console output.
-- **Iterate**: study the replay, improve your code, submit a new version.
-- **Built-in AI tanks** (Scout, Ranger, Bruiser) are available for testing and serve as open-source reference implementations.
+- **Write a tank in Go**: implement a `Tick(sensors Sensors) Action` function. It runs every 100 ms and returns one action (move, rotate, fire, scan, or idle). Package-level variables persist across ticks — that's your tank's memory.
+- **Allocate stats**: distribute exactly 15 points across speed, sensor range, damage, armor, and fire rate. Fast tanks see less; hard-hitting tanks move slowly.
+- **Develop with versions**: saves create minor versions (`v0.1`, `v0.2`, …). Promote to a major version (`v1`, `v2`, …) when the tank is competition-ready.
+- **Test freely**: pit your tank against built-in AI opponents (Scout, Ranger, Bruiser) or any of your own other tanks — no match limits, no ranking impact.
+- **Register for Game Day**: a configurable scheduled tournament (cron-based) where registered tanks compete in round-robin groups of 8, followed by a single-elimination bracket seeded best-vs-worst.
+- **Earn global ranking points**: Game Day placement awards points based on field size and finish position. Points remain valid for a configurable period (default: 1 year), forming a rolling global leaderboard.
+- **Replay and debug**: every match is recorded tick-by-tick. Replay at any speed (0.25× to 8×, or step-by-step), inspect sensor readings, memory state, and `fmt` output per tick. Export the full match as JSON for offline analysis.
+
+## Tournament Format
+
+Each Game Day runs in two phases, each with its own scheduled trigger:
+
+1. **Round Robin** — tanks are pot-seeded by Global Rank into groups of 8. Every tank plays every other tank in its group. Points: flawless win (no damage received) = 2 pts, win = 1 pt, loss = 0 pts.
+2. **Elimination** — top ⌊2/3⌋ per group advance (all advance if ≤ 64 tanks). Bracket is seeded globally: best vs. worst. Single elimination to the champion.
+
+Match end: a configurable tick limit (default: 100 ticks). Tiebreakers in order — most damage dealt → most moves made → both tanks lose.
 
 ## Tech Stack
 
 | Layer | Technology |
 |---|---|
 | Frontend | React 18 + TypeScript + Phaser 3 |
+| Tank language | Go → WebAssembly (`GOOS=wasip1 GOARCH=wasm`) |
+| WASM runtime | Wazero (pure-Go, runs in Lambda) |
 | Auth | AWS Cognito + Amplify v6 |
 | Real-time | AWS API Gateway WebSocket API |
-| Game logic | AWS Lambda (Node.js 20 + TypeScript) |
+| Game logic | AWS Lambda (Go) |
 | State store | AWS DynamoDB |
 | Hosting | AWS S3 + CloudFront |
 | Infrastructure | AWS CDK v2 |
-| Monorepo | pnpm workspaces |
 
 ## Repository Structure
 
@@ -32,39 +43,36 @@ TankMaze is a **code-battle platform**. You don't play the game — you program 
 tankmaze/
 ├── packages/
 │   ├── frontend/        # React + Phaser game client
-│   ├── backend/         # Lambda functions + game logic
-│   ├── shared/          # Shared TypeScript types and maze generator
+│   ├── backend/         # Lambda functions + game engine (Go)
+│   ├── sdk/             # Tank author SDK (Go types: Sensors, Action, TankConfig)
 │   └── infrastructure/  # AWS CDK stacks
 ├── docs/
-│   ├── functional-spec.md   # Game rules, mechanics, roles
-│   ├── technical-spec.md    # Architecture, APIs, data models
+│   ├── functional-spec.md   # Game rules, mechanics, tournament format
+│   ├── technical-spec.md    # AWS architecture, APIs, data models
 │   └── architecture.md      # ADRs and sequence diagrams
 └── .github/workflows/       # CI/CD pipeline
 ```
 
 ## Documentation
 
-- [Functional Specification](docs/functional-spec.md) — game rules, mechanics, player roles
+- [Functional Specification](docs/functional-spec.md) — game rules, tank API, versioning, tournament format, global ranking
 - [Technical Specification](docs/technical-spec.md) — AWS architecture, APIs, data models
 - [Architecture Decisions](docs/architecture.md) — ADRs and sequence diagrams
 
 ## Development Setup
 
-> Prerequisites: Node.js 20+, pnpm 9+, AWS CLI configured, AWS CDK v2
+> Prerequisites: Go 1.22+, AWS CLI configured, AWS CDK v2
 
 ```bash
-# Install dependencies
-pnpm install
-
-# Type-check all packages
-pnpm -r typecheck
+# Build all packages
+go build ./...
 
 # Run tests
-pnpm -r test
+go test ./...
 
 # Deploy infrastructure (requires AWS credentials)
 cd packages/infrastructure
-pnpm cdk deploy --all
+cdk deploy --all
 
 # Start frontend dev server
 cd packages/frontend
