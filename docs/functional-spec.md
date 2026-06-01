@@ -174,12 +174,13 @@ TankMaze uses a two-tier version scheme:
 | **Minor** | `v1.1`, `v1.2`, … | Auto-incremented on each save during development | No — test-only |
 
 **Rules:**
-- A fresh tank starts at `v1.0` (the first working save after initial validation).
-- Every subsequent save/validate cycle bumps the minor number (`v1.1`, `v1.2`, …).
-- When the Author clicks **Promote to Major**, the current minor becomes the next whole version (`v1.x → v2`), and the minor counter resets to `0`.
+- A fresh tank starts at `v0.0` (before any promotion has ever occurred).
+- Every save/validate cycle bumps the minor number (`v0.1`, `v0.2`, …).
+- When the Author clicks **Promote to Major** for the first time, `v0.x` becomes `v1` and the minor counter resets to `0` (next save → `v1.1`).
+- Subsequent promotions follow the same pattern: `v1.x → v2`, `v2.x → v3`, etc.
 - Authors can branch from any previous minor or major version and continue editing — the branch starts a new minor chain off that version.
-- Only major versions are eligible for Game Day registration and ranked statistics.
-- Minor versions can be used for unlimited test matches against AI or in informal (unranked) matches.
+- Only major versions (`v1`, `v2`, …) are eligible for Game Day registration and ranked statistics.
+- `v0.x` and all minor versions can be used for unlimited test matches against AI, against built-in tanks, or against the Author's own other tanks in informal (unranked) matches.
 
 ### 5.3 Submission Flow
 
@@ -190,11 +191,12 @@ TankMaze uses a two-tier version scheme:
    - `tick` is a valid exported function.
    - No disallowed globals.
    - Sandbox dry-run against 5 ticks of simulated sensor data.
-4. On success, a new minor version is saved (e.g., `v1.3`). No match is started automatically.
+4. On success, a new minor version is saved (e.g., `v0.3`). No match is started automatically.
 5. Author can then:
-   - Continue editing (next save → `v1.4`).
-   - Click **Test vs. AI** to run an unranked match immediately.
-   - Click **Promote to Major** to create `v2` and make it eligible for Game Day.
+   - Continue editing (next save → `v0.4`).
+   - Click **Test vs. AI** to run an unranked match against a built-in AI tank.
+   - Click **Test vs. My Tank** to select any of their own other tanks (any version) as the opponent.
+   - Click **Promote to Major** to create the next major version and make it eligible for Game Day.
    - Click **Register for Game Day** to enter the current major version in the next scheduled competition window.
 
 ### 5.4 Tank Dashboard (per tank)
@@ -251,7 +253,8 @@ This parameter is managed by the platform administrator and can be changed at an
 | Type | Trigger | Affects Ranked Stats |
 |---|---|---|
 | **Ranked** | Game Day execution, two registered user tanks | Yes |
-| **Test vs. AI** | Author clicks "Test vs. AI" at any time | No |
+| **Test vs. AI** | Author clicks "Test vs. AI" against a built-in tank | No |
+| **Test vs. Own Tank** | Author selects one of their other tanks as opponent | No |
 | **Informal** | Author invites another author to an unranked match | No |
 | **Rematch** | Both authors agree to re-run a previous Game Day matchup | No |
 
@@ -420,16 +423,25 @@ This export enables offline analysis with any external tool (spreadsheets, Pytho
 | Active | Server calls `tick()` on both tanks every 100 ms |
 | Match Over | Win condition met; stats persisted; replay available |
 
-### 10.4 Win Conditions
+### 10.4 Tick Limit
 
-| Condition | Winner |
-|---|---|
-| Condition | Winner |
-|---|---|
-| Opponent tank HP reaches 0 | Surviving tank |
-| Opponent tank code crashes unrecoverably | Surviving tank |
-| Timeout (10 min) | Tank with higher remaining HP |
-| Tie (equal HP at timeout) | Draw — no ranked stat change |
+Every match has a configurable **maximum tick count** (default: **100 ticks**). This is a platform parameter, not a per-tank setting, and can be tuned per match type (e.g., ranked matches may use a different limit than test matches).
+
+When the tick limit is reached without either tank being destroyed, the **tiebreaker sequence** below determines the result. There are no draws in TankMaze — every match ends with either one winner, or both tanks losing.
+
+### 10.5 Win Conditions & Tiebreaker
+
+Resolution is evaluated in order; the first rule that distinguishes the tanks decides the outcome.
+
+| Priority | Condition | Outcome |
+|---|---|---|
+| 1 | A tank's HP reaches 0 during the match | The surviving tank wins |
+| 2 | A tank's code crashes unrecoverably | The surviving tank wins |
+| 3 | Tick limit reached — one tank dealt more total damage | Higher-damage tank wins |
+| 4 | Tick limit reached — damage is equal — one tank made more moves | Higher-movement tank wins |
+| 5 | Tick limit reached — damage and moves are both equal | Both tanks lose |
+
+**Design rationale for rule 4:** movement is the tiebreaker over passivity. A tank that actively hunts its opponent is rewarded over one that sits in place hoping to get shot at. Tanks that wait are penalized.
 
 ---
 
@@ -439,14 +451,15 @@ Displayed on the match result page (accessible to both Authors and any observer)
 
 | Metric | Description |
 |---|---|
-| Winner / Loser | Tank name, author, version |
+| Winner / Loser | Tank name, author, version; outcome reason (destroyed / tick limit / both lose) |
 | Final HP | Both tanks |
-| Damage dealt / received | Per tank |
+| Ticks elapsed | Total ticks run (≤ tick limit) |
+| Damage dealt / received | Per tank — primary tiebreaker if tick limit reached |
+| Moves made | Per tank — secondary tiebreaker if damage is equal |
 | Shots fired / hits / accuracy | Per tank |
-| Moves made | Per tank |
 | Match duration | Wall-clock time |
 | Tick violations | Timeout or exception count per tank |
-| Replay link | Full match replay (persistent) |
+| Replay link | Full match replay (permanent URL) |
 
 ---
 
