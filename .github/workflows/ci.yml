@@ -27,13 +27,13 @@ jobs:
         run: |
           (cd packages/sdk && go test ./...)
           pkgs=$(cd packages/backend && go list ./... 2>/dev/null)
-          [ -n "$pkgs" ] && (cd packages/backend && go test ./...)
+          if [ -n "$pkgs" ]; then (cd packages/backend && go test ./...); fi
 
       - name: Vet
         run: |
           (cd packages/sdk && go vet ./...)
           pkgs=$(cd packages/backend && go list ./... 2>/dev/null)
-          [ -n "$pkgs" ] && (cd packages/backend && go vet ./...)
+          if [ -n "$pkgs" ]; then (cd packages/backend && go vet ./...); fi
 
   frontend:
     name: Frontend (TypeScript)
