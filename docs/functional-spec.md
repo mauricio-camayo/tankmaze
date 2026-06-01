@@ -275,7 +275,7 @@ Game Day runs in two sequential phases: **Round Robin** and **Elimination**.
 | Win (opponent destroyed or tiebreaker win) | 1 pt |
 | Flawless win (opponent destroyed + zero damage received) | 2 pts |
 | Loss | 0 pts |
-| Both tanks lose (§10.5 rule 5) | 0 pts each |
+| Both tanks lose (§10.4 rule 5) | 0 pts each |
 | Bye (automatic advancement, no match played) | 1 pt |
 
 > Flawless wins are not possible on byes — the 2-point bonus requires an opponent to be destroyed in an actual match.
@@ -491,19 +491,7 @@ This export enables offline analysis with any external tool (spreadsheets, Pytho
 
 ## 10. Game Lifecycle
 
-### 10.1 Development Lifecycle (any time)
-
-```
-[Edit / Save] → [minor version saved] → [Test vs. AI]
-      ↑                                        ↓
-      └──────── iterate ───────── [Replay & debug] ──────┐
-                                                          ↓
-                                              [Promote to Major version]
-                                                          ↓
-                                              [Register for Game Day]
-```
-
-### 10.2 Game Day Lifecycle (on schedule)
+### 10.1 Game Day Lifecycle (on schedule)
 
 ```
 [Game Day window opens] → [Collect registered tanks] → [Generate pairings]
@@ -511,7 +499,7 @@ This export enables offline analysis with any external tool (spreadsheets, Pytho
       → [Window closes] → [Authors review replays]
 ```
 
-### 10.3 Match States
+### 10.2 Match States
 
 | State | Description |
 |---|---|
@@ -520,13 +508,13 @@ This export enables offline analysis with any external tool (spreadsheets, Pytho
 | Active | Server calls `tick()` on both tanks every 100 ms |
 | Match Over | Win condition met; stats persisted; replay available |
 
-### 10.4 Tick Limit
+### 10.3 Tick Limit
 
 Every match has a configurable **maximum tick count** (default: **100 ticks**). This is a platform parameter, not a per-tank setting, and can be tuned per match type (e.g., ranked matches may use a different limit than test matches).
 
 When the tick limit is reached without either tank being destroyed, the **tiebreaker sequence** below determines the result. There are no draws in TankMaze — every match ends with either one winner, or both tanks losing.
 
-### 10.5 Win Conditions & Tiebreaker
+### 10.4 Win Conditions & Tiebreaker
 
 Resolution is evaluated in order; the first rule that distinguishes the tanks decides the outcome.
 
