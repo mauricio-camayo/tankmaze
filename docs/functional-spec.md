@@ -222,16 +222,21 @@ Visible to the Tank Author on their profile. Stats are shown per major version; 
 
 ### 6.1 Game Day Schedule
 
-Game Day is a configurable scheduled window during which all registered tanks compete. The schedule is controlled by a **cron-like parameter** in the platform configuration — it can be set to any combination of days and hours without code changes.
+A Game Day is a multi-phase tournament that unfolds over one or more days. Each phase has its own independently scheduled trigger using standard cron syntax. All schedule entries are platform configuration parameters — they can be changed by the administrator without code changes.
 
-```
-# Examples (standard cron syntax: minute hour day-of-month month day-of-week)
-0 20 * * 6       # Every Saturday at 8 PM
-0 18 * * 2,4     # Every Tuesday and Thursday at 6 PM
-0 14 * * 0,6     # Every Saturday and Sunday at 2 PM
+```yaml
+# Standard cron fields: minute  hour  day-of-month  month  day-of-week
+schedule:
+  registration_close: "0 18 * * 6"    # Saturday 6 PM  — registration deadline
+  round_robin:        "0 20 * * 6"    # Saturday 8 PM  — Phase 1 runs
+  elimination_r1:     "0 20 * * 0"    # Sunday   8 PM  — Round of 16 / Quarterfinals
+  elimination_r2:     "0 22 * * 0"    # Sunday  10 PM  — Semifinals
+  final:              "0 21 * * 6"    # Next Saturday 9 PM — Final
 ```
 
-This parameter is managed by the platform administrator and can be changed at any time. All users see the next scheduled Game Day on their dashboard.
+- Each phase trigger fires independently. The platform skips a phase trigger if the previous phase has not yet completed (e.g., if Round Robin is still running when `elimination_r1` fires, R1 is postponed to the next `elimination_r1` tick).
+- Elimination phases beyond what the bracket requires are silently skipped (e.g., if only 2 tanks advance, R1 is the Final).
+- All users see the full phase schedule for the current Game Day on their dashboard, including the status of each phase (upcoming / running / complete).
 
 ### 6.2 Registration
 
@@ -493,11 +498,33 @@ This export enables offline analysis with any external tool (spreadsheets, Pytho
 
 ### 10.1 Game Day Lifecycle (on schedule)
 
+Each phase is triggered independently by its own cron entry (§6.1). Authors can review results and replays between phases.
+
 ```
-[Game Day window opens] → [Collect registered tanks] → [Generate pairings]
-      → [Run matches] → [Record stats] → [Publish Game Day summary]
-      → [Window closes] → [Authors review replays]
+[registration_close trigger]
+        │
+        ▼
+[Round Robin trigger] ──→ [Pot seeding by Win Rate] ──→ [Groups of 8 run]
+        │                                                        │
+        │                                              [Standings published]
+        │                                              [Authors review replays]
+        ▼
+[elimination_r1 trigger] ──→ [Global re-rank] ──→ [Best-vs-worst bracket seeded]
+        │                                                  │
+        │                                       [Round 1 matches run]
+        │                                       [Results published]
+        ▼
+[elimination_r2 trigger] ──→ [Remaining matches run] ──→ [Results published]
+        │
+       ...
+        ▼
+[final trigger] ──→ [Final match runs] ──→ [Champion crowned]
+        │
+        ▼
+[Game Day summary published — full bracket, all replays, updated stats]
 ```
+
+If the field is small enough that fewer elimination rounds are needed, later phase triggers are skipped automatically. If a phase trigger fires before the previous phase is complete, it waits for completion before proceeding.
 
 ### 10.2 Match States
 
