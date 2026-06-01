@@ -207,6 +207,8 @@ Visible to the Tank Author on their profile. Stats are shown per major version; 
 |---|---|
 | **Name** | Tank name from config |
 | **Active Major Version** | The major version currently registered (or last used) for Game Day |
+| **Global Rank** | Current position on the global leaderboard (see §6.7) |
+| **Global Score** | Sum of all valid placement points (links to per-Game-Day breakdown with expiry dates) |
 | **Version History** | List of all major versions; each expandable to show its minor chain |
 | **Submitted Since** | Date the first major version was promoted (age shown as "X days ago") |
 | **Win Rate** *(per major)* | Wins ÷ ranked matches for that version (%) |
