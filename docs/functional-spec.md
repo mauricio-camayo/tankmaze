@@ -366,6 +366,71 @@ When a Game Day match involving a tank starts, both Tank Authors receive a notif
 
 ---
 
+### 6.6 Game Day Placement Points
+
+At the end of each Game Day, every participating tank receives placement points based on its final standing and the number of competitors **n** in that Game Day.
+
+**Points formula:**
+
+| Placement | Points |
+|---|---|
+| 1st | n |
+| 2nd | n − 2 |
+| 3rd | n − 4 |
+| 4th | n − 8 |
+| kth (k ≥ 2) | max(0,  n − 2^(k−1)) |
+
+The subtraction doubles with each successive placement. Points are floored at 0 — no placement ever yields negative points.
+
+**Example — n = 32 competitors:**
+
+| Placement | Points |
+|---|---|
+| 1st (Champion) | 32 |
+| 2nd (Runner-up) | 30 |
+| 3rd–4th (Semifinalists) | 28 |
+| 5th–8th (Quarterfinalists) | 24 |
+| 9th–16th (R1 losers) | 16 |
+| 17th–32nd (Round-robin eliminated) | 0 |
+
+**Shared placements:** tanks eliminated at the same round share the highest placement available to that group. Both semifinal losers receive 3rd-place points; all quarterfinal losers receive 5th-place points, and so on. Ties within a shared placement tier do not subdivide further — all tanks in the group receive the same points.
+
+**Byes:** a tank that received a bye in Round 1 of elimination and then lost in Round 2 is placed alongside the other Round 2 losers (no separate treatment).
+
+**Both-lose in elimination:** both tanks receive the loser's placement for that round — same as a normal loss.
+
+---
+
+### 6.7 Global Ranking
+
+Each tank's **Global Ranking score** is the sum of all valid placement points it has accumulated across Game Days.
+
+**Points validity:** placement points from a Game Day are valid for a configurable period (default: **1 year**) from the date of that Game Day. Once expired, those points are dropped from the score and the global ranking is recalculated automatically.
+
+```
+Global Score = Σ placement_points(game_day)
+               for all game_days where (today − game_day.date) < validity_period
+```
+
+**Global Ranking display** (public, visible to all users):
+
+| Column | Description |
+|---|---|
+| Rank | Position in the global leaderboard (1 = highest score) |
+| Tank Name | Name from config |
+| Author | Tank Author's username |
+| Active Version | The major version contributing to current ranked stats |
+| Global Score | Sum of valid placement points |
+| Best Finish | Highest placement ever achieved (all-time) |
+| Game Days | Number of Game Days participated in (within validity window) |
+| Last Active | Date of most recent Game Day participation |
+
+**Ranking tiebreaker** (equal Global Score): tank with the higher Best Finish wins; if still tied, the one with more Game Days participated.
+
+**Decay visibility:** on a tank's profile, authors can see a breakdown of points per Game Day with an expiry date for each entry — so they know when a high-scoring result is about to drop off their total.
+
+---
+
 ## 7. Labyrinth
 
 - Grid-based: **25 × 25 cells** (configurable per match type in future versions).
@@ -591,6 +656,5 @@ Every match (ranked, test, or informal) is recorded server-side as the maze seed
 - More than 2 tanks per match
 - Power-ups or collectibles
 - Non-grid (free-movement) navigation
-- Public leaderboard / global ranking system
 - Mobile native app
 - Tank-to-tank communication (multi-tank alliances)
