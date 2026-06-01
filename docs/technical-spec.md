@@ -4,327 +4,589 @@
 
 | Layer | Technology | Rationale |
 |---|---|---|
-| Frontend | React 18 + TypeScript | Component model; strong typing |
-| Game Rendering | Phaser 3 (Canvas) | Purpose-built 2D game framework; WebSocket-friendly |
+| Frontend | React 18 + TypeScript + Phaser 3 | Component model; Canvas rendering; strong typing |
+| Code Editor | Monaco Editor (Go syntax) | VS Code engine; Go language support built-in |
 | Auth Client | AWS Amplify v6 | First-class Cognito integration |
-| Monorepo | pnpm workspaces | Shared types across packages; fast installs |
-| Backend Runtime | Node.js 20 + TypeScript | Lambda-native; shares types with frontend |
-| Real-time Transport | API Gateway WebSocket API | Fully managed; scales to concurrent sessions |
-| Game State Store | DynamoDB | Single-digit ms latency; TTL for session cleanup |
-| Auth Provider | AWS Cognito | Managed user pool; JWT tokens; social login ready |
+| Backend Language | Go 1.22 | Lambda cold start ~100 ms; compiled; low memory; native concurrency |
+| Tank Language | Go → WebAssembly (`GOOS=wasip1 GOARCH=wasm`) | User code sandboxed by WASM isolation |
+| WASM Runtime | Wazero (pure-Go) | No CGO; runs in Lambda; deterministic fuel-based time limit |
+| Tank Compilation | AWS CodeBuild | Isolated build environment with Go toolchain; avoids Lambda timeout constraints |
+| WASM Artifact Store | S3 | Durable; versioned; loaded into Lambda /tmp per match |
+| Real-time Transport | API Gateway WebSocket API | Fully managed; observer-only connections |
+| Game State Store | DynamoDB | Single-digit ms latency; TTL for cleanup |
+| Match Tick Log Store | S3 | Full tick-by-tick JSON per match; replay source |
+| Auth Provider | AWS Cognito | Managed user pool; JWT tokens |
 | Static Hosting | S3 + CloudFront | CDN-distributed; HTTPS by default |
-| Infrastructure as Code | AWS CDK v2 (TypeScript) | Type-safe; same language as the rest of the stack |
-| CI/CD | GitHub Actions | Native GitHub integration |
+| Infrastructure as Code | AWS CDK v2 (TypeScript) | Mature; broad L2 construct coverage |
+| CI/CD | GitHub Actions | Native GitHub integration; OIDC AWS auth |
 
 ---
 
 ## 2. Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        Browser                              │
-│  ┌──────────────┐  WebSocket  ┌────────────────────────┐   │
-│  │  React + Phaser│◄──────────►│ API Gateway (WS API)  │   │
-│  └──────┬───────┘             └──────────┬─────────────┘   │
-│         │ HTTPS (REST)                   │ Lambda invoke    │
-│         ▼                                ▼                  │
-│  ┌──────────────┐          ┌────────────────────────────┐  │
-│  │   Cognito    │          │      Lambda Functions       │  │
-│  │  (auth)      │          │  ┌─────────────────────┐   │  │
-│  └──────────────┘          │  │ connect / disconnect │   │  │
-│                            │  │ game-action          │   │  │
-│                            │  │ game-tick (scheduled)│   │  │
-│                            │  │ create-session       │   │  │
-│                            │  │ join-session         │   │  │
-│                            │  └──────────┬──────────┘   │  │
-│                            └─────────────┼──────────────┘  │
-│                                          │                  │
-│                                          ▼                  │
-│                            ┌────────────────────────────┐  │
-│                            │         DynamoDB            │  │
-│                            │  Sessions | Connections     │  │
-│                            │  GameState | PlayerStats    │  │
-│                            └────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                             Browser                                  │
+│  ┌────────────────────┐   WebSocket   ┌──────────────────────────┐  │
+│  │ React + Phaser     │◄─────────────►│ API Gateway (WS API)     │  │
+│  │ Monaco Editor      │               └────────────┬─────────────┘  │
+│  └────────┬───────────┘                            │ observer only  │
+│           │ HTTPS (REST)                            ▼                │
+│           ▼                            ┌──────────────────────────┐  │
+│  ┌────────────────────┐               │   wss-handler Lambda     │  │
+│  │   Cognito (auth)   │               └──────────────────────────┘  │
+│  └────────────────────┘                                             │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────┐
+│                          AWS Backend                                 │
+│                                                                      │
+│  REST (HTTP API)          Lambda Functions                           │
+│  ┌────────────┐    ┌──────────────────────────────────────────┐     │
+│  │ tank-api   │    │ match-runner  (one per active match)      │     │
+│  │ (CRUD,     │    │  ├─ loads WASM from S3 via Wazero         │     │
+│  │  history,  │    │  ├─ runs game loop (≤100 ticks, 100ms ea) │     │
+│  │  replays)  │    │  ├─ broadcasts state to observers         │     │
+│  └─────┬──────┘    │  └─ writes tick log to S3                │     │
+│        │           └──────────────┬───────────────────────────┘     │
+│        │                          │                                  │
+│  ┌─────▼──────────────────────────▼──────────────────────────┐      │
+│  │                         DynamoDB                           │      │
+│  │  tanks | tank-versions | matches | connections | gamedays  │      │
+│  │  rankings                                                  │      │
+│  └────────────────────────────────────────────────────────────┘      │
+│                                                                      │
+│  ┌─────────────────────┐    ┌─────────────────────────────────┐     │
+│  │  S3: wasm-artifacts │    │  S3: match-logs                 │     │
+│  │  (compiled tanks)   │    │  (tick-by-tick JSON per match)  │     │
+│  └─────────────────────┘    └─────────────────────────────────┘     │
+│                                                                      │
+│  EventBridge Scheduler (one rule per Game Day phase)                 │
+│  ┌──────────────────────────────────────────────────────────┐       │
+│  │ tournament-scheduler Lambda                               │       │
+│  │  ├─ registration_close → lock registrations              │       │
+│  │  ├─ round_robin        → pot seeding → spawn match-runner │       │
+│  │  ├─ elimination_rN     → bracket update → spawn matches   │       │
+│  │  └─ final              → champion → ranking-updater       │       │
+│  └──────────────────────────────────────────────────────────┘       │
+│                                                                      │
+│  CodeBuild Project: tank-compiler                                    │
+│  ┌──────────────────────────────────────────────────────────┐       │
+│  │  go build -o tank.wasm (GOOS=wasip1 GOARCH=wasm)         │       │
+│  │  → upload to S3 wasm-artifacts → update tank-versions    │       │
+│  └──────────────────────────────────────────────────────────┘       │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## 3. DynamoDB Table Design
 
-### 3.1 `tankmaze-sessions`
+### 3.1 `tankmaze-tanks`
+
+Tank-level identity and aggregated stats. Never reset by version promotions.
 
 | Attribute | Type | Description |
 |---|---|---|
-| `sessionId` (PK) | String | UUID v4 |
-| `status` | String | `LOBBY \| SELECTING \| ACTIVE \| ENDED` |
-| `maze` | String | JSON-serialized maze grid |
-| `players` | Map | `{ p1: PlayerState, p2: PlayerState }` |
-| `projectiles` | List | Active projectile objects |
-| `tickCount` | Number | Game tick counter |
-| `createdAt` | Number | Unix timestamp |
-| `ttl` | Number | Auto-expire 2h after creation |
+| `tankId` (PK) | String | UUID v4 |
+| `userId` | String | Cognito sub of owner |
+| `name` | String | Display name (from latest config) |
+| `globalScore` | Number | Sum of valid placement points (§6.7) |
+| `bestFinish` | Number | Best placement ever (1 = champion) |
+| `gameDaysCount` | Number | Game Days participated in (within validity window) |
+| `lastActiveAt` | Number | Unix timestamp of last Game Day match |
+| `createdAt` | Number | Unix timestamp of first major version promotion |
 
-### 3.2 `tankmaze-connections`
+GSI: `userId-index` on `userId` — list all tanks for a user.
+
+### 3.2 `tankmaze-tank-versions`
+
+One record per version (major and minor). WASM artifact lives in S3; this table holds the reference and stats.
+
+| Attribute | Type | Description |
+|---|---|---|
+| `tankId` (PK) | String | Foreign key → `tankmaze-tanks` |
+| `version` (SK) | String | `"v0.1"`, `"v1"`, `"v2.3"`, etc. |
+| `versionType` | String | `"major"` or `"minor"` |
+| `config` | Map | Stat allocation (`speed`, `sensorRange`, `damage`, `armor`, `fireRate`) |
+| `wasmS3Key` | String | S3 key of compiled WASM binary (null if compiling or failed) |
+| `sourceS3Key` | String | S3 key of submitted Go source |
+| `wasmSha256` | String | SHA-256 of WASM binary (integrity check before match execution) |
+| `compileStatus` | String | `"pending"` \| `"compiling"` \| `"ready"` \| `"failed"` |
+| `compileError` | String | Compiler output if status = `"failed"` |
+| `registeredForGameDay` | String | gameDayId if registered, null otherwise |
+| `createdAt` | Number | Unix timestamp |
+| `winRate` | Number | (major only) wins ÷ ranked matches |
+| `matchesPlayed` | Number | (major only) total Game Day matches |
+| `avgDamageDealt` | Number | (major only) average damage per ranked match |
+| `avgSurvivalTicks` | Number | (major only) average ticks survived per ranked match |
+| `testMatchCount` | Number | (minor only) test matches run |
+| `disqualified` | Boolean | True if >20% tick violations across any match |
+
+GSI: `userId-version-index` on `userId` (projected from tanks table join) for dashboard queries.
+
+### 3.3 `tankmaze-matches`
+
+One record per match of any type.
+
+| Attribute | Type | Description |
+|---|---|---|
+| `matchId` (PK) | String | UUID v4 |
+| `matchType` | String | `"ranked"` \| `"test-ai"` \| `"test-own"` \| `"informal"` |
+| `gameDayId` | String | Game Day reference (null for non-ranked) |
+| `status` | String | `"scheduled"` \| `"countdown"` \| `"active"` \| `"ended"` |
+| `mazeSeed` | String | Seed used for maze generation |
+| `tankA` | Map | `{ tankId, version }` |
+| `tankB` | Map | `{ tankId, version }` |
+| `tickLogS3Key` | String | S3 key of full tick log (written on match end) |
+| `result` | Map | `{ winner, reason, damageA, damageB, movesA, movesB, ticksElapsed, flawless }` |
+| `createdAt` | Number | Unix timestamp |
+| `ttl` | Number | Auto-expire active-only fields 2h after creation; completed matches kept indefinitely |
+
+GSI: `gameDayId-index` on `gameDayId` — retrieve all matches for a Game Day.  
+GSI: `tankId-index` (on both `tankA.tankId` and `tankB.tankId`, via sparse index) — match history per tank.
+
+### 3.4 `tankmaze-connections`
+
+Observer WebSocket connections only. Tanks are autonomous — no player connections exist.
 
 | Attribute | Type | Description |
 |---|---|---|
 | `connectionId` (PK) | String | API Gateway connection ID |
-| `sessionId` | String | GSI key — maps connection to session |
-| `role` | String | `PLAYER1 \| PLAYER2 \| OBSERVER` |
-| `userId` | String | Cognito sub (null for observers) |
+| `matchId` | String | Match being observed |
 | `ttl` | Number | Auto-expire 2h |
 
-GSI: `sessionId-index` on `sessionId` for broadcasting to all session connections.
+GSI: `matchId-index` on `matchId` — broadcast to all observers of a match.
 
-### 3.3 PlayerState (embedded in session)
+### 3.5 `tankmaze-gamedays`
 
-```typescript
-interface PlayerState {
-  archetype: 'SCOUT' | 'RANGER' | 'BRUISER';
-  position: { x: number; y: number };   // cell coordinates
-  facing: 'N' | 'S' | 'E' | 'W';
-  hp: number;
-  moveCooldownUntil: number;             // epoch ms
-  fireCooldownUntil: number;             // epoch ms
-}
-```
+One record per scheduled Game Day tournament.
+
+| Attribute | Type | Description |
+|---|---|---|
+| `gameDayId` (PK) | String | UUID v4 |
+| `schedule` | Map | Cron expressions per phase (see §6.1) |
+| `phases` | Map | Per-phase status: `{ roundRobin, elimR1, …, final }` each with `{ status, startedAt, endedAt }` |
+| `registeredTanks` | List | `[{ tankId, version }]` — locked at `registration_close` |
+| `groups` | List | Round-robin group assignments post-seeding |
+| `bracket` | Map | Elimination bracket state (seeds, match results per round) |
+| `placementPoints` | Map | `{ tankId: points }` — final placement points awarded |
+| `createdAt` | Number | Unix timestamp |
+
+### 3.6 `tankmaze-rankings`
+
+One record per (tank, game-day) pair. Used to compute rolling Global Score.
+
+| Attribute | Type | Description |
+|---|---|---|
+| `tankId` (PK) | String | Foreign key → `tankmaze-tanks` |
+| `gameDayId` (SK) | String | Foreign key → `tankmaze-gamedays` |
+| `points` | Number | Placement points awarded |
+| `placement` | Number | Final placement (1 = champion) |
+| `expiresAt` | Number | Unix timestamp when points become invalid |
+| `ttl` | Number | DynamoDB auto-expire (same value as `expiresAt`) |
 
 ---
 
-## 4. WebSocket Message Protocol
+## 4. Tank Execution Model
 
-All messages are JSON. Direction: C = Client → Server, S = Server → Client.
+### 4.1 Compilation Pipeline
 
-### 4.1 Client → Server Actions
+```
+[Author saves Go source]
+        │
+        ▼
+[tank-api Lambda]
+  ├─ Static validation (stat sum, Tick signature, import allowlist)
+  ├─ Upload source to S3 (wasm-artifacts/<tankId>/<version>/source.go)
+  ├─ Write tank-versions record (status: "pending")
+  └─ Trigger CodeBuild: tank-compiler project
+        │
+        ▼
+[CodeBuild: tank-compiler]
+  ├─ Download source from S3
+  ├─ go build -o tank.wasm (GOOS=wasip1 GOARCH=wasm)
+  │     └─ SDK package (tankmaze) provided as CodeBuild module cache
+  ├─ On success: upload tank.wasm to S3, compute SHA-256
+  │              update tank-versions (status: "ready", wasmS3Key, wasmSha256)
+  └─ On failure: update tank-versions (status: "failed", compileError)
+```
 
-| Action | Payload | Description |
-|---|---|---|
-| `MOVE` | `{ direction: 'FORWARD'\|'BACKWARD'\|'LEFT'\|'RIGHT' }` | Move or rotate tank |
-| `FIRE` | `{}` | Fire projectile |
-| `SELECT_ARCHETYPE` | `{ archetype: string }` | Choose tank type during selection phase |
-| `READY` | `{}` | Signal ready in lobby |
-| `OBSERVE` | `{ sessionId: string }` | Join as observer |
+Typical CodeBuild compile time: 15–30 s. The editor polls `GET /tanks/{id}/versions/{version}/status` until `ready` or `failed`.
 
-### 4.2 Server → Client Events
+### 4.2 Match Execution (match-runner Lambda)
 
-| Event | Recipient | Payload |
-|---|---|---|
-| `SESSION_CREATED` | P1 | `{ sessionId }` |
-| `PLAYER_JOINED` | P1, P2 | `{ role, archetype? }` |
-| `GAME_START` | All | `{ countdownMs: 3000 }` |
-| `SENSOR_UPDATE` | Player only | `{ wallDistances, proximityAlert, bearing, hp, cooldowns }` |
-| `GAME_STATE` | Observer | Full `{ maze, players, projectiles }` snapshot |
-| `MOVE_ACCEPTED` | Player | `{ newPosition, newFacing }` |
-| `MOVE_REJECTED` | Player | `{ reason }` |
-| `HIT` | All | `{ victim, damageDone, remainingHp }` |
-| `GAME_OVER` | All | `{ winner, stats }` |
-| `ERROR` | Sender | `{ code, message }` |
+Each match runs inside a single Lambda invocation. The Lambda handles the complete game loop — no per-tick scheduling is needed because 100 ticks × 100 ms = 10 s, well within Lambda's 15-minute limit.
+
+```
+[match-runner invoked with matchId]
+  │
+  ├─ Load tank WASM binaries from S3 into /tmp (verify SHA-256)
+  ├─ Instantiate two Wazero runtime instances (one per tank)
+  ├─ Generate maze from mazeSeed
+  ├─ Initialize match state (positions, HP, tick = 0)
+  │
+  └─ Game loop (up to tickLimit iterations):
+        ├─ Call tankA.Tick(sensors)  — Wazero fuel-limited (50 ms)
+        ├─ Call tankB.Tick(sensors)  — Wazero fuel-limited (50 ms)
+        ├─ Process actions (move, rotate, fire, scan, idle)
+        ├─ Advance projectiles
+        ├─ Check collisions and damage
+        ├─ Check win condition → break if met
+        ├─ Append tick record to in-memory log
+        ├─ Broadcast GAME_STATE to observers via API Gateway Management API
+        └─ Sleep remainder of 100 ms tick budget
+
+  ├─ Write full tick log to S3 (match-logs/<matchId>/ticks.json.gz)
+  ├─ Persist result to tankmaze-matches
+  ├─ Update tank-versions stats (winRate, matchesPlayed, etc.)
+  └─ If ranked: invoke ranking-updater Lambda (async)
+```
+
+### 4.3 WASM Sandbox Guarantees
+
+Wazero is configured with:
+- **No WASI filesystem mounts** — tank code cannot read or write files
+- **No network host functions** — no socket access
+- **Fuel limit per Tick() call** — maps to ~50 ms CPU equivalent; exhausted fuel returns `Idle`
+- **Linear memory cap** — 4 MB per module instance
+- **No host function imports** — only the `tankmaze` SDK host functions are registered (`sensors_get`, `log_write`)
 
 ---
 
 ## 5. Lambda Functions
 
-### 5.1 `wss-handler` — WebSocket lifecycle
+### 5.1 `wss-handler`
 
-Handles `$connect`, `$disconnect`, `$default` routes from API Gateway.
+Handles observer WebSocket lifecycle (`$connect`, `$disconnect`, `$default`).
 
-- `$connect`: Validates JWT (Cognito token in query string); stores connection in `tankmaze-connections`.
-- `$disconnect`: Removes connection; triggers disconnect-timeout logic for active games.
-- `$default`: Routes to action handlers by `action` field.
+- `$connect`: validates `matchId` query param; stores connection in `tankmaze-connections`.
+- `$disconnect`: removes connection record.
+- `$default`: routes `OBSERVE` action; sends current match snapshot to new observer.
 
-### 5.2 `game-action` — Player input processing
+### 5.2 `match-runner`
 
-Invoked synchronously from `$default` for `MOVE` and `FIRE` actions.
+Single-invocation match executor (see §4.2). Invoked by `tournament-scheduler` for ranked matches and by `tank-api` for test matches.
 
-Sequence:
-1. Load session from DynamoDB.
-2. Validate action legality (cooldown, game state, wall collision).
-3. Apply state mutation.
-4. Run sensor computation for the acting player.
-5. Persist new session state.
-6. Broadcast appropriate events to connections in session.
+### 5.3 `tournament-scheduler`
 
-### 5.3 `game-tick` — Projectile physics
+Triggered by EventBridge Scheduler rules — one rule per Game Day phase. Phase logic:
 
-Triggered by **EventBridge Scheduler** every **100 ms** per active session.
+| Trigger | Action |
+|---|---|
+| `registration_close` | Lock `registeredTanks` list; compute pot seeding by Global Rank |
+| `round_robin` | Assign groups; invoke `match-runner` for all group matches (parallel) |
+| `elimination_rN` | Read round N results; update bracket; invoke `match-runner` for next-round pairs |
+| `final` | Run final match; determine champion; invoke `ranking-updater` |
 
-- Advances all projectiles one cell.
-- Detects wall hits (destroy projectile).
-- Detects tank hits (apply damage, check win condition).
-- Broadcasts `HIT` and updated `GAME_STATE` (to observers).
-- Terminates when session status = `ENDED`.
+### 5.4 `ranking-updater`
 
-### 5.4 `session-manager`
+Invoked async after each Game Day completes. Computes placements, awards points per §6.6 formula, writes to `tankmaze-rankings`, and recalculates `globalScore` on all participating `tankmaze-tanks` records.
 
-REST endpoint (HTTP API):
-- `POST /sessions` — Create session; generate maze; return `sessionId`.
-- `GET /sessions/{id}` — Public session metadata (for observer join page).
+### 5.5 `tank-api`
 
-### 5.5 `maze-generator`
+HTTP API (REST). All endpoints require Cognito JWT except replay reads.
 
-Internal library (not a standalone Lambda). Exports:
-```typescript
-function generateMaze(width: number, height: number, seed?: string): MazeGrid
-```
-Algorithm: Recursive Backtracking (DFS). Returns a 2D boolean array (`true` = wall).
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/tanks` | Create new tank |
+| `GET` | `/tanks` | List authenticated user's tanks |
+| `GET` | `/tanks/{id}` | Tank detail + version history |
+| `POST` | `/tanks/{id}/versions` | Submit Go source → triggers CodeBuild |
+| `GET` | `/tanks/{id}/versions/{v}/status` | Poll compile status |
+| `POST` | `/tanks/{id}/versions/{v}/promote` | Promote minor → next major |
+| `POST` | `/tanks/{id}/versions/{v}/register` | Register major for next Game Day |
+| `DELETE` | `/tanks/{id}/versions/{v}/register` | Withdraw Game Day registration |
+| `POST` | `/matches` | Start test match (vs AI, vs own tank) |
+| `GET` | `/matches/{id}` | Match metadata + result |
+| `GET` | `/matches/{id}/ticks` | Full tick log (streams from S3) |
+| `GET` | `/rankings` | Global leaderboard |
+| `GET` | `/gamedays/{id}` | Game Day bracket and phase status |
 
 ---
 
 ## 6. Sensor Computation
 
-Run server-side inside `game-action` after every accepted player move.
+Run inside `match-runner` after processing each tank's action. Written in Go.
 
-```
-wallDistances = {
-  N: raycast(position, 'N', sensorRange),
-  S: raycast(position, 'S', sensorRange),
-  E: raycast(position, 'E', sensorRange),
-  W: raycast(position, 'W', sensorRange),
+```go
+func raycast(maze MazeGrid, origin Point, dir Direction, maxRange int) int {
+    for i := 1; i <= maxRange; i++ {
+        next := origin.Step(dir, i)
+        if maze.IsWall(next) {
+            return i - 1
+        }
+    }
+    return maxRange // open corridor up to sensor limit
+}
+
+func computeSensors(state MatchState, tankID string) Sensors {
+    t := state.Tanks[tankID]
+    opp := state.Opponent(tankID)
+    dist := euclidean(t.Position, opp.Position)
+    return Sensors{
+        Facing:          t.Facing,
+        Position:        t.Position,
+        HP:              t.HP,
+        WallDistances:   map[Direction]int{N: raycast(...N), S: ..., E: ..., W: ...},
+        ProximityAlert:  dist <= float64(t.SensorRange*2),
+        OpponentBearing: bearingIfInRange(t, opp, dist),
+        MoveCooldown:    msUntil(t.MoveCooldownUntil),
+        FireCooldown:    msUntil(t.FireCooldownUntil),
+        Tick:            state.Tick,
+    }
 }
 ```
 
-`raycast(origin, direction, maxRange)` walks cells in direction until hitting a wall or reaching `maxRange`. Returns distance in cells (capped at `maxRange` if no wall found — meaning open corridor).
+---
 
-Proximity alert: `euclideanDistance(myPos, opponentPos) ≤ sensorRange`.
-Bearing: 8-direction compass from `myPos` to `opponentPos` (only sent if proximity alert = true).
+## 7. Tick Log Format
+
+Written to S3 as gzip-compressed JSON after each match. Used for replay and data export.
+
+```json
+{
+  "matchId": "...",
+  "mazeSeed": "...",
+  "maze": [[true, false, ...], ...],
+  "tanks": {
+    "a": { "tankId": "...", "version": "v2", "config": { "speed": 3, ... } },
+    "b": { "tankId": "...", "version": "v1", "config": { "speed": 5, ... } }
+  },
+  "ticks": [
+    {
+      "tick": 0,
+      "a": {
+        "sensors":    { "facing": "N", "hp": 100, "wallDistances": {...}, ... },
+        "action":     { "type": "Move", "direction": "Forward" },
+        "durationMs": 12,
+        "violation":  false,
+        "log":        ["initializing..."]
+      },
+      "b": { ... }
+    }
+  ],
+  "result": {
+    "winner": "a",
+    "reason": "opponent_destroyed",
+    "damageA": 0,
+    "damageB": 60,
+    "movesA": 14,
+    "movesB": 9,
+    "ticksElapsed": 43,
+    "flawless": true
+  }
+}
+```
 
 ---
 
-## 7. Frontend Architecture
+## 8. WebSocket Protocol (Observer Only)
+
+Tanks are autonomous — no client-to-server actions exist for controlling tanks. WebSocket connections are observer-only.
+
+### 8.1 Client → Server
+
+| Action | Payload | Description |
+|---|---|---|
+| `OBSERVE` | `{ matchId }` | Request to observe a match (live or triggers replay stream) |
+| `REPLAY_SEEK` | `{ tick }` | Jump to a specific tick in replay mode |
+| `REPLAY_SPEED` | `{ multiplier }` | Set replay speed (0.25, 0.5, 1, 2, 4, 8, or `"step"`) |
+
+### 8.2 Server → Client
+
+| Event | Payload | Description |
+|---|---|---|
+| `MATCH_SNAPSHOT` | Full match state | Sent immediately on observer join |
+| `TICK_UPDATE` | `{ tick, tankA, tankB, projectiles }` | State update each tick (live) or streamed (replay) |
+| `HIT` | `{ victim, damage, remainingHP }` | Damage event |
+| `MATCH_OVER` | `{ winner, reason, stats }` | Match ended |
+| `ERROR` | `{ code, message }` | Connection or request error |
+
+---
+
+## 9. Frontend Architecture
 
 ```
 packages/frontend/src/
-├── App.tsx                  # Routing: /lobby, /game, /observe
-├── scenes/
-│   ├── LobbyScene.ts        # Phaser scene: waiting room
-│   ├── SelectionScene.ts    # Tank archetype picker
-│   ├── GameScene.ts         # Main game (player view — fog of war)
-│   └── ObserverScene.ts     # Full-map observer view
-├── components/
-│   ├── HUD.tsx              # React overlay: HP, cooldowns, session ID
-│   └── GameOver.tsx         # End screen
+├── App.tsx                      # Routing
+├── pages/
+│   ├── Dashboard.tsx            # Tank list, global rank, Game Day schedule
+│   ├── TankEditor.tsx           # Monaco editor + validate/save/promote flow
+│   ├── TankDetail.tsx           # Version history, per-version stats
+│   ├── Watch.tsx                # Live match + replay viewer
+│   ├── Leaderboard.tsx          # Global ranking table
+│   └── GameDay.tsx              # Bracket viewer, phase status
+├── game/
+│   ├── scenes/
+│   │   ├── MatchScene.ts        # Phaser: maze + tank rendering (observer view)
+│   │   └── ObserverHUD.tsx      # React overlay: HP bars, tick counter, speed controls
+│   └── replay/
+│       ├── ReplayController.ts  # Tick seek, speed, step logic
+│       └── DebugPanel.tsx       # Per-tank sensor/memory/log viewer
 ├── services/
-│   ├── ws.ts                # WebSocket client singleton
-│   └── auth.ts              # Amplify/Cognito helpers
-├── store/
-│   └── gameStore.ts         # Zustand state (sensor data, game events)
-└── shared/                  # Symlinked from packages/shared
+│   ├── ws.ts                    # WebSocket client (observer)
+│   ├── api.ts                   # REST client (tank-api)
+│   └── auth.ts                  # Amplify/Cognito helpers
+└── store/
+    └── matchStore.ts            # Zustand: live tick state, replay position
 ```
-
-Phaser scenes handle the canvas rendering. React handles all UI overlays (HUD, modals). They communicate via a shared Zustand store and a custom event bus.
 
 ---
 
-## 8. Infrastructure (CDK Stacks)
+## 10. Infrastructure (CDK Stacks)
 
-### Stack: `AuthStack`
+### `AuthStack`
 - Cognito UserPool + UserPoolClient
-- Email verification enabled
+- Email verification; social login ready
 - Exports: `userPoolId`, `userPoolClientId`
 
-### Stack: `StorageStack`
-- DynamoDB tables: `tankmaze-sessions`, `tankmaze-connections`
-- TTL attributes configured on both
-- Point-in-time recovery enabled
+### `StorageStack`
+- DynamoDB tables: all six tables in §3, TTL and PITR enabled
+- S3 bucket: `wasm-artifacts` (versioned; lifecycle rule deletes minor WASM after 90 days)
+- S3 bucket: `match-logs` (versioned; lifecycle rule transitions to Glacier after 1 year)
 
-### Stack: `ApiStack`
-- API Gateway WebSocket API + routes
-- HTTP API for REST endpoints
-- Lambda functions (with DynamoDB + API Gateway invoke permissions)
-- EventBridge Scheduler rule for game-tick
+### `BuildStack`
+- CodeBuild project: `tank-compiler`
+  - Managed image with Go 1.22
+  - VPC isolated; no internet egress after Go module cache is seeded
+  - Artifacts → `wasm-artifacts` S3 bucket
+  - Buildspec: `go build -o tank.wasm`, SHA-256 computation, S3 upload, DynamoDB update
 
-### Stack: `FrontendStack`
-- S3 bucket (private) + CloudFront distribution
-- OAC (Origin Access Control) for S3
+### `ApiStack`
+- API Gateway WebSocket API + routes (`$connect`, `$disconnect`, `$default`)
+- HTTP API with Cognito JWT authorizer
+- Lambda functions: `wss-handler`, `match-runner`, `tank-api`, `tournament-scheduler`, `ranking-updater`
+- EventBridge Scheduler group: one schedule per Game Day phase (created dynamically when a Game Day is configured)
+- IAM roles: least-privilege per Lambda
+
+### `FrontendStack`
+- S3 bucket (private) + CloudFront distribution with OAC
 - Route53 A record (if domain configured)
 
 ---
 
-## 9. Security
+## 11. Security
 
-- JWT verification on `$connect` (RS256, Cognito JWKS endpoint)
-- Observers exempt from JWT; session ID validated server-side
-- DynamoDB access via IAM roles (no hardcoded credentials)
-- CloudFront enforces HTTPS; S3 bucket not public
-- CORS: API Gateway restricted to CloudFront domain
-- Input validation on all WebSocket action payloads (Zod schemas)
-- Rate limiting: API Gateway throttling (50 req/s per connection)
+| Concern | Control |
+|---|---|
+| Tank code isolation | WASM sandbox; no FS/network/syscall access; Wazero host functions restricted to SDK only |
+| WASM integrity | SHA-256 stored at compile time; verified by `match-runner` before instantiation |
+| Compilation isolation | CodeBuild VPC with no internet egress; Go module proxy seeded in advance |
+| Auth | Cognito JWT (RS256) on all REST and WebSocket endpoints; observers exempt |
+| Tank source privacy | S3 bucket policy: owner only; opponent's source never accessible via API |
+| Replay privacy | Opponent `memory` and `log` fields stripped from API responses for non-owners |
+| DynamoDB access | IAM roles per Lambda; no wildcard resource permissions |
+| HTTPS | CloudFront enforces; S3 bucket not public; API Gateway TLS only |
+| Input validation | All REST payloads validated with Go struct tags + explicit range checks |
+| Rate limiting | API Gateway throttling: 50 req/s per connection; CodeBuild: 1 concurrent build per user |
 
 ---
 
-## 10. CI/CD Pipeline (GitHub Actions)
+## 12. CI/CD Pipeline (GitHub Actions)
 
 ```
 on: push (main), pull_request
 
-Jobs:
-  build-and-test
-    - Install pnpm
-    - pnpm install
-    - pnpm -r typecheck
-    - pnpm -r test
-    - pnpm -r build
+jobs:
+  build-and-test:
+    - go build ./...
+    - go test ./...
+    - go vet ./...
+    - golangci-lint run
+    - cd packages/frontend && pnpm install && pnpm build
 
-  cdk-diff (PRs only)
-    - AWS credentials via OIDC
-    - cdk diff
+  cdk-diff:          # PRs only
+    - AWS OIDC credentials
+    - cdk diff --all
 
-  deploy (main only)
-    - cdk deploy --all
-    - pnpm frontend build
-    - aws s3 sync dist/ s3://<bucket>
-    - CloudFront invalidation
+  deploy:            # main branch only
+    - AWS OIDC credentials
+    - cdk deploy --all --require-approval never
+    - cd packages/frontend && pnpm build
+    - aws s3 sync dist/ s3://$FRONTEND_BUCKET --delete
+    - aws cloudfront create-invalidation --paths "/*"
 ```
 
 ---
 
-## 11. Environment Configuration
+## 13. Environment Configuration
 
 | Variable | Where | Description |
 |---|---|---|
 | `COGNITO_USER_POOL_ID` | Lambda env | Cognito pool ID |
 | `COGNITO_CLIENT_ID` | Lambda env | Cognito app client |
-| `SESSIONS_TABLE` | Lambda env | DynamoDB sessions table name |
-| `CONNECTIONS_TABLE` | Lambda env | DynamoDB connections table name |
+| `TANKS_TABLE` | Lambda env | DynamoDB tanks table |
+| `TANK_VERSIONS_TABLE` | Lambda env | DynamoDB tank-versions table |
+| `MATCHES_TABLE` | Lambda env | DynamoDB matches table |
+| `CONNECTIONS_TABLE` | Lambda env | DynamoDB connections table |
+| `GAMEDAYS_TABLE` | Lambda env | DynamoDB gamedays table |
+| `RANKINGS_TABLE` | Lambda env | DynamoDB rankings table |
+| `WASM_BUCKET` | Lambda env | S3 bucket for WASM artifacts |
+| `MATCH_LOGS_BUCKET` | Lambda env | S3 bucket for tick logs |
 | `APIGW_ENDPOINT` | Lambda env | WS API management endpoint for broadcasting |
+| `CODEBUILD_PROJECT` | Lambda env | tank-compiler CodeBuild project name |
+| `TICK_LIMIT` | Lambda env | Max ticks per match (default: `100`) |
+| `POINTS_VALIDITY_DAYS` | Lambda env | Ranking point validity window (default: `365`) |
 | `VITE_USER_POOL_ID` | Frontend build | Amplify config |
 | `VITE_USER_POOL_CLIENT_ID` | Frontend build | Amplify config |
 | `VITE_WS_ENDPOINT` | Frontend build | WebSocket API URL |
+| `VITE_API_ENDPOINT` | Frontend build | REST API URL |
 
 ---
 
-## 12. Project Structure
+## 14. Project Structure
 
 ```
 tankmaze/
 ├── packages/
-│   ├── frontend/            # React + Phaser game client (Vite)
-│   ├── backend/             # Lambda handlers + game logic
-│   ├── shared/              # Types, constants, maze generator
-│   └── infrastructure/      # AWS CDK stacks
+│   ├── frontend/                # React + Phaser game client (Vite + TypeScript)
+│   │   └── src/
+│   ├── backend/                 # Go Lambda functions
+│   │   ├── cmd/
+│   │   │   ├── wss-handler/
+│   │   │   ├── match-runner/
+│   │   │   ├── tank-api/
+│   │   │   ├── tournament-scheduler/
+│   │   │   └── ranking-updater/
+│   │   └── internal/
+│   │       ├── engine/          # Game loop, collision, sensor computation
+│   │       ├── maze/            # Maze generation (recursive backtracking)
+│   │       ├── wasm/            # Wazero host functions, WASM loader
+│   │       └── db/              # DynamoDB access layer
+│   ├── sdk/                     # Tank author SDK (Go module: github.com/tankmaze/sdk)
+│   │   └── types.go             # Sensors, Action, TankConfig, Direction constants
+│   └── infrastructure/          # AWS CDK stacks (TypeScript)
+│       └── lib/
+│           ├── auth-stack.ts
+│           ├── storage-stack.ts
+│           ├── build-stack.ts
+│           ├── api-stack.ts
+│           └── frontend-stack.ts
 ├── docs/
 │   ├── functional-spec.md
 │   ├── technical-spec.md
 │   └── architecture.md
-├── .github/
-│   └── workflows/
-│       └── ci.yml
-├── package.json             # Root (pnpm workspace)
-├── pnpm-workspace.yaml
+├── .github/workflows/
+│   └── ci.yml
+├── go.work                      # Go workspace (backend + sdk)
 └── README.md
 ```
 
 ---
 
-## 13. Non-Functional Requirements
+## 15. Non-Functional Requirements
 
 | Requirement | Target |
 |---|---|
-| WebSocket message latency | < 100 ms (same region) |
+| WebSocket broadcast latency | < 100 ms per tick (same region) |
 | Game tick interval | 100 ms (10 TPS) |
-| Max concurrent sessions | 100 (soft limit; adjustable) |
-| Session auto-expiry | 2 hours (DynamoDB TTL) |
+| Tick() execution budget | 50 ms per tank per tick (Wazero fuel limit) |
+| Max match duration | 10 s (100 ticks × 100 ms) |
+| Tank compilation time | < 60 s (CodeBuild cold); < 20 s (warm module cache) |
+| Max concurrent matches | 100 (Lambda concurrency limit; adjustable) |
+| Match record retention | Indefinite (S3 + DynamoDB; until account deletion) |
+| WASM minor version retention | 90 days (S3 lifecycle) |
 | Frontend load time | < 3 s (CloudFront cached) |
 | Availability | 99.9% (serverless SLA) |
 | Browser support | Chrome, Firefox, Safari (last 2 versions) |
