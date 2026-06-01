@@ -224,6 +224,8 @@ Only one tank per Author can hold a given score lineage. The platform enforces t
    - Click **Promote to Major** to create the next major version and make it eligible for Game Day.
    - Click **Register for Game Day** to enter the current major version in the next scheduled competition window.
 
+   When starting a test match (either vs. AI or vs. own tank), a **map picker** is shown before the match launches. The Author can select a static map (§7.2) or leave the default (random generation). The selection persists as the user's last-used preference until they change it.
+
 ### 5.4 Tank Dashboard (per tank)
 
 Visible to the Tank Author on their profile. Stats are split into two scopes:
@@ -401,6 +403,12 @@ When all elimination matches are complete (or the scheduled window closes — wh
 | **Informal** | Author invites another author to an unranked match | No |
 | **Rematch** | Both authors agree to re-run a previous Game Day matchup | No |
 
+**Map selection for test matches:** when starting a Test vs. AI or Test vs. Own Tank match, the Author can choose between:
+- **Random map** (default) — a new maze generated per match from a random seed, using the Recursive Backtracking algorithm.
+- **Static map** — one of the platform's built-in static maps (§7.2), or any other map made available by the administrator. Selected by slug (e.g., `donut`, `x`).
+
+Ranked and Informal matches always use randomly generated mazes. Map selection is not available for those match types.
+
 ### 6.5 Match Notification
 
 When a Game Day match involving a tank starts, both Tank Authors receive a notification (browser push notification or email, configurable per user). A live watch link is included. Authors are not required to watch — the match runs regardless of whether anyone is observing.
@@ -488,6 +496,24 @@ Global Score = Σ placement_points(game_day)
 | Open | Passable space |
 | Wall | Impassable; blocks movement and projectiles |
 | Spawn | Starting cell per tank |
+
+### 7.2 Static Testing Maps
+
+In addition to randomly generated mazes, the platform ships a set of **static maps** designed for user testing of basic robot movement. These are fixed layouts — not seeded random generation — intended to give tank authors a predictable, readable arena before entering tournament play.
+
+Static maps are stored in the platform's database and can be selected when starting any test match. New maps can be added by the platform administrator without code changes.
+
+**Built-in maps (v1):**
+
+| Slug | Name | Description |
+|---|---|---|
+| `open` | Open | Only the outer boundary walls. Completely free interior — maximum movement freedom. |
+| `donut` | Donut | A single open corridor running 1 cell inside every outer wall, forming a ring. Tests wall-hugging and turn logic. |
+| `x` | X | Only the two diagonals are open passage; all other interior cells are walls. The diagonal paths connect directly from corner spawn points. Tests diagonal navigation and corner decisions. |
+| `rooms` | Rooms | Four open quadrant rooms — one per corner spawn — connected by a single-cell doorway at the midpoint of each shared interior wall. Tests navigation through chokepoints. |
+| `double-spiral` | Double Spiral | Two mirror-image inward spirals sharing a center junction. Each tank starts at the outer end of one spiral arm, must wind inward through the center, then follow the other spiral outward to reach the opponent. Tests sustained path-following and forces both tanks through the same center crossing. |
+
+All static maps are designed with corner spawn points in mind — tank start positions are always reachable and connected to the rest of the layout.
 
 ---
 

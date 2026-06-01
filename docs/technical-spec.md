@@ -53,7 +53,7 @@
 │  ┌─────▼──────────────────────────▼──────────────────────────┐      │
 │  │                         DynamoDB                           │      │
 │  │  tanks | tank-versions | matches | connections | gamedays  │      │
-│  │  rankings                                                  │      │
+│  │  rankings | maps                                           │      │
 │  └────────────────────────────────────────────────────────────┘      │
 │                                                                      │
 │  ┌─────────────────────┐    ┌─────────────────────────────────┐     │
@@ -139,7 +139,8 @@ One record per match of any type.
 | `matchType` | String | `"ranked"` \| `"test-ai"` \| `"test-own"` \| `"informal"` |
 | `gameDayId` | String | Game Day reference (null for non-ranked) |
 | `status` | String | `"scheduled"` \| `"countdown"` \| `"active"` \| `"ended"` |
-| `mazeSeed` | String | Seed used for maze generation |
+| `mazeSeed` | String | Seed used for random maze generation — `null` when `mapId` is set |
+| `mapId` | String | Static map used for this match (FK → `tankmaze-maps`) — `null` when `mazeSeed` is set; mutually exclusive with `mazeSeed` |
 | `tankA` | Map | `{ tankId, version }` |
 | `tankB` | Map | `{ tankId, version }` |
 | `tickLogS3Key` | String | S3 key of full tick log (written on match end) |
@@ -177,7 +178,29 @@ One record per scheduled Game Day tournament.
 | `placementPoints` | Map | `{ tankId: points }` — final placement points awarded |
 | `createdAt` | Number | Unix timestamp |
 
-### 3.6 `tankmaze-rankings`
+### 3.6 `tankmaze-maps`
+
+One record per static map. Platform-seeded built-in maps and any maps added by the administrator. Not used for ranked matches (those always use randomly generated mazes).
+
+| Attribute | Type | Description |
+|---|---|---|
+| `mapId` (PK) | String | UUID v4 |
+| `slug` | String | URL-safe identifier (e.g., `"open"`, `"donut"`, `"x"`, `"rooms"`, `"double-spiral"`) |
+| `name` | String | Display name shown in the map picker |
+| `description` | String | Short description shown in the map picker |
+| `layout` | List | 25×25 boolean matrix — outer list = rows, inner list = cells; `true` = open/passable, `false` = wall |
+| `isBuiltIn` | Boolean | `true` for platform-seeded maps; built-in maps cannot be deleted |
+| `isActive` | Boolean | `false` hides the map from the picker without deleting it |
+| `createdAt` | Number | Unix timestamp |
+
+GSI: `slug-index` on `slug` — look up a map by slug for API and match-runner use.
+
+**Notes:**
+- The `layout` matrix must have exactly one open cell at each of the four corners (the tank spawn points) reachable from the rest of the open cells.
+- Built-in maps are seeded during CDK deployment via a one-time Lambda custom resource; the `isBuiltIn` flag prevents accidental deletion.
+- The `layout` field is small (625 booleans ≈ 1 KB); no external storage is needed.
+
+### 3.7 `tankmaze-rankings`
 
 One record per (tank, game-day) pair. Used to compute rolling Global Score.
 
@@ -227,7 +250,9 @@ Each match runs inside a single Lambda invocation. The Lambda handles the comple
   │
   ├─ Load tank WASM binaries from S3 into /tmp (verify SHA-256)
   ├─ Instantiate two Wazero runtime instances (one per tank)
-  ├─ Generate maze from mazeSeed
+  ├─ Load maze:
+  │     if match.mapId is set  → fetch layout from tankmaze-maps by mapId
+  │     if match.mazeSeed set  → generate maze via recursive backtracking from seed
   ├─ Initialize match state (positions, HP, tick = 0)
   │
   └─ Game loop (up to tickLimit iterations):
@@ -323,11 +348,14 @@ HTTP API (REST). All endpoints require Cognito JWT except replay reads.
 | `POST` | `/tanks/{id}/versions/{v}/register` | Register major for next Game Day |
 | `DELETE` | `/tanks/{id}/versions/{v}/register` | Withdraw Game Day registration |
 | `POST` | `/tanks/{id}/score-transfer` | Transfer Global Score + ranking history to another tank — body: `{ targetTankId }` |
-| `POST` | `/matches` | Start test match (vs AI, vs own tank) |
+| `POST` | `/matches` | Start test match (vs AI, vs own tank) — body: `{ tankId, version, opponent, mapId? }` — omit `mapId` for random map |
 | `GET` | `/matches/{id}` | Match metadata + result |
 | `GET` | `/matches/{id}/ticks` | Full tick log (streams from S3) |
 | `GET` | `/rankings` | Global leaderboard |
 | `GET` | `/gamedays/{id}` | Game Day bracket and phase status |
+| `GET` | `/maps` | List all active static maps (slug, name, description, layout) — no auth required |
+| `POST` | `/maps` | Create a new static map — admin only (Cognito group `platform-admin`); body: `{ slug, name, description, layout }` |
+| `PATCH` | `/maps/{id}` | Update `name`, `description`, or `isActive` — admin only; `slug` and `layout` are immutable after creation |
 
 ---
 
@@ -472,9 +500,10 @@ packages/frontend/src/
 - Exports: `userPoolId`, `userPoolClientId`
 
 ### `StorageStack`
-- DynamoDB tables: all six tables in §3, TTL and PITR enabled
+- DynamoDB tables: all seven tables in §3, TTL and PITR enabled
 - S3 bucket: `wasm-artifacts` (versioned; lifecycle rule deletes minor WASM after 90 days)
 - S3 bucket: `match-logs` (versioned; lifecycle rule transitions to Glacier after 1 year)
+- Lambda custom resource: seeds built-in static maps into `tankmaze-maps` on first deploy (idempotent — skips records where `isBuiltIn = true` already exists)
 
 ### `BuildStack`
 - CodeBuild project: `tank-compiler`
@@ -556,6 +585,7 @@ jobs:
 | `MATCH_LOGS_BUCKET` | Lambda env | S3 bucket for tick logs |
 | `APIGW_ENDPOINT` | Lambda env | WS API management endpoint for broadcasting |
 | `CODEBUILD_PROJECT` | Lambda env | tank-compiler CodeBuild project name |
+| `MAPS_TABLE` | Lambda env | DynamoDB maps table |
 | `TICK_LIMIT` | Lambda env | Max ticks per match (default: `100`) |
 | `POINTS_VALIDITY_DAYS` | Lambda env | Ranking point validity window (default: `365`) |
 | `VITE_USER_POOL_ID` | Frontend build | Amplify config |
