@@ -9,3 +9,6 @@ cdk.out/
 
 # Go build artifacts
 /dist/
+
+# Local task list
+TODO.md
