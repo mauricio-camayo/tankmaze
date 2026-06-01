@@ -11,35 +11,17 @@ import (
 )
 
 func main() {
-	mapFlag := flag.String("map", "", "static map: open, donut")
 	seedFlag := flag.String("seed", "", "random seed (int64); defaults to current time")
 	flag.Parse()
 
-	var g maze.MazeGrid
-	var label string
-
-	switch *mapFlag {
-	case "open":
-		g = maze.Open()
-		label = "Map: open"
-	case "donut":
-		g = maze.Donut()
-		label = "Map: donut"
-	case "":
-		seed, err := parseSeed(*seedFlag)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		g = maze.Generate(seed)
-		label = fmt.Sprintf("Map: generated  seed: %d", seed)
-	default:
-		fmt.Fprintf(os.Stderr, "unknown map %q — valid options: open, donut\n", *mapFlag)
+	seed, err := parseSeed(*seedFlag)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 
-	fmt.Println(label)
-	fmt.Println()
+	g := maze.Generate(seed, maze.SizeFromEnv())
+	fmt.Printf("seed: %d\n\n", seed)
 	fmt.Print(maze.Render(g))
 }
 

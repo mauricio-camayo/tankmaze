@@ -1,0 +1,106 @@
+package db
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+)
+
+const (
+	PhaseRoundRobin = "roundRobin"
+	PhaseFinal      = "final"
+	// Elimination phase keys follow the pattern "r1", "r2", … (e.g. "r" + strconv.Itoa(round)).
+)
+
+// PutGameDay writes a Game Day record, overwriting any existing record for the
+// same gameDayId.
+func (s *Store) PutGameDay(ctx context.Context, gd GameDay) error {
+	item, err := attributevalue.MarshalMap(gd)
+	if err != nil {
+		return fmt.Errorf("marshal gameday: %w", err)
+	}
+	_, err = s.db.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: &s.gamedaysTable,
+		Item:      item,
+	})
+	return err
+}
+
+// GetGameDay returns the Game Day with the given gameDayId. Returns ErrNotFound
+// if absent.
+func (s *Store) GetGameDay(ctx context.Context, gameDayID string) (GameDay, error) {
+	out, err := s.db.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: &s.gamedaysTable,
+		Key:       gamedayKey(gameDayID),
+	})
+	if err != nil {
+		return GameDay{}, fmt.Errorf("get gameday %s: %w", gameDayID, err)
+	}
+	if len(out.Item) == 0 {
+		return GameDay{}, ErrNotFound
+	}
+	var gd GameDay
+	if err := attributevalue.UnmarshalMap(out.Item, &gd); err != nil {
+		return GameDay{}, fmt.Errorf("unmarshal gameday %s: %w", gameDayID, err)
+	}
+	return gd, nil
+}
+
+// UpdateGameDayPhase updates a single phase's status within a Game Day.
+// phase should be PhaseRoundRobin, PhaseFinal, or an elimination round key
+// such as "r1", "r2", etc.
+//
+// This operation uses a read-modify-write pattern. It is safe for the
+// sequential, event-driven tournament-scheduler access pattern.
+func (s *Store) UpdateGameDayPhase(ctx context.Context, gameDayID, phase string, status PhaseStatus) error {
+	gd, err := s.GetGameDay(ctx, gameDayID)
+	if err != nil {
+		return err
+	}
+	switch phase {
+	case PhaseRoundRobin:
+		gd.Phases.RoundRobin = status
+	case PhaseFinal:
+		gd.Phases.Final = status
+	default:
+		if gd.Phases.Elimination == nil {
+			gd.Phases.Elimination = make(map[string]PhaseStatus)
+		}
+		gd.Phases.Elimination[phase] = status
+	}
+	return s.PutGameDay(ctx, gd)
+}
+
+// UpdateGameDayGroups sets the round-robin group assignments after pot seeding.
+func (s *Store) UpdateGameDayGroups(ctx context.Context, gameDayID string, groups []Group) error {
+	gd, err := s.GetGameDay(ctx, gameDayID)
+	if err != nil {
+		return err
+	}
+	gd.Groups = groups
+	return s.PutGameDay(ctx, gd)
+}
+
+// UpdateGameDayBracket replaces the elimination bracket state. bracket is
+// keyed by round ("r1", "r2", …); each value is the ordered list of slots.
+func (s *Store) UpdateGameDayBracket(ctx context.Context, gameDayID string, bracket map[string][]BracketSlot) error {
+	gd, err := s.GetGameDay(ctx, gameDayID)
+	if err != nil {
+		return err
+	}
+	gd.Bracket = bracket
+	return s.PutGameDay(ctx, gd)
+}
+
+// SetGameDayPlacementPoints records the final placement points for all tanks
+// and is written once by ranking-updater when the Game Day completes.
+func (s *Store) SetGameDayPlacementPoints(ctx context.Context, gameDayID string, points map[string]int) error {
+	gd, err := s.GetGameDay(ctx, gameDayID)
+	if err != nil {
+		return err
+	}
+	gd.PlacementPoints = points
+	return s.PutGameDay(ctx, gd)
+}

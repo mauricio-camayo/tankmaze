@@ -188,7 +188,7 @@ One record per static map. Platform-seeded built-in maps and any maps added by t
 | `slug` | String | URL-safe identifier (e.g., `"open"`, `"donut"`, `"x"`, `"rooms"`, `"double-spiral"`) |
 | `name` | String | Display name shown in the map picker |
 | `description` | String | Short description shown in the map picker |
-| `layout` | List | 25×25 boolean matrix — outer list = rows, inner list = cells; `true` = open/passable, `false` = wall |
+| `layout` | List | N×N boolean matrix — outer list = rows, inner list = cells; `true` = open/passable, `false` = wall. N is the dimension the map was created with; static maps carry their own size independently of `MAZE_SIZE` |
 | `isBuiltIn` | Boolean | `true` for platform-seeded maps; built-in maps cannot be deleted |
 | `isActive` | Boolean | `false` hides the map from the picker without deleting it |
 | `createdAt` | Number | Unix timestamp |
@@ -196,9 +196,9 @@ One record per static map. Platform-seeded built-in maps and any maps added by t
 GSI: `slug-index` on `slug` — look up a map by slug for API and match-runner use.
 
 **Notes:**
-- The `layout` matrix must have exactly one open cell at each of the four corners (the tank spawn points) reachable from the rest of the open cells.
+- The `layout` matrix must be N×N (square). Spawn points sit at (1,1) and (N-2,N-2) — N must be odd and ≥ 5 for these to be valid room cells. Both spawns must be open and reachable from the rest of the open cells.
 - Built-in maps are seeded during CDK deployment via a one-time Lambda custom resource; the `isBuiltIn` flag prevents accidental deletion.
-- The `layout` field is small (625 booleans ≈ 1 KB); no external storage is needed.
+- The `layout` field is small (N² booleans); no external storage is needed. At the default size of 25 this is 625 booleans ≈ 1 KB.
 
 ### 3.7 `tankmaze-rankings`
 
@@ -586,6 +586,7 @@ jobs:
 | `APIGW_ENDPOINT` | Lambda env | WS API management endpoint for broadcasting |
 | `CODEBUILD_PROJECT` | Lambda env | tank-compiler CodeBuild project name |
 | `MAPS_TABLE` | Lambda env | DynamoDB maps table |
+| `MAZE_SIZE` | Lambda env | Dimension of randomly generated mazes (default: `25`; must be an odd integer ≥ 5; does not affect static maps loaded from `tankmaze-maps`) |
 | `TICK_LIMIT` | Lambda env | Max ticks per match (default: `100`) |
 | `POINTS_VALIDITY_DAYS` | Lambda env | Ranking point validity window (default: `365`) |
 | `VITE_USER_POOL_ID` | Frontend build | Amplify config |

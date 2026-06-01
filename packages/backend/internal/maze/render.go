@@ -11,12 +11,12 @@ import "strings"
 //	"B " — SpawnB position
 func Render(g MazeGrid) string {
 	var sb strings.Builder
-	for r := 0; r < Size; r++ {
-		for c := 0; c < Size; c++ {
+	for r := 0; r < g.Size; r++ {
+		for c := 0; c < g.Size; c++ {
 			switch {
-			case r == SpawnA[0] && c == SpawnA[1]:
+			case r == g.SpawnA[0] && c == g.SpawnA[1]:
 				sb.WriteString("A ")
-			case r == SpawnB[0] && c == SpawnB[1]:
+			case r == g.SpawnB[0] && c == g.SpawnB[1]:
 				sb.WriteString("B ")
 			case g.Cells[r][c]:
 				sb.WriteString("  ")

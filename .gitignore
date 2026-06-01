@@ -9,6 +9,8 @@ cdk.out/
 
 # Go build artifacts
 /dist/
+packages/backend/wss-handler
+packages/backend/match-runner
 
 # Local task list
 TODO.md
