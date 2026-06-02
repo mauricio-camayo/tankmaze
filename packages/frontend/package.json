@@ -11,15 +11,18 @@
   },
   "dependencies": {
     "aws-amplify": "^6.0.0",
+    "monaco-editor": "^0.55.1",
     "phaser": "^3.60.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-router-dom": "^7.16.0",
     "zustand": "^4.5.0"
   },
   "devDependencies": {
     "@monaco-editor/react": "^4.6.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
+    "@vitejs/plugin-react": "^4.7.0",
     "typescript": "^5.4.0",
     "vite": "^5.2.0"
   }
