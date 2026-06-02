@@ -1,9 +1,40 @@
 package engine
 
 import (
+	"os"
+	"strconv"
+
 	tankmaze "github.com/tankmaze/sdk"
 	"github.com/tankmaze/backend/internal/maze"
 )
+
+// ProjSpeedFromEnv reads PROJ_SPEED and returns the number of cells a
+// projectile travels per tick. Falls back to 4 when unset or invalid.
+func ProjSpeedFromEnv() int {
+	v := os.Getenv("PROJ_SPEED")
+	if v == "" {
+		return 4
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 {
+		return 4
+	}
+	return n
+}
+
+// WallHitDamageFromEnv reads WALL_HIT_DAMAGE and returns the HP a tank loses
+// when it attempts to move into a wall. Falls back to 1 when unset or invalid.
+func WallHitDamageFromEnv() int {
+	v := os.Getenv("WALL_HIT_DAMAGE")
+	if v == "" {
+		return 1
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return 1
+	}
+	return n
+}
 
 // dirDelta maps a Direction to its (Δrow, Δcol) step.
 // N = row-1, S = row+1, E = col+1, W = col-1.
@@ -94,6 +125,9 @@ func (e *Engine) applyAction(idx int, action tankmaze.Action, crashed bool) []pr
 			t.pos = next
 			t.moveCount++
 			t.moveCooldownMs = moveCooldownFor(t.cfg.Speed)
+		} else if e.wallHitDamage > 0 {
+			// Tank attempted to move into a wall — deal self-inflicted damage.
+			t.hp = max(0, t.hp-e.wallHitDamage)
 		}
 
 	case tankmaze.Fire:
@@ -116,39 +150,41 @@ func isOpen(g maze.MazeGrid, pos [2]int) bool {
 
 // ---- Projectile movement --------------------------------------------------
 
-// advanceProjectiles moves every in-flight projectile one cell and resolves
-// wall and tank impacts. Projectiles fired this tick are not yet in the list
-// (they're added in Step after this call), so they don't move until next tick.
+// advanceProjectiles moves every in-flight projectile e.projSpeed cells and
+// checks every intermediate cell for wall and tank impacts — a projectile
+// cannot tunnel through a target by moving faster than 1 cell per tick.
+// Projectiles fired this tick are not yet in the list (added in Step after
+// this call), so they don't move until next tick.
 func (e *Engine) advanceProjectiles() {
 	live := e.projectiles[:0]
 	for _, p := range e.projectiles {
 		d := dirDelta[p.facing]
-		next := [2]int{p.pos[0] + d[0], p.pos[1] + d[1]}
-
-		if !isOpen(e.grid, next) {
-			// Hit a wall — projectile destroyed, no damage.
-			continue
-		}
-
-		// Check hit on either tank.
-		hit := false
-		for ti := range e.tanks {
-			if e.tanks[ti].hp <= 0 {
-				continue
-			}
-			if e.tanks[ti].pos == next {
-				e.tanks[ti].hp = max(0, e.tanks[ti].hp-p.damage)
-				e.tanks[p.owner].damageDealt += p.damage
-				hit = true
+		destroyed := false
+		for range e.projSpeed {
+			next := [2]int{p.pos[0] + d[0], p.pos[1] + d[1]}
+			if !isOpen(e.grid, next) {
+				destroyed = true
 				break
 			}
+			for ti := range e.tanks {
+				if e.tanks[ti].hp <= 0 {
+					continue
+				}
+				if e.tanks[ti].pos == next {
+					e.tanks[ti].hp = max(0, e.tanks[ti].hp-p.damage)
+					e.tanks[p.owner].damageDealt += p.damage
+					destroyed = true
+					break
+				}
+			}
+			if destroyed {
+				break
+			}
+			p.pos = next
 		}
-		if hit {
-			continue
+		if !destroyed {
+			live = append(live, p)
 		}
-
-		p.pos = next
-		live = append(live, p)
 	}
 	e.projectiles = live
 }

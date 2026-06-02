@@ -38,7 +38,7 @@ func stepN(e *Engine, n int, a, b tankmaze.Action) *Result {
 
 func TestMove_ForwardAdvancesPosition(t *testing.T) {
 	g := openGrid()
-	e := New(g, balancedCfg(), balancedCfg(), 200)
+	e := New(g, balancedCfg(), balancedCfg(), 200, 1, 0)
 	startPos := e.tanks[0].pos
 
 	act := tankmaze.Action{Type: tankmaze.Move, Direction: tankmaze.Forward}
@@ -56,7 +56,7 @@ func TestMove_ForwardAdvancesPosition(t *testing.T) {
 
 func TestMove_BackwardMovesOppositeToFacing(t *testing.T) {
 	g := openGrid()
-	e := New(g, balancedCfg(), balancedCfg(), 200)
+	e := New(g, balancedCfg(), balancedCfg(), 200, 1, 0)
 	// Place tank A at row 3 facing South so backward (North) lands on row 2, which is open.
 	e.tanks[0].pos = [2]int{3, 1}
 	e.tanks[0].prevPos = e.tanks[0].pos
@@ -73,7 +73,7 @@ func TestMove_BackwardMovesOppositeToFacing(t *testing.T) {
 func TestMove_BlockedByWall(t *testing.T) {
 	// SpawnA is (1,1). Facing North, the next cell is (0,1) — the outer wall.
 	g := openGrid()
-	e := New(g, balancedCfg(), balancedCfg(), 200)
+	e := New(g, balancedCfg(), balancedCfg(), 200, 1, 0)
 	e.tanks[0].facing = tankmaze.N // set directly; no rotation ambiguity
 
 	moveAct := tankmaze.Action{Type: tankmaze.Move, Direction: tankmaze.Forward}
@@ -91,7 +91,7 @@ func TestMove_CooldownPreventsDuplicateMove(t *testing.T) {
 	g := openGrid()
 	// Speed=1 → cooldown=500ms → 5 ticks between moves.
 	cfg := tankmaze.TankConfig{Name: "t", Speed: 1, SensorRange: 3, Damage: 3, Armor: 3, FireRate: 3}
-	e := New(g, cfg, balancedCfg(), 200)
+	e := New(g, cfg, balancedCfg(), 200, 1, 0)
 
 	act := tankmaze.Action{Type: tankmaze.Move, Direction: tankmaze.Forward}
 	// Tick 0: moves successfully.
@@ -119,7 +119,7 @@ func TestMove_CooldownPreventsDuplicateMove(t *testing.T) {
 
 func TestRotate_RightClockwise(t *testing.T) {
 	g := openGrid()
-	e := New(g, balancedCfg(), balancedCfg(), 200)
+	e := New(g, balancedCfg(), balancedCfg(), 200, 1, 0)
 
 	// Tank A starts facing South.
 	cases := []tankmaze.Direction{tankmaze.W, tankmaze.N, tankmaze.E, tankmaze.S} // S→W→N→E→S
@@ -134,7 +134,7 @@ func TestRotate_RightClockwise(t *testing.T) {
 
 func TestRotate_LeftCounterClockwise(t *testing.T) {
 	g := openGrid()
-	e := New(g, balancedCfg(), balancedCfg(), 200)
+	e := New(g, balancedCfg(), balancedCfg(), 200, 1, 0)
 
 	// Tank A starts facing South.
 	cases := []tankmaze.Direction{tankmaze.E, tankmaze.N, tankmaze.W, tankmaze.S} // S→E→N→W→S
@@ -151,7 +151,7 @@ func TestRotate_LeftCounterClockwise(t *testing.T) {
 
 func TestFire_ProjectileCreated(t *testing.T) {
 	g := openGrid()
-	e := New(g, balancedCfg(), balancedCfg(), 200)
+	e := New(g, balancedCfg(), balancedCfg(), 200, 1, 0)
 	fireAct := tankmaze.Action{Type: tankmaze.Fire}
 	e.Step(fireAct, idle(), false, false)
 	if len(e.projectiles) != 1 {
@@ -168,7 +168,7 @@ func TestFire_ProjectileCreated(t *testing.T) {
 
 func TestFire_ProjectileAdvancesNextTick(t *testing.T) {
 	g := openGrid()
-	e := New(g, balancedCfg(), balancedCfg(), 200)
+	e := New(g, balancedCfg(), balancedCfg(), 200, 1, 0)
 	startPos := e.tanks[0].pos
 
 	fireAct := tankmaze.Action{Type: tankmaze.Fire}
@@ -181,7 +181,7 @@ func TestFire_ProjectileAdvancesNextTick(t *testing.T) {
 		t.Errorf("projectile should not move on fire tick; got %v, want %v", e.projectiles[0].pos, startPos)
 	}
 
-	e.Step(idle(), idle(), false, false) // tick 1: projectile moves south to (2,1)
+	e.Step(idle(), idle(), false, false) // tick 1: projectile moves 1 cell south (projSpeed=1)
 	d := dirDelta[tankmaze.S]
 	want := [2]int{startPos[0] + d[0], startPos[1] + d[1]}
 	if len(e.projectiles) == 0 {
@@ -195,7 +195,7 @@ func TestFire_ProjectileAdvancesNextTick(t *testing.T) {
 func TestFire_ProjectileDestroyedByWall(t *testing.T) {
 	// Tank A at (1,1) facing West — the cell at (1,0) is an outer wall.
 	g := openGrid()
-	e := New(g, balancedCfg(), balancedCfg(), 200)
+	e := New(g, balancedCfg(), balancedCfg(), 200, 1, 0)
 	e.tanks[0].facing = tankmaze.W // face West; (1,0) is wall
 
 	fireAct := tankmaze.Action{Type: tankmaze.Fire}
@@ -210,7 +210,7 @@ func TestFire_ProjectileHitsTank(t *testing.T) {
 	// Place tank B directly in front of tank A (tank A facing South at row 1,
 	// place tank B at row 2, same col). Fire and advance.
 	g := openGrid()
-	e := New(g, balancedCfg(), balancedCfg(), 200)
+	e := New(g, balancedCfg(), balancedCfg(), 200, 1, 0)
 	e.tanks[1].pos = [2]int{e.tanks[0].pos[0] + 2, e.tanks[0].pos[1]} // 2 rows south
 	initialHP := e.tanks[1].hp
 
@@ -235,7 +235,7 @@ func TestFire_CooldownPreventsRapidFire(t *testing.T) {
 	g := openGrid()
 	// FireRate=1 → cooldown=2000ms → 20 ticks between shots.
 	cfg := tankmaze.TankConfig{Name: "t", Speed: 3, SensorRange: 3, Damage: 3, Armor: 3, FireRate: 1}
-	e := New(g, cfg, balancedCfg(), 200)
+	e := New(g, cfg, balancedCfg(), 200, 1, 0)
 
 	fireAct := tankmaze.Action{Type: tankmaze.Fire}
 	e.Step(fireAct, idle(), false, false) // tick 0: fires
@@ -251,7 +251,7 @@ func TestFire_CooldownPreventsRapidFire(t *testing.T) {
 
 func TestCollision_BothTanksConverge(t *testing.T) {
 	g := openGrid()
-	e := New(g, balancedCfg(), balancedCfg(), 200)
+	e := New(g, balancedCfg(), balancedCfg(), 200, 1, 0)
 
 	// Place tanks one cell apart so a forward move causes convergence.
 	// A at (5,5) facing East, B at (5,6) facing West.
@@ -276,7 +276,7 @@ func TestCollision_BothTanksConverge(t *testing.T) {
 
 func TestCollision_SwapDetected(t *testing.T) {
 	g := openGrid()
-	e := New(g, balancedCfg(), balancedCfg(), 200)
+	e := New(g, balancedCfg(), balancedCfg(), 200, 1, 0)
 
 	// A at (5,5) facing East, B at (5,6) facing West — but one step apart.
 	// Wait — a swap means A moves to B's cell and B moves to A's cell.
@@ -305,7 +305,7 @@ func TestCollision_SwapDetected(t *testing.T) {
 
 func TestWin_ByDestruction(t *testing.T) {
 	g := openGrid()
-	e := New(g, balancedCfg(), balancedCfg(), 200)
+	e := New(g, balancedCfg(), balancedCfg(), 200, 1, 0)
 
 	// Set tank B HP to 1, position tank B one step ahead of a projectile that will hit.
 	e.tanks[1].hp = 1
@@ -328,7 +328,7 @@ func TestWin_ByDestruction(t *testing.T) {
 
 func TestWin_Flawless(t *testing.T) {
 	g := openGrid()
-	e := New(g, balancedCfg(), balancedCfg(), 200)
+	e := New(g, balancedCfg(), balancedCfg(), 200, 1, 0)
 
 	e.tanks[1].hp = 1
 	e.tanks[1].pos = [2]int{e.tanks[0].pos[0] + 1, e.tanks[0].pos[1]}
@@ -344,7 +344,7 @@ func TestWin_Flawless(t *testing.T) {
 
 func TestWin_NotFlawlessWhenDamageTaken(t *testing.T) {
 	g := openGrid()
-	e := New(g, balancedCfg(), balancedCfg(), 200)
+	e := New(g, balancedCfg(), balancedCfg(), 200, 1, 0)
 	e.tanks[0].hp = 95 // simulate tank A took 5 damage
 
 	e.tanks[1].hp = 1
@@ -360,7 +360,7 @@ func TestWin_NotFlawlessWhenDamageTaken(t *testing.T) {
 
 func TestWin_BothLoseFromProjectiles(t *testing.T) {
 	g := openGrid()
-	e := New(g, balancedCfg(), balancedCfg(), 200)
+	e := New(g, balancedCfg(), balancedCfg(), 200, 1, 0)
 
 	// Both tanks at 1 HP, each has an in-flight projectile aimed at the other.
 	e.tanks[0].hp = 1
@@ -384,7 +384,7 @@ func TestWin_BothLoseFromProjectiles(t *testing.T) {
 
 func TestWin_ByCrash(t *testing.T) {
 	g := openGrid()
-	e := New(g, balancedCfg(), balancedCfg(), 200)
+	e := New(g, balancedCfg(), balancedCfg(), 200, 1, 0)
 
 	r := e.Step(idle(), idle(), true, false) // tank A crashes
 	if r == nil || r.Winner != 1 || r.Reason != ReasonCodeCrash {
@@ -394,7 +394,7 @@ func TestWin_ByCrash(t *testing.T) {
 
 func TestWin_BothCrash(t *testing.T) {
 	g := openGrid()
-	e := New(g, balancedCfg(), balancedCfg(), 200)
+	e := New(g, balancedCfg(), balancedCfg(), 200, 1, 0)
 
 	r := e.Step(idle(), idle(), true, true)
 	if r == nil || r.Winner != -1 || r.Reason != ReasonCodeCrash {
@@ -404,7 +404,7 @@ func TestWin_BothCrash(t *testing.T) {
 
 func TestWin_TickLimit_DamageTiebreak(t *testing.T) {
 	g := openGrid()
-	e := New(g, balancedCfg(), balancedCfg(), 1)
+	e := New(g, balancedCfg(), balancedCfg(), 1, 1, 0)
 
 	e.tanks[0].damageDealt = 20
 	e.tanks[1].damageDealt = 10
@@ -417,7 +417,7 @@ func TestWin_TickLimit_DamageTiebreak(t *testing.T) {
 
 func TestWin_TickLimit_MovesTiebreak(t *testing.T) {
 	g := openGrid()
-	e := New(g, balancedCfg(), balancedCfg(), 1)
+	e := New(g, balancedCfg(), balancedCfg(), 1, 1, 0)
 
 	e.tanks[0].moveCount = 5
 	e.tanks[1].moveCount = 3
@@ -430,7 +430,7 @@ func TestWin_TickLimit_MovesTiebreak(t *testing.T) {
 
 func TestWin_TickLimit_BothLose(t *testing.T) {
 	g := openGrid()
-	e := New(g, balancedCfg(), balancedCfg(), 1)
+	e := New(g, balancedCfg(), balancedCfg(), 1, 1, 0)
 
 	r := e.Step(idle(), idle(), false, false)
 	if r == nil || r.Winner != -1 || r.Reason != ReasonBothLose {
@@ -442,7 +442,7 @@ func TestWin_TickLimit_BothLose(t *testing.T) {
 
 func TestSensors_WallDistances(t *testing.T) {
 	g := openGrid()
-	e := New(g, balancedCfg(), balancedCfg(), 200)
+	e := New(g, balancedCfg(), balancedCfg(), 200, 1, 0)
 
 	// Tank A at (1,1) facing South, sensorRange=3 → maxRange=6.
 	// North: outer wall at row 0 → distance 0.
@@ -462,7 +462,7 @@ func TestSensors_WallDistances(t *testing.T) {
 
 func TestSensors_ProximityAndBearing(t *testing.T) {
 	g := openGrid()
-	e := New(g, balancedCfg(), balancedCfg(), 200)
+	e := New(g, balancedCfg(), balancedCfg(), 200, 1, 0)
 
 	// Place tank B 2 cells south of tank A — well within sensorRange*2=6.
 	e.tanks[1].pos = [2]int{e.tanks[0].pos[0] + 2, e.tanks[0].pos[1]}
@@ -478,7 +478,7 @@ func TestSensors_ProximityAndBearing(t *testing.T) {
 
 func TestSensors_NoProximityWhenFar(t *testing.T) {
 	g := openGrid()
-	e := New(g, balancedCfg(), balancedCfg(), 200)
+	e := New(g, balancedCfg(), balancedCfg(), 200, 1, 0)
 	// Default positions: SpawnA=(1,1), SpawnB=(23,23) — far apart.
 	s := e.Sensors(0)
 	if s.ProximityAlert {

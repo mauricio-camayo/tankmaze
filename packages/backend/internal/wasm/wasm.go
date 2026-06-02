@@ -68,11 +68,16 @@ const (
 	tickTimeout    = 50 * time.Millisecond
 	// Standard Go wasip1 binaries require ~275 pages minimum for the runtime.
 	// TinyGo fits in ~32; keep a headroom ceiling of 512 pages (32 MiB).
-	maxMemoryPages = 512 // 512 × 64 KiB = 32 MiB
-	hostModule     = "tankmaze"
-	fnSensorsGet   = "sensors_get"
-	fnLogWrite     = "log_write"
-	fnActionPut    = "action_put"
+	maxMemoryPages   = 512 // 512 × 64 KiB = 32 MiB
+	hostModule       = "tankmaze"
+	fnSensorsGet     = "sensors_get"
+	fnLogWrite       = "log_write"
+	fnActionPut      = "action_put"
+	fnConfigRegister = "config_register"
+
+	// configTimeout is how long LoadBytes waits for the tank to call
+	// config_register before giving up and proceeding without a config.
+	configTimeout = 5 * time.Second
 )
 
 // tickRequest is sent from the host's Tick call to the background goroutine.
@@ -101,7 +106,16 @@ type Module struct {
 	// Per-tick state; only the background goroutine reads/writes these.
 	curReq  *tickRequest
 	curLogs []string
+
+	// tankCfg is populated when the WASM calls the config_register host function
+	// at the start of main(), before entering the game loop.
+	tankCfg   *tankmaze.TankConfig
+	tankCfgCh chan struct{} // closed once tankCfg is set (or module crashes/exits)
 }
+
+// TankConfig returns the tank's self-declared stat allocation, or nil if the
+// module did not call config_register before the wait timeout elapsed.
+func (m *Module) TankConfig() *tankmaze.TankConfig { return m.tankCfg }
 
 // Load reads the WASM binary at wasmPath, optionally verifies its SHA-256
 // against expectedSHA256 (hex), and starts the module. The module begins
@@ -128,10 +142,11 @@ func LoadBytes(ctx context.Context, wasmBytes []byte) (*Module, error) {
 	bgCtx, cancel := context.WithCancel(context.Background())
 
 	m := &Module{
-		cancel:  cancel,
-		tickCh:  make(chan tickRequest), // unbuffered
-		crashCh: make(chan struct{}),
-		doneCh:  make(chan struct{}),
+		cancel:    cancel,
+		tickCh:    make(chan tickRequest), // unbuffered
+		crashCh:   make(chan struct{}),
+		doneCh:    make(chan struct{}),
+		tankCfgCh: make(chan struct{}),
 	}
 
 	m.rt = wazero.NewRuntimeWithConfig(ctx,
@@ -174,8 +189,19 @@ func LoadBytes(ctx context.Context, wasmBytes []byte) (*Module, error) {
 	}
 
 	go m.run(bgCtx, mod)
+
+	// The tank calls config_register at the start of main(), before the game
+	// loop blocks on sensors_get. Wait here so TankConfig() is populated by
+	// the time Load returns.
+	select {
+	case <-m.tankCfgCh:
+	case <-m.crashCh:
+	case <-m.doneCh:
+	case <-time.After(configTimeout):
+	}
 	return m, nil
 }
+
 
 // Tick delivers sensor data to the tank and waits for its action decision.
 //
@@ -298,6 +324,9 @@ func (m *Module) registerHostFunctions(ctx context.Context) error {
 		NewFunctionBuilder().
 		WithFunc(m.hostActionPut).
 		Export(fnActionPut).
+		NewFunctionBuilder().
+		WithFunc(m.hostConfigRegister).
+		Export(fnConfigRegister).
 		Instantiate(ctx)
 	return err
 }
@@ -325,6 +354,23 @@ func (m *Module) hostSensorsGet(ctx context.Context, mod api.Module, ptr, cap ui
 		return int32(len(data))
 	case <-ctx.Done():
 		return -1
+	}
+}
+
+// hostConfigRegister is called by the tank at the very start of main(), before
+// entering the game loop. It reads the JSON-encoded TankConfig from WASM memory
+// and stores it, then signals the waiting LoadBytes goroutine.
+func (m *Module) hostConfigRegister(_ context.Context, mod api.Module, ptr, length uint32) {
+	if data, ok := mod.Memory().Read(ptr, length); ok {
+		var cfg tankmaze.TankConfig
+		if json.Unmarshal(data, &cfg) == nil {
+			m.tankCfg = &cfg
+		}
+	}
+	select {
+	case <-m.tankCfgCh:
+	default:
+		close(m.tankCfgCh)
 	}
 }
 

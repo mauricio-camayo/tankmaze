@@ -79,23 +79,27 @@ type tankState struct {
 
 // Engine drives the match. Create with New; call Sensors then Step each tick.
 type Engine struct {
-	grid        maze.MazeGrid
-	tanks       [2]tankState
-	projectiles []projectile
-	tick        int
-	tickLimit   int
+	grid          maze.MazeGrid
+	tanks         [2]tankState
+	projectiles   []projectile
+	tick          int
+	tickLimit     int
+	projSpeed     int // cells a projectile travels per tick
+	wallHitDamage int // HP lost when a tank attempts to move into a wall
 }
 
 // New initialises a match. Tank A spawns at SpawnA facing South; tank B spawns
 // at SpawnB facing North.
-func New(grid maze.MazeGrid, cfgA, cfgB tankmaze.TankConfig, tickLimit int) *Engine {
+func New(grid maze.MazeGrid, cfgA, cfgB tankmaze.TankConfig, tickLimit, projSpeed, wallHitDamage int) *Engine {
 	return &Engine{
 		grid: grid,
 		tanks: [2]tankState{
 			newTank(cfgA, grid.SpawnA, tankmaze.S),
 			newTank(cfgB, grid.SpawnB, tankmaze.N),
 		},
-		tickLimit: tickLimit,
+		tickLimit:     tickLimit,
+		projSpeed:     projSpeed,
+		wallHitDamage: wallHitDamage,
 	}
 }
 

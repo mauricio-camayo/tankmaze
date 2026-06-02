@@ -11,6 +11,7 @@ cdk.out/
 /dist/
 packages/backend/wss-handler
 packages/backend/match-runner
+packages/backend/matchdebug
 
 # Local task list
 TODO.md

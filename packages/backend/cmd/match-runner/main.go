@@ -142,12 +142,14 @@ type matchOverStats struct {
 // ---- Handler ----------------------------------------------------------------
 
 type handler struct {
-	store      *db.Store
-	s3         *s3.Client
-	apigw      *apigatewaymanagementapi.Client
-	wasmBucket string
-	logsBucket string
-	tickLimit  int
+	store         *db.Store
+	s3            *s3.Client
+	apigw         *apigatewaymanagementapi.Client
+	wasmBucket    string
+	logsBucket    string
+	tickLimit     int
+	projSpeed     int
+	wallHitDamage int
 }
 
 var h *handler
@@ -172,9 +174,11 @@ func main() {
 		apigw: apigatewaymanagementapi.NewFromConfig(cfg, func(o *apigatewaymanagementapi.Options) {
 			o.BaseEndpoint = aws.String(os.Getenv("APIGW_ENDPOINT"))
 		}),
-		wasmBucket: os.Getenv("WASM_BUCKET"),
-		logsBucket: os.Getenv("MATCH_LOGS_BUCKET"),
-		tickLimit:  tickLimit,
+		wasmBucket:    os.Getenv("WASM_BUCKET"),
+		logsBucket:    os.Getenv("MATCH_LOGS_BUCKET"),
+		tickLimit:     tickLimit,
+		projSpeed:     engine.ProjSpeedFromEnv(),
+		wallHitDamage: engine.WallHitDamageFromEnv(),
 	}
 
 	lambda.Start(h.handle)
@@ -233,7 +237,7 @@ func (h *handler) handle(ctx context.Context, evt matchEvent) error {
 
 	cfgA := versionToTankConfig(verA)
 	cfgB := versionToTankConfig(verB)
-	eng := engine.New(grid, cfgA, cfgB, h.tickLimit)
+	eng := engine.New(grid, cfgA, cfgB, h.tickLimit, h.projSpeed, h.wallHitDamage)
 
 	modA, err := wasm.Load(ctx, wasmPathA, verA.WasmSHA256)
 	if err != nil {
