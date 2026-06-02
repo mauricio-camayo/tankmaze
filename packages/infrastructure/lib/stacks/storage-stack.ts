@@ -1,0 +1,177 @@
+import * as path from 'path';
+import { Stack, StackProps, RemovalPolicy, Duration } from 'aws-cdk-lib';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import { Trigger } from 'aws-cdk-lib/triggers';
+import { Construct } from 'constructs';
+
+// Env var names read by db.New() — keep in sync with internal/db/db.go
+export interface TableSet {
+  tanks: dynamodb.Table;
+  tankVersions: dynamodb.Table;
+  matches: dynamodb.Table;
+  connections: dynamodb.Table;
+  gamedays: dynamodb.Table;
+  rankings: dynamodb.Table;
+  maps: dynamodb.Table;
+}
+
+// Env var map for Lambda functions
+export function tableEnvVars(t: TableSet): Record<string, string> {
+  return {
+    TANKS_TABLE:         t.tanks.tableName,
+    TANK_VERSIONS_TABLE: t.tankVersions.tableName,
+    MATCHES_TABLE:       t.matches.tableName,
+    CONNECTIONS_TABLE:   t.connections.tableName,
+    GAMEDAYS_TABLE:      t.gamedays.tableName,
+    RANKINGS_TABLE:      t.rankings.tableName,
+    MAPS_TABLE:          t.maps.tableName,
+  };
+}
+
+export class StorageStack extends Stack {
+  readonly tables: TableSet;
+  readonly wasmBucket: s3.Bucket;
+  readonly matchLogsBucket: s3.Bucket;
+
+  constructor(scope: Construct, id: string, props: StackProps) {
+    super(scope, id, props);
+
+    // ---- DynamoDB tables -----------------------------------------------
+
+    const tanks = new dynamodb.Table(this, 'TanksTable', {
+      tableName: 'tankmaze-tanks',
+      partitionKey: { name: 'tankId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: true,
+      timeToLiveAttribute: 'ttl',
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+    tanks.addGlobalSecondaryIndex({
+      indexName: 'userId-index',
+      partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    const tankVersions = new dynamodb.Table(this, 'TankVersionsTable', {
+      tableName: 'tankmaze-tank-versions',
+      partitionKey: { name: 'tankId', type: dynamodb.AttributeType.STRING },
+      sortKey:      { name: 'version', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: true,
+      timeToLiveAttribute: 'ttl',
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    const matches = new dynamodb.Table(this, 'MatchesTable', {
+      tableName: 'tankmaze-matches',
+      partitionKey: { name: 'matchId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: true,
+      timeToLiveAttribute: 'ttl',
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    const connections = new dynamodb.Table(this, 'ConnectionsTable', {
+      tableName: 'tankmaze-connections',
+      partitionKey: { name: 'connectionId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: true,
+      timeToLiveAttribute: 'ttl',
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    const gamedays = new dynamodb.Table(this, 'GamedaysTable', {
+      tableName: 'tankmaze-gamedays',
+      partitionKey: { name: 'gameDayId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: true,
+      timeToLiveAttribute: 'ttl',
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    const rankings = new dynamodb.Table(this, 'RankingsTable', {
+      tableName: 'tankmaze-rankings',
+      partitionKey: { name: 'tankId',    type: dynamodb.AttributeType.STRING },
+      sortKey:      { name: 'gameDayId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: true,
+      timeToLiveAttribute: 'ttl',
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    const maps = new dynamodb.Table(this, 'MapsTable', {
+      tableName: 'tankmaze-maps',
+      partitionKey: { name: 'mapId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: true,
+      timeToLiveAttribute: 'ttl',
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    this.tables = { tanks, tankVersions, matches, connections, gamedays, rankings, maps };
+
+    // ---- S3 buckets ----------------------------------------------------
+
+    this.wasmBucket = new s3.Bucket(this, 'WasmArtifacts', {
+      bucketName: `tankmaze-wasm-artifacts-${this.account}`,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      enforceSSL: true,
+      removalPolicy: RemovalPolicy.RETAIN,
+      versioned: false,
+      lifecycleRules: [
+        {
+          id: 'expire-minor-wasm',
+          tagFilters: { versionType: 'minor' },
+          expiration: Duration.days(90),
+        },
+      ],
+    });
+
+    // Deploy tankmaze SDK source to wasm-artifacts so the CodeBuild buildspec
+    // can download it without internet access.
+    new s3deploy.BucketDeployment(this, 'SdkDeployment', {
+      sources: [s3deploy.Source.asset(path.join(__dirname, '../../../sdk'))],
+      destinationBucket: this.wasmBucket,
+      destinationKeyPrefix: 'sdk/',
+      prune: false,
+    });
+
+    this.matchLogsBucket = new s3.Bucket(this, 'MatchLogs', {
+      bucketName: `tankmaze-match-logs-${this.account}`,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      enforceSSL: true,
+      removalPolicy: RemovalPolicy.RETAIN,
+      lifecycleRules: [
+        {
+          id: 'archive-to-glacier',
+          transitions: [
+            {
+              storageClass: s3.StorageClass.GLACIER,
+              transitionAfter: Duration.days(365),
+            },
+          ],
+        },
+      ],
+    });
+
+    // ---- Built-in map seeder -------------------------------------------
+
+    const seederFn = new lambda.Function(this, 'MapSeeder', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../lib/map-seeder')),
+      environment: { TABLE_NAME: maps.tableName },
+      timeout: Duration.seconds(60),
+    });
+    maps.grantWriteData(seederFn);
+    maps.grantReadData(seederFn);
+
+    new Trigger(this, 'MapSeedTrigger', {
+      handler: seederFn,
+      executeAfter: [maps],
+    });
+  }
+}

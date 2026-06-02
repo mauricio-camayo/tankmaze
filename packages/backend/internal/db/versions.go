@@ -127,6 +127,74 @@ func (s *Store) SetVersionDisqualified(ctx context.Context, tankID, version stri
 	return err
 }
 
+// ScanVersionsByGameDay returns all version records whose registeredForGameDay
+// attribute equals gameDayID. This requires a full table scan.
+func (s *Store) ScanVersionsByGameDay(ctx context.Context, gameDayID string) ([]TankVersion, error) {
+	filt := expression.Name("registeredForGameDay").Equal(expression.Value(gameDayID))
+	expr, err := expression.NewBuilder().WithFilter(filt).Build()
+	if err != nil {
+		return nil, fmt.Errorf("build expression: %w", err)
+	}
+	input := &dynamodb.ScanInput{
+		TableName:                 &s.versionsTable,
+		FilterExpression:          expr.Filter(),
+		ExpressionAttributeNames:  expr.Names(),
+		ExpressionAttributeValues: expr.Values(),
+	}
+	var versions []TankVersion
+	for {
+		out, err := s.db.Scan(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("scan versions by gameday %s: %w", gameDayID, err)
+		}
+		var batch []TankVersion
+		if err := attributevalue.UnmarshalListOfMaps(out.Items, &batch); err != nil {
+			return nil, fmt.Errorf("unmarshal versions: %w", err)
+		}
+		versions = append(versions, batch...)
+		if out.LastEvaluatedKey == nil {
+			break
+		}
+		input.ExclusiveStartKey = out.LastEvaluatedKey
+	}
+	return versions, nil
+}
+
+// ListVersionsByTank returns all version records for the given tankId, sorted by
+// the DynamoDB sort key (version string).
+func (s *Store) ListVersionsByTank(ctx context.Context, tankID string) ([]TankVersion, error) {
+	keyExpr := expression.Key("tankId").Equal(expression.Value(tankID))
+	expr, err := expression.NewBuilder().WithKeyCondition(keyExpr).Build()
+	if err != nil {
+		return nil, fmt.Errorf("build expression: %w", err)
+	}
+
+	input := &dynamodb.QueryInput{
+		TableName:                 &s.versionsTable,
+		KeyConditionExpression:    expr.KeyCondition(),
+		ExpressionAttributeNames:  expr.Names(),
+		ExpressionAttributeValues: expr.Values(),
+	}
+
+	var versions []TankVersion
+	for {
+		out, err := s.db.Query(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("query versions for tank %s: %w", tankID, err)
+		}
+		var batch []TankVersion
+		if err := attributevalue.UnmarshalListOfMaps(out.Items, &batch); err != nil {
+			return nil, fmt.Errorf("unmarshal versions: %w", err)
+		}
+		versions = append(versions, batch...)
+		if out.LastEvaluatedKey == nil {
+			break
+		}
+		input.ExclusiveStartKey = out.LastEvaluatedKey
+	}
+	return versions, nil
+}
+
 // UpdateVersionStats overwrites the post-match performance stats on a major version.
 func (s *Store) UpdateVersionStats(ctx context.Context, tankID, version string, st VersionStats) error {
 	upd := expression.Set(expression.Name("winRate"), expression.Value(st.WinRate)).

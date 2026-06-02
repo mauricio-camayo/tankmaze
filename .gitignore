@@ -12,6 +12,9 @@ cdk.out/
 packages/backend/wss-handler
 packages/backend/match-runner
 packages/backend/matchdebug
+packages/backend/ranking-updater
+packages/backend/tank-api
+packages/backend/tournament-scheduler
 
 # Local task list
 TODO.md

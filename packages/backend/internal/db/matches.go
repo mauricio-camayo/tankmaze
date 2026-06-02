@@ -58,6 +58,39 @@ func (s *Store) UpdateMatchStatus(ctx context.Context, matchID, status string) e
 	return err
 }
 
+// ScanMatchesByGameDay returns all match records with the given gameDayId.
+// This requires a full table scan since there is no GSI on gameDayId.
+func (s *Store) ScanMatchesByGameDay(ctx context.Context, gameDayID string) ([]Match, error) {
+	filt := expression.Name("gameDayId").Equal(expression.Value(gameDayID))
+	expr, err := expression.NewBuilder().WithFilter(filt).Build()
+	if err != nil {
+		return nil, fmt.Errorf("build expression: %w", err)
+	}
+	input := &dynamodb.ScanInput{
+		TableName:                 &s.matchesTable,
+		FilterExpression:          expr.Filter(),
+		ExpressionAttributeNames:  expr.Names(),
+		ExpressionAttributeValues: expr.Values(),
+	}
+	var matches []Match
+	for {
+		out, err := s.db.Scan(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("scan matches by gameday %s: %w", gameDayID, err)
+		}
+		var batch []Match
+		if err := attributevalue.UnmarshalListOfMaps(out.Items, &batch); err != nil {
+			return nil, fmt.Errorf("unmarshal matches: %w", err)
+		}
+		matches = append(matches, batch...)
+		if out.LastEvaluatedKey == nil {
+			break
+		}
+		input.ExclusiveStartKey = out.LastEvaluatedKey
+	}
+	return matches, nil
+}
+
 // SetMatchResult atomically writes the match result, tick-log S3 key, and
 // sets status to "ended". Called by match-runner on match completion.
 func (s *Store) SetMatchResult(ctx context.Context, matchID, tickLogS3Key string, result MatchResult) error {

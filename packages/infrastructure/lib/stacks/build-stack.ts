@@ -1,0 +1,129 @@
+import { Stack, StackProps } from 'aws-cdk-lib';
+import * as codebuild from 'aws-cdk-lib/aws-codebuild';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as s3 from 'aws-cdk-lib/aws-s3';
+import { Construct } from 'constructs';
+import { TableSet } from './storage-stack';
+
+interface BuildStackProps extends StackProps {
+  wasmBucket: s3.Bucket;
+  tables: TableSet;
+}
+
+export class BuildStack extends Stack {
+  readonly project: codebuild.Project;
+
+  constructor(scope: Construct, id: string, props: BuildStackProps) {
+    super(scope, id, props);
+
+    // Isolated VPC — no internet egress, VPC gateway endpoints for S3 and DynamoDB.
+    // This prevents compiled WASM from making outbound network calls at build time.
+    const vpc = new ec2.Vpc(this, 'BuildVpc', {
+      maxAzs: 2,
+      natGateways: 0,
+      subnetConfiguration: [
+        {
+          cidrMask: 24,
+          name: 'isolated',
+          subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
+        },
+      ],
+    });
+
+    // Gateway endpoints allow the build container to reach S3 and DynamoDB
+    // without traversing the public internet.
+    vpc.addGatewayEndpoint('S3Endpoint', {
+      service: ec2.GatewayVpcEndpointAwsService.S3,
+    });
+    vpc.addGatewayEndpoint('DynamoEndpoint', {
+      service: ec2.GatewayVpcEndpointAwsService.DYNAMODB,
+    });
+
+    // CodeBuild IAM role
+    const role = new iam.Role(this, 'TankCompilerRole', {
+      assumedBy: new iam.ServicePrincipal('codebuild.amazonaws.com'),
+    });
+    props.wasmBucket.grantReadWrite(role);
+    props.tables.tankVersions.grantWriteData(role);
+
+    // Buildspec — downloads source from S3, builds WASM, uploads artifact.
+    // Uses Go 1.21 from the standard managed image (highest available in STANDARD_7_0).
+    // The SDK is copied from wasm-artifacts/sdk/ into a local replace-path so
+    // no external module downloads are needed.
+    const buildSpec = codebuild.BuildSpec.fromObject({
+      version: '0.2',
+      phases: {
+        install: {
+          'runtime-versions': { golang: '1.21' },
+        },
+        pre_build: {
+          commands: [
+            // Create SDK module directory and populate it from S3
+            'mkdir -p /tmp/sdk',
+            'aws s3 cp s3://$WASM_BUCKET/sdk/types.go /tmp/sdk/types.go',
+            'printf "module github.com/tankmaze/sdk\\ngo 1.21\\n" > /tmp/sdk/go.mod',
+
+            // Download tank source
+            'mkdir -p /tmp/build',
+            'aws s3 cp s3://$WASM_BUCKET/$SOURCE_S3_KEY /tmp/build/main.go',
+
+            // Create go.mod with local replace directive
+            [
+              'printf "module tank\\ngo 1.21\\nrequire github.com/tankmaze/sdk v0.0.0\\n',
+              'replace github.com/tankmaze/sdk v0.0.0 => /tmp/sdk\\n"',
+              '> /tmp/build/go.mod',
+            ].join(' '),
+          ],
+        },
+        build: {
+          commands: [
+            'cd /tmp/build',
+            'CGO_ENABLED=0 GOOS=wasip1 GOARCH=wasm GOTOOLCHAIN=local GONOSUMDB=* GOPROXY=off go build -mod=mod -o /tmp/tank.wasm .',
+            'SHA256=$(sha256sum /tmp/tank.wasm | awk \'{print $1}\')',
+          ],
+        },
+        post_build: {
+          commands: [
+            [
+              'if [ "$CODEBUILD_BUILD_SUCCEEDING" = "1" ]; then',
+              '  aws s3 cp /tmp/tank.wasm s3://$WASM_BUCKET/$OUTPUT_WASM_KEY --tagging "versionType=minor";',
+              '  aws dynamodb update-item',
+              '    --table-name $TANK_VERSIONS_TABLE',
+              '    --key "{\\"tankId\\":{\\"S\\":\\"$TANK_ID\\"},\\"version\\":{\\"S\\":\\"$VERSION\\"}}"',
+              '    --update-expression "SET compileStatus = :s, wasmS3Key = :k, wasmSha256 = :h"',
+              '    --expression-attribute-values "{\\":s\\":{\\"S\\":\\"ready\\"},\\":k\\":{\\"S\\":\\"$OUTPUT_WASM_KEY\\"},\\":h\\":{\\"S\\":\\"$SHA256\\"}}"',
+              '    --region $AWS_DEFAULT_REGION;',
+              'else',
+              '  ERR=$(cat /tmp/build_error.txt 2>/dev/null || echo "build failed");',
+              '  aws dynamodb update-item',
+              '    --table-name $TANK_VERSIONS_TABLE',
+              '    --key "{\\"tankId\\":{\\"S\\":\\"$TANK_ID\\"},\\"version\\":{\\"S\\":\\"$VERSION\\"}}"',
+              '    --update-expression "SET compileStatus = :s, compileError = :e"',
+              '    --expression-attribute-values "{\\":s\\":{\\"S\\":\\"failed\\"},\\":e\\":{\\"S\\":\\"$ERR\\"}}"',
+              '    --region $AWS_DEFAULT_REGION;',
+              'fi',
+            ].join(' '),
+          ],
+        },
+      },
+    });
+
+    this.project = new codebuild.Project(this, 'TankCompiler', {
+      projectName: 'tank-compiler',
+      role,
+      vpc,
+      subnetSelection: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+      buildSpec,
+      environment: {
+        buildImage: codebuild.LinuxBuildImage.STANDARD_7_0,
+        computeType: codebuild.ComputeType.SMALL,
+        environmentVariables: {
+          WASM_BUCKET: { value: props.wasmBucket.bucketName },
+        },
+      },
+      // TANK_ID, VERSION, SOURCE_S3_KEY, OUTPUT_WASM_KEY, TANK_VERSIONS_TABLE
+      // are passed as per-build overrides by the tank-api Lambda.
+    });
+  }
+}
