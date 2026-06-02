@@ -6,7 +6,11 @@ import {
   fetchAuthSession,
 } from 'aws-amplify/auth';
 
+const LOCAL_DEV = import.meta.env.VITE_LOCAL_DEV === 'true';
+const LOCAL_USER = { userId: 'local-user', username: 'local' };
+
 export function configureAmplify() {
+  if (LOCAL_DEV) return;
   Amplify.configure({
     Auth: {
       Cognito: {
@@ -18,14 +22,17 @@ export function configureAmplify() {
 }
 
 export async function signIn(username: string, password: string) {
+  if (LOCAL_DEV) return { isSignedIn: true, nextStep: { signInStep: 'DONE' } };
   return amplifySignIn({ username, password });
 }
 
 export async function signOut() {
+  if (LOCAL_DEV) return;
   return amplifySignOut();
 }
 
 export async function getAuthUser() {
+  if (LOCAL_DEV) return LOCAL_USER;
   try {
     return await getCurrentUser();
   } catch {
@@ -34,6 +41,7 @@ export async function getAuthUser() {
 }
 
 export async function getIdToken(): Promise<string | null> {
+  if (LOCAL_DEV) return 'local-token';
   try {
     const session = await fetchAuthSession();
     return session.tokens?.idToken?.toString() ?? null;

@@ -64,10 +64,14 @@ export const transferScore = (tankId: string, targetTankId: string) =>
   });
 
 // Matches
+export type OpponentSpec =
+  | { type: 'ai'; name: string }
+  | { type: 'own'; tankId: string; version: string };
+
 export const startMatch = (
   tankId: string,
   version: string,
-  opponent: string,
+  opponent: OpponentSpec,
   mapId?: string,
 ) =>
   request<Match>('/matches', {

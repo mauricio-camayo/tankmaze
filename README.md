@@ -63,24 +63,54 @@ tankmaze/
 
 ## Development Setup
 
+> Prerequisites: Go 1.22+, Node.js 18+, pnpm 8+
+
+### Local testing (no AWS required)
+
+The local dev server replaces DynamoDB, S3, CodeBuild, Lambda, and Cognito with in-memory equivalents. It compiles tank WASM locally and streams match ticks over a plain WebSocket.
+
+```bash
+# Terminal 1 — backend (compiles scout + bruiser AI at startup, ~2 s)
+cd packages/backend
+GOTOOLCHAIN=local go run ./cmd/localserver/
+
+# Terminal 2 — frontend
+cd packages/frontend
+pnpm install   # first time only
+pnpm dev
+```
+
+Open **http://localhost:5173**. You are auto-logged in as `local` — no account needed.
+
+**What you can do locally:**
+- Create a tank and write its AI in the Monaco editor
+- Save & Validate — compiles your Go source to WASM (uses `package tank` + `Tick` style or full `package main`)
+- Promote a minor version to a major version
+- Test vs AI — launches a live match against Scout or Bruiser and streams it to the Phaser viewer
+- Watch the replay with speed controls (0.25×–8×, step-by-step)
+
+The `.env.local` file in `packages/frontend/` points the frontend at `localhost:8080` and sets `VITE_LOCAL_DEV=true`. Remove or rename it to restore normal Cognito auth.
+
+### Cloud deployment
+
 > Prerequisites: Go 1.22+, AWS CLI configured, AWS CDK v2
 
 ```bash
-# Build all packages
-go build ./...
+# Build and test backend
+cd packages/backend
+GOTOOLCHAIN=local go build ./...
+GOTOOLCHAIN=local go test ./...
 
-# Run tests
-go test ./...
-
-# Deploy infrastructure (requires AWS credentials)
+# Deploy all stacks (Auth → Storage → Build → Api → Frontend)
 cd packages/infrastructure
-cdk deploy --all
+pnpm install
+pnpm run build
+npx cdk deploy --all
 
-# Start frontend dev server
-cd packages/frontend
-pnpm dev
+# Optionally set a custom domain
+npx cdk deploy --all --context domainName=tankmaze.example.com
 ```
 
 ## Status
 
-Specification phase complete. Implementation in progress.
+Backend, infrastructure, and local dev server complete. Game Day scheduling and CI/CD pipeline are next.

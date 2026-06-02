@@ -11,6 +11,7 @@ import {
   listMaps,
   registerForGameDay,
   withdrawRegistration,
+  type OpponentSpec,
 } from '../services/api';
 import type { Tank, TankVersion, TankConfig, GameMap } from '../types';
 import { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
@@ -414,11 +415,14 @@ export default function TankEditor() {
 
   async function handleTest(opponent: TestOpponent, mapId: string | null) {
     if (!tankId) return;
-    const ready = latestReady(versions);
-    if (!ready) return;
+    // Use the latest ready version, or fall back to pendingVersion if the
+    // versions list hasn't refreshed yet after a just-finished compile.
+    const version = latestReady(versions)?.version ?? pendingVersion;
+    if (!version) return;
     try {
-      const match = await startMatch(tankId, ready.version, opponent, mapId ?? undefined);
-      navigate(`/watch?match=${match.matchId}`);
+      const spec: OpponentSpec = { type: 'ai', name: opponent };
+      const match = await startMatch(tankId, version, spec, mapId ?? undefined);
+      navigate(`/watch?matchId=${match.matchId}`);
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : 'Failed to start match');
       setShowTestDialog(false);
