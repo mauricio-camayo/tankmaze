@@ -247,10 +247,18 @@ export class ApiStack extends Stack {
       });
     }
 
-    // All other routes require a valid Cognito JWT
+    // All other routes require a valid Cognito JWT.
+    // Deliberately excludes OPTIONS so managed CORS handles preflight without auth.
     httpApi.addRoutes({
       path: '/{proxy+}',
-      methods: [apigwv2.HttpMethod.ANY],
+      methods: [
+        apigwv2.HttpMethod.GET,
+        apigwv2.HttpMethod.POST,
+        apigwv2.HttpMethod.PUT,
+        apigwv2.HttpMethod.PATCH,
+        apigwv2.HttpMethod.DELETE,
+        apigwv2.HttpMethod.HEAD,
+      ],
       integration: tankApiIntegration,
       authorizer: jwtAuthorizer,
     });
