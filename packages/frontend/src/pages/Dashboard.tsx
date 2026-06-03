@@ -110,7 +110,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     listTanks()
-      .then(setTanks)
+      .then((data) => setTanks(data ?? []))
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);

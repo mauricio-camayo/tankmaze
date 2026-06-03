@@ -87,7 +87,7 @@ func (s *Store) ListActiveMaps(ctx context.Context) ([]Map, error) {
 		ExpressionAttributeValues: expr.Values(),
 	}
 
-	var maps []Map
+	maps := []Map{}
 	for {
 		out, err := s.db.Scan(ctx, input)
 		if err != nil {

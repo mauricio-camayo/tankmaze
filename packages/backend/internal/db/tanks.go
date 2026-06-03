@@ -59,7 +59,7 @@ func (s *Store) ListTanksByUser(ctx context.Context, userID string) ([]Tank, err
 		ExpressionAttributeValues: expr.Values(),
 	}
 
-	var tanks []Tank
+	tanks := []Tank{}
 	for {
 		out, err := s.db.Query(ctx, input)
 		if err != nil {
@@ -108,7 +108,7 @@ func (s *Store) UpdateTankStats(ctx context.Context, tankID string, stats TankSt
 // build the global leaderboard. Results are sorted in application memory.
 func (s *Store) ScanTanksByScore(ctx context.Context) ([]Tank, error) {
 	input := &dynamodb.ScanInput{TableName: &s.tanksTable}
-	var tanks []Tank
+	tanks := []Tank{}
 	for {
 		out, err := s.db.Scan(ctx, input)
 		if err != nil {

@@ -59,7 +59,7 @@ func (s *Store) ListRankingsByTank(ctx context.Context, tankID string) ([]Rankin
 		ExpressionAttributeValues: expr.Values(),
 	}
 
-	var rankings []Ranking
+	rankings := []Ranking{}
 	for {
 		out, err := s.db.Query(ctx, input)
 		if err != nil {
@@ -94,7 +94,7 @@ func (s *Store) ScanRankingsByGameDay(ctx context.Context, gameDayID string) ([]
 		ExpressionAttributeValues: expr.Values(),
 	}
 
-	var rankings []Ranking
+	rankings := []Ranking{}
 	for {
 		out, err := s.db.Scan(ctx, input)
 		if err != nil {

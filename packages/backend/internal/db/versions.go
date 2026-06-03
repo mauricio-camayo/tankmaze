@@ -141,7 +141,7 @@ func (s *Store) ScanVersionsByGameDay(ctx context.Context, gameDayID string) ([]
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
 	}
-	var versions []TankVersion
+	versions := []TankVersion{}
 	for {
 		out, err := s.db.Scan(ctx, input)
 		if err != nil {
@@ -176,7 +176,7 @@ func (s *Store) ListVersionsByTank(ctx context.Context, tankID string) ([]TankVe
 		ExpressionAttributeValues: expr.Values(),
 	}
 
-	var versions []TankVersion
+	versions := []TankVersion{}
 	for {
 		out, err := s.db.Query(ctx, input)
 		if err != nil {
