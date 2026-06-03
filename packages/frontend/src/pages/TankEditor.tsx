@@ -192,7 +192,16 @@ function TestDialog({
   onClose: () => void;
 }) {
   const [opponent, setOpponent] = useState<TestOpponent>('scout');
-  const [mapId, setMapId] = useState<string | null>(null);
+  const [mapId, setMapId] = useState<string | null>(() => {
+    const saved = localStorage.getItem('tankmaze:lastMapId');
+    return saved ?? null;
+  });
+
+  function selectMap(id: string | null) {
+    setMapId(id);
+    if (id === null) localStorage.removeItem('tankmaze:lastMapId');
+    else localStorage.setItem('tankmaze:lastMapId', id);
+  }
 
   return (
     <div style={overlay}>
@@ -222,12 +231,12 @@ function TestDialog({
           ) : (
             <>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, cursor: 'pointer' }}>
-                <input type="radio" name="map" value="" checked={mapId === null} onChange={() => setMapId(null)} />
+                <input type="radio" name="map" value="" checked={mapId === null} onChange={() => selectMap(null)} />
                 <span style={{ color: '#e2e8f0', fontSize: 14 }}>Random (default)</span>
               </label>
               {maps.map((m) => (
                 <label key={m.mapId} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, cursor: 'pointer' }}>
-                  <input type="radio" name="map" value={m.mapId} checked={mapId === m.mapId} onChange={() => setMapId(m.mapId)} />
+                  <input type="radio" name="map" value={m.mapId} checked={mapId === m.mapId} onChange={() => selectMap(m.mapId)} />
                   <span style={{ color: '#e2e8f0', fontSize: 14 }}>{m.name}</span>
                   <span style={{ color: '#64748b', fontSize: 12 }}>{m.description}</span>
                 </label>
