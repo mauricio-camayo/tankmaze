@@ -12,16 +12,23 @@ const env = {
   region: process.env.CDK_DEFAULT_REGION,
 };
 
-// Deploy this once before the first CDK deploy to set up GitHub OIDC:
-//   pnpm cdk deploy TankmAzeGithubOidc --context githubRepo=<org/repo>
 const githubRepo = app.node.tryGetContext('githubRepo') as string | undefined;
 if (githubRepo) {
   new GithubOidcStack(app, 'TankmAzeGithubOidc', { env, githubRepo });
 }
 
-const auth = new AuthStack(app, 'TankmAzeAuth', { env });
+// Pool IDs are passed as context so ApiStack and FrontendStack hold no
+// cross-stack CloudFormation imports from AuthStack. This lets us recreate
+// the UserPool in AuthStack without hitting the "export in use" error.
+// On first deploy after pool recreation, set these context values to the
+// OLD pool IDs so the stacks deploy cleanly; then update the GitHub secrets
+// with the new IDs and trigger a second deploy.
+const userPoolId     = app.node.tryGetContext('userPoolId')     as string ?? '';
+const userPoolClientId = app.node.tryGetContext('userPoolClientId') as string ?? '';
+
+const auth    = new AuthStack(app, 'TankmAzeAuth', { env });
 const storage = new StorageStack(app, 'TankmAzeStorage', { env });
-const build = new BuildStack(app, 'TankmAzeBuild', {
+const build   = new BuildStack(app, 'TankmAzeBuild', {
   env,
   wasmBucket: storage.wasmBucket,
   tables: storage.tables,
@@ -32,13 +39,19 @@ const api = new ApiStack(app, 'TankmAzeApi', {
   wasmBucket: storage.wasmBucket,
   matchLogsBucket: storage.matchLogsBucket,
   codebuildProject: build.project,
-  userPool: auth.userPool,
-  userPoolClient: auth.userPoolClient,
+  userPoolId,
+  userPoolClientId,
 });
-new FrontendStack(app, 'TankmAzeFrontend', {
+const frontend = new FrontendStack(app, 'TankmAzeFrontend', {
   env,
-  userPool: auth.userPool,
-  userPoolClient: auth.userPoolClient,
+  userPoolId,
+  userPoolClientId,
   wsEndpoint: api.wsEndpoint,
   httpEndpoint: api.httpEndpoint,
 });
+
+// AuthStack must deploy AFTER ApiStack and FrontendStack so that those stacks
+// can drop their old Fn::ImportValue references before AuthStack tries to
+// delete (and recreate) the UserPool and its exported attributes.
+auth.addDependency(api);
+auth.addDependency(frontend);

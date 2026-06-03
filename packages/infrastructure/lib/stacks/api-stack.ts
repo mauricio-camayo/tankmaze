@@ -3,7 +3,6 @@ import * as childProcess from 'child_process';
 import { Stack, StackProps, CfnOutput, Duration, RemovalPolicy } from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as iam from 'aws-cdk-lib/aws-iam';
-import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as codebuild from 'aws-cdk-lib/aws-codebuild';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as apigwv2 from 'aws-cdk-lib/aws-apigatewayv2';
@@ -18,8 +17,8 @@ interface ApiStackProps extends StackProps {
   wasmBucket: s3.Bucket;
   matchLogsBucket: s3.Bucket;
   codebuildProject: codebuild.Project;
-  userPool: cognito.UserPool;
-  userPoolClient: cognito.UserPoolClient;
+  userPoolId: string;
+  userPoolClientId: string;
 }
 
 export class ApiStack extends Stack {
@@ -29,7 +28,7 @@ export class ApiStack extends Stack {
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
-    const { tables, wasmBucket, matchLogsBucket, codebuildProject, userPool, userPoolClient } = props;
+    const { tables, wasmBucket, matchLogsBucket, codebuildProject, userPoolId, userPoolClientId } = props;
     const backendDir = path.join(__dirname, '../../../backend');
 
     // ---- Helper: build a Go Lambda from cmd/<name> ----------------------
@@ -229,8 +228,8 @@ export class ApiStack extends Stack {
 
     const jwtAuthorizer = new apigwv2authorizers.HttpJwtAuthorizer(
       'CognitoAuth',
-      userPool.userPoolProviderUrl,
-      { jwtAudience: [userPoolClient.userPoolClientId] },
+      `https://cognito-idp.${this.region}.amazonaws.com/${userPoolId}`,
+      { jwtAudience: [userPoolClientId] },
     );
 
     // Public routes — no authorizer needed

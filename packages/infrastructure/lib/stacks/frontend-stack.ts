@@ -4,12 +4,11 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as route53targets from 'aws-cdk-lib/aws-route53-targets';
-import * as cognito from 'aws-cdk-lib/aws-cognito';
 import { Construct } from 'constructs';
 
 interface FrontendStackProps extends StackProps {
-  userPool: cognito.UserPool;
-  userPoolClient: cognito.UserPoolClient;
+  userPoolId: string;
+  userPoolClientId: string;
   wsEndpoint: string;
   httpEndpoint: string;
 }
@@ -18,7 +17,7 @@ export class FrontendStack extends Stack {
   constructor(scope: Construct, id: string, props: FrontendStackProps) {
     super(scope, id, props);
 
-    const { userPool, userPoolClient, wsEndpoint, httpEndpoint } = props;
+    const { userPoolId, userPoolClientId, wsEndpoint, httpEndpoint } = props;
 
     // Private S3 bucket — served exclusively through CloudFront
     const siteBucket = new s3.Bucket(this, 'SiteBucket', {
@@ -68,8 +67,8 @@ export class FrontendStack extends Stack {
     new CfnOutput(this, 'SiteBucketName',          { value: siteBucket.bucketName });
     new CfnOutput(this, 'DistributionId',           { value: distribution.distributionId });
     new CfnOutput(this, 'DistributionDomain',       { value: distribution.distributionDomainName });
-    new CfnOutput(this, 'ViteUserPoolId',           { value: userPool.userPoolId });
-    new CfnOutput(this, 'ViteUserPoolClientId',     { value: userPoolClient.userPoolClientId });
+    new CfnOutput(this, 'ViteUserPoolId',           { value: userPoolId });
+    new CfnOutput(this, 'ViteUserPoolClientId',     { value: userPoolClientId });
     new CfnOutput(this, 'ViteWsEndpoint',           { value: wsEndpoint });
     new CfnOutput(this, 'ViteApiEndpoint',          { value: httpEndpoint });
   }

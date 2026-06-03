@@ -14,13 +14,20 @@ export class AuthStack extends Stack {
     const callbackUrls = ['http://localhost:5173'];
     if (process.env.SITE_URL) callbackUrls.push(process.env.SITE_URL);
 
-    this.userPool = new cognito.UserPool(this, 'UserPool', {
+    // Logical ID changed (UserPool → UserPool2) to force CloudFormation
+    // replacement. The previous pool had email mutable:false which caused
+    // "Attribute cannot be updated" on every Google sign-in after the first.
+    // ApiStack and FrontendStack no longer hold cross-stack imports from this
+    // stack (they use context strings), so the old pool can now be deleted.
+    this.userPool = new cognito.UserPool(this, 'UserPool2', {
       userPoolName: 'tankmaze-users',
       selfSignUpEnabled: true,
       signInAliases: { email: true },
       autoVerify: { email: true },
       standardAttributes: {
-        email: { required: true, mutable: false },
+        email:          { required: true,  mutable: true },
+        givenName:      { required: false, mutable: true },
+        profilePicture: { required: false, mutable: true },
       },
       passwordPolicy: {
         minLength: 8,
@@ -37,7 +44,9 @@ export class AuthStack extends Stack {
       description: 'TankMaze platform administrators',
     });
 
-    const domainPrefix = `tankmaze-${this.account}`;
+    // Domain prefix changed alongside pool recreation to avoid a collision
+    // while CloudFormation is deleting the old domain and creating the new one.
+    const domainPrefix = `tankmaze-auth-${this.account}`;
     this.userPool.addDomain('Domain', {
       cognitoDomain: { domainPrefix },
     });
@@ -52,11 +61,8 @@ export class AuthStack extends Stack {
         clientSecretValue: SecretValue.unsafePlainText(googleClientSecret),
         scopes: ['email', 'profile', 'openid'],
         attributeMapping: {
-          // email is intentionally NOT mapped here. Cognito sets it automatically
-          // from the OIDC token on first sign-in. Mapping it explicitly would try
-          // to UPDATE the attribute on every subsequent sign-in, which fails because
-          // email is mutable:false on this pool.
-          givenName: cognito.ProviderAttribute.GOOGLE_NAME,
+          email:          cognito.ProviderAttribute.GOOGLE_EMAIL,
+          givenName:      cognito.ProviderAttribute.GOOGLE_NAME,
           profilePicture: cognito.ProviderAttribute.other('picture'),
         },
       });
@@ -83,9 +89,9 @@ export class AuthStack extends Stack {
       this.userPoolClient.node.addDependency(googleIdp);
     }
 
-    new CfnOutput(this, 'UserPoolId', { value: this.userPool.userPoolId });
+    new CfnOutput(this, 'UserPoolId',     { value: this.userPool.userPoolId });
     new CfnOutput(this, 'UserPoolClientId', { value: this.userPoolClient.userPoolClientId });
-    new CfnOutput(this, 'CognitoDomain', {
+    new CfnOutput(this, 'CognitoDomain',  {
       value: `${domainPrefix}.auth.${this.region}.amazoncognito.com`,
     });
   }
