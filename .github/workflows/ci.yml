@@ -13,6 +13,8 @@ jobs:
   backend:
     name: Backend (Go)
     runs-on: ubuntu-latest
+    env:
+      GOTOOLCHAIN: local
     steps:
       - uses: actions/checkout@v5
 
@@ -132,6 +134,8 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     needs: [backend, frontend, infrastructure]
+    env:
+      GOTOOLCHAIN: local
     permissions:
       id-token: write
       contents: read
@@ -160,15 +164,6 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: us-east-1
-
-      - name: Build Lambda binaries
-        working-directory: packages/backend
-        run: |
-          for cmd in cmd/*/; do
-            name=$(basename "$cmd")
-            mkdir -p "../../dist/$name"
-            GOOS=linux GOARCH=arm64 go build -o "../../dist/$name/bootstrap" "./$cmd"
-          done
 
       - name: Deploy infrastructure
         working-directory: packages/infrastructure
