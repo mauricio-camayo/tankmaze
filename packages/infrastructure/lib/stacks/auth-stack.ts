@@ -54,6 +54,7 @@ export class AuthStack extends Stack {
         attributeMapping: {
           email: cognito.ProviderAttribute.GOOGLE_EMAIL,
           givenName: cognito.ProviderAttribute.GOOGLE_NAME,
+          profilePicture: cognito.ProviderAttribute.other('picture'),
         },
       });
       supportedIdentityProviders.push(cognito.UserPoolClientIdentityProvider.GOOGLE);

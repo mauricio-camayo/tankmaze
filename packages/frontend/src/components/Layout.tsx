@@ -29,8 +29,30 @@ export default function Layout({ children }: LayoutProps) {
           </Link>
           <Link to="/leaderboard" style={navLinkStyle}>Leaderboard</Link>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          {user && <span style={{ color: '#94a3b8', fontSize: 14 }}>{user.username}</span>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {user && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {user.picture ? (
+                <img
+                  src={user.picture}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover' }}
+                />
+              ) : (
+                <div style={{
+                  width: 30, height: 30, borderRadius: '50%',
+                  background: '#7c6af7', display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', fontSize: 13, fontWeight: 700, color: '#fff', flexShrink: 0,
+                }}>
+                  {(user.name ?? user.username).charAt(0).toUpperCase()}
+                </div>
+              )}
+              <span style={{ color: '#94a3b8', fontSize: 14 }}>
+                {user.name ?? user.username}
+              </span>
+            </div>
+          )}
           <button onClick={handleSignOut} style={ghostButtonStyle}>Sign out</button>
         </div>
       </nav>

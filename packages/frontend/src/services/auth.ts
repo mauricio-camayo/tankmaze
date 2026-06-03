@@ -4,6 +4,7 @@ import {
   signOut as amplifySignOut,
   getCurrentUser,
   fetchAuthSession,
+  fetchUserAttributes,
   signInWithRedirect,
 } from 'aws-amplify/auth';
 
@@ -55,6 +56,19 @@ export async function getAuthUser() {
     return await getCurrentUser();
   } catch {
     return null;
+  }
+}
+
+export async function getUserProfile(): Promise<{ name?: string; picture?: string }> {
+  if (LOCAL_DEV) return { name: 'Local User' };
+  try {
+    const attrs = await fetchUserAttributes();
+    return {
+      name: attrs.given_name ?? attrs.name ?? undefined,
+      picture: attrs.picture ?? undefined,
+    };
+  } catch {
+    return {};
   }
 }
 

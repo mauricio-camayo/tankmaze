@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, Outlet } from 'react-router-dom';
 import { Hub } from 'aws-amplify/utils';
-import { getAuthUser } from './services/auth';
+import { getAuthUser, getUserProfile } from './services/auth';
 import { useAuthStore } from './store/authStore';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -57,8 +57,13 @@ export default function App() {
     const LOCAL_DEV = import.meta.env.VITE_LOCAL_DEV === 'true';
 
     const checkUser = () =>
-      getAuthUser().then((u) => {
-        setUser(u ? { userId: u.userId, username: u.username } : null);
+      getAuthUser().then(async (u) => {
+        if (u) {
+          const profile = await getUserProfile();
+          setUser({ userId: u.userId, username: u.username, ...profile });
+        } else {
+          setUser(null);
+        }
         setLoading(false);
       });
 
