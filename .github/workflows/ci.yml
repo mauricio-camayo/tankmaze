@@ -170,12 +170,13 @@ jobs:
         env:
           SITE_URL: ${{ secrets.SITE_URL }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
         run: |
           pnpm install --frozen-lockfile
           pnpm build
           CONTEXT_FLAGS=""
-          if [ -n "$GOOGLE_CLIENT_ID" ]; then
-            CONTEXT_FLAGS="--context googleClientId=$GOOGLE_CLIENT_ID"
+          if [ -n "$GOOGLE_CLIENT_ID" ] && [ -n "$GOOGLE_CLIENT_SECRET" ]; then
+            CONTEXT_FLAGS="--context googleClientId=$GOOGLE_CLIENT_ID --context googleClientSecret=$GOOGLE_CLIENT_SECRET"
           fi
           pnpm cdk deploy --all --require-approval never $CONTEXT_FLAGS
 

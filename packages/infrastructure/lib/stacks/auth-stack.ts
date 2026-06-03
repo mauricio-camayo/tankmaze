@@ -1,4 +1,7 @@
 import { Stack, StackProps, CfnOutput, SecretValue } from 'aws-cdk-lib';
+// Note: SecretValue.unsafePlainText is intentional — CFN does not support SSM SecureString
+// dynamic references on AWS::Cognito::UserPoolIdentityProvider. The secret travels via
+// GitHub Actions secret → CDK context → private CDK S3 bucket (encrypted at rest).
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import { Construct } from 'constructs';
 
@@ -10,6 +13,7 @@ export class AuthStack extends Stack {
     super(scope, id, props);
 
     const googleClientId = this.node.tryGetContext('googleClientId') as string | undefined;
+    const googleClientSecret = this.node.tryGetContext('googleClientSecret') as string | undefined;
     const callbackUrls = ['http://localhost:5173'];
     if (process.env.SITE_URL) callbackUrls.push(process.env.SITE_URL);
 
@@ -44,11 +48,11 @@ export class AuthStack extends Stack {
     const supportedIdentityProviders = [cognito.UserPoolClientIdentityProvider.COGNITO];
     let googleIdp: cognito.UserPoolIdentityProviderGoogle | undefined;
 
-    if (googleClientId) {
+    if (googleClientId && googleClientSecret) {
       googleIdp = new cognito.UserPoolIdentityProviderGoogle(this, 'GoogleIdP', {
         userPool: this.userPool,
         clientId: googleClientId,
-        clientSecretValue: SecretValue.ssmSecure('/tankmaze/google/client-secret'),
+        clientSecretValue: SecretValue.unsafePlainText(googleClientSecret),
         scopes: ['email', 'profile', 'openid'],
         attributeMapping: {
           email: cognito.ProviderAttribute.GOOGLE_EMAIL,
