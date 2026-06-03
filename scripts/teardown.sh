@@ -6,7 +6,7 @@ set -euo pipefail
 
 AWS="/usr/local/bin/aws"
 REGION="us-east-1"
-ACCOUNT="897722684267"
+ACCOUNT=$($AWS sts get-caller-identity --query Account --output text --region "$REGION")
 CDK_QUALIFIER="hnb659fds"  # default CDK bootstrap qualifier
 
 echo "=== TankMaze Teardown ==="
