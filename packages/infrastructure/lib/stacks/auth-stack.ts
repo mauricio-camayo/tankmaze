@@ -14,13 +14,19 @@ export class AuthStack extends Stack {
     const callbackUrls = ['http://localhost:5173'];
     if (process.env.SITE_URL) callbackUrls.push(process.env.SITE_URL);
 
-    this.userPool = new cognito.UserPool(this, 'UserPool', {
+    // Logical ID changed (UserPool → UserPool2) to force CloudFormation replacement.
+    // email must be mutable:true so Cognito can re-apply IdP attribute mapping on
+    // every federated sign-in; mutable:false causes "Attribute cannot be updated"
+    // for returning Google users.
+    this.userPool = new cognito.UserPool(this, 'UserPool2', {
       userPoolName: 'tankmaze-users',
       selfSignUpEnabled: true,
       signInAliases: { email: true },
       autoVerify: { email: true },
       standardAttributes: {
-        email: { required: true, mutable: false },
+        email: { required: true, mutable: true },
+        givenName: { required: false, mutable: true },
+        profilePicture: { required: false, mutable: true },
       },
       passwordPolicy: {
         minLength: 8,
@@ -37,7 +43,9 @@ export class AuthStack extends Stack {
       description: 'TankMaze platform administrators',
     });
 
-    const domainPrefix = `tankmaze-${this.account}`;
+    // Domain prefix changed alongside pool recreation to avoid collision while
+    // CloudFormation deletes the old domain before the new one is ready.
+    const domainPrefix = `tankmaze-auth-${this.account}`;
     this.userPool.addDomain('Domain', {
       cognitoDomain: { domainPrefix },
     });
