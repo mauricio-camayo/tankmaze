@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signIn } from '../services/auth';
+import { signIn, signInWithGoogle } from '../services/auth';
 import { useAuthStore } from '../store/authStore';
 
 export default function Login() {
@@ -10,6 +10,22 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  async function handleGoogleSignIn() {
+    if (import.meta.env.VITE_LOCAL_DEV === 'true') {
+      setUser({ userId: 'local-user', username: 'local' });
+      navigate('/dashboard');
+      return;
+    }
+    setLoading(true);
+    try {
+      await signInWithGoogle();
+      // signInWithRedirect navigates away — only reached on error
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Google sign-in failed');
+      setLoading(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -31,6 +47,22 @@ export default function Login() {
   return (
     <div style={{ maxWidth: 360, margin: '80px auto', padding: '0 16px' }}>
       <h1>TankMaze</h1>
+
+      <button
+        type="button"
+        onClick={handleGoogleSignIn}
+        disabled={loading}
+        style={{ width: '100%', padding: '10px 0', marginBottom: 4 }}
+      >
+        Sign in with Google
+      </button>
+
+      <div style={{ display: 'flex', alignItems: 'center', margin: '16px 0' }}>
+        <hr style={{ flex: 1, border: 'none', borderTop: '1px solid #ccc' }} />
+        <span style={{ padding: '0 10px', color: '#888', fontSize: 12 }}>or</span>
+        <hr style={{ flex: 1, border: 'none', borderTop: '1px solid #ccc' }} />
+      </div>
+
       <form onSubmit={handleSubmit}>
         <div style={{ marginBottom: 12 }}>
           <label>Username</label>

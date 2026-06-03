@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, Outlet } from 'react-router-dom';
+import { Hub } from 'aws-amplify/utils';
 import { getAuthUser } from './services/auth';
 import { useAuthStore } from './store/authStore';
 import Login from './pages/Login';
@@ -53,10 +54,23 @@ export default function App() {
   const { setUser, setLoading } = useAuthStore();
 
   useEffect(() => {
-    getAuthUser().then((u) => {
-      setUser(u ? { userId: u.userId, username: u.username } : null);
-      setLoading(false);
+    const LOCAL_DEV = import.meta.env.VITE_LOCAL_DEV === 'true';
+
+    const checkUser = () =>
+      getAuthUser().then((u) => {
+        setUser(u ? { userId: u.userId, username: u.username } : null);
+        setLoading(false);
+      });
+
+    checkUser();
+
+    if (LOCAL_DEV) return;
+
+    // Re-check session after Google OAuth redirect completes
+    const unsubscribe = Hub.listen('auth', ({ payload }) => {
+      if (payload.event === 'signInWithRedirect') checkUser();
     });
+    return unsubscribe;
   }, [setUser, setLoading]);
 
   return (

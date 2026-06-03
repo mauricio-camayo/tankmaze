@@ -167,10 +167,17 @@ jobs:
 
       - name: Deploy infrastructure
         working-directory: packages/infrastructure
+        env:
+          SITE_URL: ${{ secrets.SITE_URL }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
         run: |
           pnpm install --frozen-lockfile
           pnpm build
-          pnpm cdk deploy --all --require-approval never
+          CONTEXT_FLAGS=""
+          if [ -n "$GOOGLE_CLIENT_ID" ]; then
+            CONTEXT_FLAGS="--context googleClientId=$GOOGLE_CLIENT_ID"
+          fi
+          pnpm cdk deploy --all --require-approval never $CONTEXT_FLAGS
 
       - name: Build frontend
         working-directory: packages/frontend
@@ -182,6 +189,7 @@ jobs:
           VITE_USER_POOL_CLIENT_ID: ${{ secrets.VITE_USER_POOL_CLIENT_ID }}
           VITE_WS_ENDPOINT: ${{ secrets.VITE_WS_ENDPOINT }}
           VITE_API_ENDPOINT: ${{ secrets.VITE_API_ENDPOINT }}
+          VITE_COGNITO_DOMAIN: ${{ secrets.VITE_COGNITO_DOMAIN }}
 
       - name: Sync frontend to S3
         run: |

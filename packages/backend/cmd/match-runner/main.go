@@ -43,7 +43,6 @@ import (
 )
 
 const (
-	defaultTickLimit   = 300
 	tickBudget         = 100 * time.Millisecond
 	violationThreshold = 0.20 // disqualify if >20% of ticks violate
 )
@@ -161,13 +160,6 @@ func main() {
 		log.Fatalf("load AWS config: %v", err)
 	}
 
-	tickLimit := defaultTickLimit
-	if v := os.Getenv("TICK_LIMIT"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			tickLimit = n
-		}
-	}
-
 	h = &handler{
 		store: db.New(dynamodb.NewFromConfig(cfg)),
 		s3:    s3.NewFromConfig(cfg),
@@ -176,7 +168,7 @@ func main() {
 		}),
 		wasmBucket:    os.Getenv("WASM_BUCKET"),
 		logsBucket:    os.Getenv("MATCH_LOGS_BUCKET"),
-		tickLimit:     tickLimit,
+		tickLimit:     engine.TickLimitFromEnv(),
 		projSpeed:     engine.ProjSpeedFromEnv(),
 		wallHitDamage: engine.WallHitDamageFromEnv(),
 	}

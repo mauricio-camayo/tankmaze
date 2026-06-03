@@ -36,6 +36,20 @@ func WallHitDamageFromEnv() int {
 	return n
 }
 
+// TickLimitFromEnv reads TICK_LIMIT and returns the maximum number of ticks
+// before a match ends in a both-lose. Falls back to 300 when unset or invalid.
+func TickLimitFromEnv() int {
+	v := os.Getenv("TICK_LIMIT")
+	if v == "" {
+		return 300
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 {
+		return 300
+	}
+	return n
+}
+
 // dirDelta maps a Direction to its (Δrow, Δcol) step.
 // N = row-1, S = row+1, E = col+1, W = col-1.
 var dirDelta = [4][2]int{
