@@ -169,6 +169,7 @@ jobs:
         working-directory: packages/infrastructure
         run: |
           pnpm install --frozen-lockfile
+          pnpm build
           pnpm cdk deploy --all --require-approval never
 
       - name: Build frontend
