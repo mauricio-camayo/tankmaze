@@ -320,10 +320,11 @@ func (h *handler) getTank(ctx context.Context, req events.APIGatewayV2HTTPReques
 	if err != nil {
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
-	return jsonResp(http.StatusOK, map[string]interface{}{
-		"tank":     tank,
-		"versions": versions,
-	}), nil
+	type getTankResponse struct {
+		db.Tank
+		Versions []db.TankVersion `json:"versions"`
+	}
+	return jsonResp(http.StatusOK, getTankResponse{Tank: tank, Versions: versions}), nil
 }
 
 // ---- Version handlers -------------------------------------------------------
@@ -804,26 +805,26 @@ func (h *handler) getRankings(ctx context.Context, req events.APIGatewayV2HTTPRe
 	}
 
 	type entry struct {
-		Rank          int    `json:"rank"`
-		TankID        string `json:"tankId"`
-		Name          string `json:"name"`
-		UserID        string `json:"userId"`
-		GlobalScore   int    `json:"globalScore"`
-		BestFinish    *int   `json:"bestFinish"`
-		GameDaysCount int    `json:"gameDaysCount"`
-		LastActiveAt  int64  `json:"lastActiveAt"`
+		Rank           int    `json:"rank"`
+		TankID         string `json:"tankId"`
+		TankName       string `json:"tankName"`
+		AuthorUsername string `json:"authorUsername"`
+		GlobalScore    int    `json:"globalScore"`
+		BestFinish     *int   `json:"bestFinish"`
+		GameDays       int    `json:"gameDays"`
+		LastActiveAt   int64  `json:"lastActiveAt"`
 	}
 	result := make([]entry, len(tanks))
 	for i, t := range tanks {
 		result[i] = entry{
-			Rank:          i + 1,
-			TankID:        t.TankID,
-			Name:          t.Name,
-			UserID:        t.UserID,
-			GlobalScore:   t.GlobalScore,
-			BestFinish:    t.BestFinish,
-			GameDaysCount: t.GameDaysCount,
-			LastActiveAt:  t.LastActiveAt,
+			Rank:           i + 1,
+			TankID:         t.TankID,
+			TankName:       t.Name,
+			AuthorUsername: t.UserID,
+			GlobalScore:    t.GlobalScore,
+			BestFinish:     t.BestFinish,
+			GameDays:       t.GameDaysCount,
+			LastActiveAt:   t.LastActiveAt,
 		}
 	}
 	return jsonResp(http.StatusOK, result), nil

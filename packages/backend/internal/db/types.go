@@ -2,18 +2,18 @@ package db
 
 // Tank is the item stored in tankmaze-tanks.
 type Tank struct {
-	TankID               string `dynamodbav:"tankId"`
-	UserID               string `dynamodbav:"userId"`
-	Name                 string `dynamodbav:"name"`
-	GlobalScore          int    `dynamodbav:"globalScore"`
-	BestFinish           *int   `dynamodbav:"bestFinish"`       // nil = never placed
-	GameDaysCount        int    `dynamodbav:"gameDaysCount"`
-	LastActiveAt         int64  `dynamodbav:"lastActiveAt"`
-	CreatedAt            int64  `dynamodbav:"createdAt"`
-	ForkedFromTankID     string `dynamodbav:"forkedFromTankId,omitempty"`
-	ForkedFromVersion    string `dynamodbav:"forkedFromVersion,omitempty"`
-	ScoreTransferredTo   string `dynamodbav:"scoreTransferredTo,omitempty"`
-	ScoreTransferredFrom string `dynamodbav:"scoreTransferredFrom,omitempty"`
+	TankID               string `dynamodbav:"tankId"               json:"tankId"`
+	UserID               string `dynamodbav:"userId"               json:"userId"`
+	Name                 string `dynamodbav:"name"                 json:"name"`
+	GlobalScore          int    `dynamodbav:"globalScore"          json:"globalScore"`
+	BestFinish           *int   `dynamodbav:"bestFinish"           json:"bestFinish"`
+	GameDaysCount        int    `dynamodbav:"gameDaysCount"        json:"gameDaysCount"`
+	LastActiveAt         int64  `dynamodbav:"lastActiveAt"         json:"lastActiveAt"`
+	CreatedAt            int64  `dynamodbav:"createdAt"            json:"createdAt"`
+	ForkedFromTankID     string `dynamodbav:"forkedFromTankId,omitempty"     json:"forkedFromTankId,omitempty"`
+	ForkedFromVersion    string `dynamodbav:"forkedFromVersion,omitempty"    json:"forkedFromVersion,omitempty"`
+	ScoreTransferredTo   string `dynamodbav:"scoreTransferredTo,omitempty"   json:"scoreTransferredTo,omitempty"`
+	ScoreTransferredFrom string `dynamodbav:"scoreTransferredFrom,omitempty" json:"scoreTransferredFrom,omitempty"`
 }
 
 // TankStats holds the mutable aggregate fields updated by the ranking-updater.
@@ -27,34 +27,34 @@ type TankStats struct {
 // VersionConfig is the stat allocation stored inside each TankVersion record.
 // It intentionally omits Name (stored on the Tank record instead).
 type VersionConfig struct {
-	Speed       int `dynamodbav:"speed"`
-	SensorRange int `dynamodbav:"sensorRange"`
-	Damage      int `dynamodbav:"damage"`
-	Armor       int `dynamodbav:"armor"`
-	FireRate    int `dynamodbav:"fireRate"`
+	Speed       int `dynamodbav:"speed"        json:"speed"`
+	SensorRange int `dynamodbav:"sensorRange"  json:"sensorRange"`
+	Damage      int `dynamodbav:"damage"       json:"damage"`
+	Armor       int `dynamodbav:"armor"        json:"armor"`
+	FireRate    int `dynamodbav:"fireRate"     json:"fireRate"`
 }
 
 // TankVersion is the item stored in tankmaze-tank-versions.
 type TankVersion struct {
-	TankID               string        `dynamodbav:"tankId"`
-	Version              string        `dynamodbav:"version"`
-	VersionType          string        `dynamodbav:"versionType"` // "major" | "minor"
-	Config               VersionConfig `dynamodbav:"config"`
-	WasmS3Key            string        `dynamodbav:"wasmS3Key,omitempty"`
-	SourceS3Key          string        `dynamodbav:"sourceS3Key,omitempty"`
-	WasmSHA256           string        `dynamodbav:"wasmSha256,omitempty"`
-	CompileStatus        string        `dynamodbav:"compileStatus"` // "pending"|"compiling"|"ready"|"failed"
-	CompileError         string        `dynamodbav:"compileError,omitempty"`
-	RegisteredForGameDay string        `dynamodbav:"registeredForGameDay,omitempty"`
-	CreatedAt            int64         `dynamodbav:"createdAt"`
-	// Major-only stats (omitted on minor versions)
-	WinRate          float64 `dynamodbav:"winRate,omitempty"`
-	MatchesPlayed    int     `dynamodbav:"matchesPlayed,omitempty"`
-	AvgDamageDealt   float64 `dynamodbav:"avgDamageDealt,omitempty"`
-	AvgSurvivalTicks float64 `dynamodbav:"avgSurvivalTicks,omitempty"`
+	TankID               string        `dynamodbav:"tankId"                json:"tankId"`
+	Version              string        `dynamodbav:"version"               json:"version"`
+	VersionType          string        `dynamodbav:"versionType"           json:"versionType"`
+	Config               VersionConfig `dynamodbav:"config"                json:"config"`
+	WasmS3Key            string        `dynamodbav:"wasmS3Key,omitempty"   json:"wasmS3Key,omitempty"`
+	SourceS3Key          string        `dynamodbav:"sourceS3Key,omitempty" json:"sourceS3Key,omitempty"`
+	WasmSHA256           string        `dynamodbav:"wasmSha256,omitempty"  json:"wasmSha256,omitempty"`
+	CompileStatus        string        `dynamodbav:"compileStatus"         json:"compileStatus"`
+	CompileError         string        `dynamodbav:"compileError,omitempty" json:"compileError,omitempty"`
+	RegisteredForGameDay string        `dynamodbav:"registeredForGameDay,omitempty" json:"registeredForGameDay,omitempty"`
+	CreatedAt            int64         `dynamodbav:"createdAt"             json:"createdAt"`
+	// Major-only stats (zero value when not set)
+	WinRate          float64 `dynamodbav:"winRate,omitempty"          json:"winRate"`
+	MatchesPlayed    int     `dynamodbav:"matchesPlayed,omitempty"    json:"matchesPlayed"`
+	AvgDamageDealt   float64 `dynamodbav:"avgDamageDealt,omitempty"   json:"avgDamageDealt"`
+	AvgSurvivalTicks float64 `dynamodbav:"avgSurvivalTicks,omitempty" json:"avgSurvivalTicks"`
 	// Minor-only stats
-	TestMatchCount int  `dynamodbav:"testMatchCount,omitempty"`
-	Disqualified   bool `dynamodbav:"disqualified,omitempty"`
+	TestMatchCount int  `dynamodbav:"testMatchCount,omitempty" json:"testMatchCount"`
+	Disqualified   bool `dynamodbav:"disqualified,omitempty"   json:"disqualified"`
 }
 
 // CompileUpdate carries the fields written after a CodeBuild tank-compiler run.
@@ -75,109 +75,103 @@ type VersionStats struct {
 
 // MatchTank identifies the tank and version in one side of a match.
 type MatchTank struct {
-	TankID  string `dynamodbav:"tankId"`
-	Version string `dynamodbav:"version"`
+	TankID  string `dynamodbav:"tankId"  json:"tankId"`
+	Version string `dynamodbav:"version" json:"version"`
 }
 
 // MatchResult is the outcome map written when a match ends.
 // Winner is nil when Reason is "both_lose".
 type MatchResult struct {
-	Winner       *int   `dynamodbav:"winner"`
-	Reason       string `dynamodbav:"reason"`
-	DamageA      int    `dynamodbav:"damageA"`
-	DamageB      int    `dynamodbav:"damageB"`
-	MovesA       int    `dynamodbav:"movesA"`
-	MovesB       int    `dynamodbav:"movesB"`
-	TicksElapsed int    `dynamodbav:"ticksElapsed"`
-	Flawless     bool   `dynamodbav:"flawless"`
+	Winner       *int   `dynamodbav:"winner"       json:"winner"`
+	Reason       string `dynamodbav:"reason"       json:"reason"`
+	DamageA      int    `dynamodbav:"damageA"      json:"damageA"`
+	DamageB      int    `dynamodbav:"damageB"      json:"damageB"`
+	MovesA       int    `dynamodbav:"movesA"       json:"movesA"`
+	MovesB       int    `dynamodbav:"movesB"       json:"movesB"`
+	TicksElapsed int    `dynamodbav:"ticksElapsed" json:"ticksElapsed"`
+	Flawless     bool   `dynamodbav:"flawless"     json:"flawless"`
 }
 
 // Match is the item stored in tankmaze-matches.
 type Match struct {
-	MatchID      string       `dynamodbav:"matchId"`
-	MatchType    string       `dynamodbav:"matchType"` // "ranked"|"test-ai"|"test-own"|"informal"
-	GameDayID    string       `dynamodbav:"gameDayId,omitempty"`
-	Status       string       `dynamodbav:"status"` // "scheduled"|"countdown"|"active"|"ended"
-	MazeSeed     string       `dynamodbav:"mazeSeed,omitempty"`
-	MapID        string       `dynamodbav:"mapId,omitempty"`
-	TankA        MatchTank    `dynamodbav:"tankA"`
-	TankB        MatchTank    `dynamodbav:"tankB"`
-	TickLogS3Key string       `dynamodbav:"tickLogS3Key,omitempty"`
-	Result       *MatchResult `dynamodbav:"result,omitempty"`
-	CreatedAt    int64        `dynamodbav:"createdAt"`
-	TTL          int64        `dynamodbav:"ttl,omitempty"`
+	MatchID      string       `dynamodbav:"matchId"              json:"matchId"`
+	MatchType    string       `dynamodbav:"matchType"            json:"matchType"`
+	GameDayID    string       `dynamodbav:"gameDayId,omitempty"  json:"gameDayId,omitempty"`
+	Status       string       `dynamodbav:"status"               json:"status"`
+	MazeSeed     string       `dynamodbav:"mazeSeed,omitempty"   json:"mazeSeed,omitempty"`
+	MapID        string       `dynamodbav:"mapId,omitempty"      json:"mapId,omitempty"`
+	TankA        MatchTank    `dynamodbav:"tankA"                json:"tankA"`
+	TankB        MatchTank    `dynamodbav:"tankB"                json:"tankB"`
+	TickLogS3Key string       `dynamodbav:"tickLogS3Key,omitempty" json:"tickLogS3Key,omitempty"`
+	Result       *MatchResult `dynamodbav:"result,omitempty"     json:"result"`
+	CreatedAt    int64        `dynamodbav:"createdAt"            json:"createdAt"`
+	TTL          int64        `dynamodbav:"ttl,omitempty"        json:"-"`
 }
 
 // Connection is the item stored in tankmaze-connections.
-// ReplayTick and ReplaySpeed are set by REPLAY_SEEK/REPLAY_SPEED and read by
-// OBSERVE to know where and how fast to stream the replay.
 type Connection struct {
 	ConnectionID string `dynamodbav:"connectionId"`
 	MatchID      string `dynamodbav:"matchId"`
 	TTL          int64  `dynamodbav:"ttl"`
-	ReplayTick   int    `dynamodbav:"replayTick,omitempty"`  // 0 = start of match
-	ReplaySpeed  string `dynamodbav:"replaySpeed,omitempty"` // "" means "1" (real-time)
+	ReplayTick   int    `dynamodbav:"replayTick,omitempty"`
+	ReplaySpeed  string `dynamodbav:"replaySpeed,omitempty"`
 }
 
 // PhaseStatus tracks the lifecycle of one Game Day tournament phase.
 type PhaseStatus struct {
-	Status    string `dynamodbav:"status"` // "upcoming"|"running"|"complete"
-	StartedAt int64  `dynamodbav:"startedAt,omitempty"`
-	EndedAt   int64  `dynamodbav:"endedAt,omitempty"`
+	Status    string `dynamodbav:"status"              json:"status"`
+	StartedAt int64  `dynamodbav:"startedAt,omitempty" json:"startedAt,omitempty"`
+	EndedAt   int64  `dynamodbav:"endedAt,omitempty"   json:"endedAt,omitempty"`
 }
 
 // GameDayPhases holds the status of each phase.
-// Elimination phases are keyed by round: "r1", "r2", …
 type GameDayPhases struct {
-	RoundRobin  PhaseStatus            `dynamodbav:"roundRobin"`
-	Elimination map[string]PhaseStatus `dynamodbav:"elimination,omitempty"`
-	Final       PhaseStatus            `dynamodbav:"final"`
+	RoundRobin  PhaseStatus            `dynamodbav:"roundRobin"            json:"roundRobin"`
+	Elimination map[string]PhaseStatus `dynamodbav:"elimination,omitempty" json:"elimination,omitempty"`
+	Final       PhaseStatus            `dynamodbav:"final"                 json:"final"`
 }
 
-// GameDaySchedule holds the cron expressions for each phase.
-// Elimination holds one cron expression per round (r1, r2, …).
+// GameDaySchedule holds the timestamps for each phase.
 type GameDaySchedule struct {
-	RegistrationClose string   `dynamodbav:"registrationClose"`
-	RoundRobin        string   `dynamodbav:"roundRobin"`
-	Elimination       []string `dynamodbav:"elimination,omitempty"`
-	Final             string   `dynamodbav:"final"`
+	RegistrationClose string   `dynamodbav:"registrationClose" json:"registrationClose"`
+	RoundRobin        string   `dynamodbav:"roundRobin"        json:"roundRobin"`
+	Elimination       []string `dynamodbav:"elimination,omitempty" json:"elimination,omitempty"`
+	Final             string   `dynamodbav:"final"             json:"final"`
 }
 
 // BracketSlot is one tank's slot in the elimination bracket.
 type BracketSlot struct {
-	TankID  string `dynamodbav:"tankId"`
-	Version string `dynamodbav:"version"`
-	Status  string `dynamodbav:"status"` // "playing"|"won"|"lost"|"both_lose"|"bye"
+	TankID  string `dynamodbav:"tankId"  json:"tankId"`
+	Version string `dynamodbav:"version" json:"version"`
+	Status  string `dynamodbav:"status"  json:"status"`
 }
 
 // GroupStanding is one tank's record within a round-robin group.
 type GroupStanding struct {
-	TankID  string `dynamodbav:"tankId"`
-	Version string `dynamodbav:"version"`
-	Wins    int    `dynamodbav:"wins"`
-	Losses  int    `dynamodbav:"losses"`
-	Points  int    `dynamodbav:"points"`
+	TankID  string `dynamodbav:"tankId"  json:"tankId"`
+	Version string `dynamodbav:"version" json:"version"`
+	Wins    int    `dynamodbav:"wins"    json:"wins"`
+	Losses  int    `dynamodbav:"losses"  json:"losses"`
+	Points  int    `dynamodbav:"points"  json:"points"`
 }
 
 // Group is one round-robin group within a Game Day.
 type Group struct {
-	GroupID   string          `dynamodbav:"groupId"`
-	Tanks     []MatchTank     `dynamodbav:"tanks"`
-	Standings []GroupStanding `dynamodbav:"standings,omitempty"`
+	GroupID   string          `dynamodbav:"groupId"             json:"groupId"`
+	Tanks     []MatchTank     `dynamodbav:"tanks"               json:"tanks"`
+	Standings []GroupStanding `dynamodbav:"standings,omitempty" json:"standings,omitempty"`
 }
 
 // GameDay is the item stored in tankmaze-gamedays.
-// Bracket is keyed by round ("r1", "r2", …); each value is the ordered list
-// of slots for that round.
 type GameDay struct {
-	GameDayID       string                   `dynamodbav:"gameDayId"`
-	Schedule        GameDaySchedule          `dynamodbav:"schedule"`
-	Phases          GameDayPhases            `dynamodbav:"phases"`
-	RegisteredTanks []MatchTank              `dynamodbav:"registeredTanks,omitempty"`
-	Groups          []Group                  `dynamodbav:"groups,omitempty"`
-	Bracket         map[string][]BracketSlot `dynamodbav:"bracket,omitempty"`
-	PlacementPoints map[string]int           `dynamodbav:"placementPoints,omitempty"` // tankId → points
-	CreatedAt       int64                    `dynamodbav:"createdAt"`
+	GameDayID       string                   `dynamodbav:"gameDayId"                  json:"gameDayId"`
+	Schedule        GameDaySchedule          `dynamodbav:"schedule"                   json:"schedule"`
+	Phases          GameDayPhases            `dynamodbav:"phases"                     json:"phases"`
+	RegisteredTanks []MatchTank              `dynamodbav:"registeredTanks,omitempty"  json:"registeredTanks"`
+	Groups          []Group                  `dynamodbav:"groups,omitempty"           json:"groups"`
+	Bracket         map[string][]BracketSlot `dynamodbav:"bracket,omitempty"          json:"bracket,omitempty"`
+	PlacementPoints map[string]int           `dynamodbav:"placementPoints,omitempty"  json:"placementPoints,omitempty"`
+	CreatedAt       int64                    `dynamodbav:"createdAt"                  json:"createdAt"`
 }
 
 // Ranking is the item stored in tankmaze-rankings.
@@ -205,12 +199,12 @@ type ScoreTransferInput struct {
 
 // Map is the item stored in tankmaze-maps.
 type Map struct {
-	MapID       string   `dynamodbav:"mapId"`
-	Slug        string   `dynamodbav:"slug"`
-	Name        string   `dynamodbav:"name"`
-	Description string   `dynamodbav:"description"`
-	Layout      [][]bool `dynamodbav:"layout"`
-	IsBuiltIn   bool     `dynamodbav:"isBuiltIn"`
-	IsActive    bool     `dynamodbav:"isActive"`
-	CreatedAt   int64    `dynamodbav:"createdAt"`
+	MapID       string   `dynamodbav:"mapId"       json:"mapId"`
+	Slug        string   `dynamodbav:"slug"        json:"slug"`
+	Name        string   `dynamodbav:"name"        json:"name"`
+	Description string   `dynamodbav:"description" json:"description"`
+	Layout      [][]bool `dynamodbav:"layout"      json:"layout"`
+	IsBuiltIn   bool     `dynamodbav:"isBuiltIn"   json:"isBuiltIn"`
+	IsActive    bool     `dynamodbav:"isActive"    json:"isActive"`
+	CreatedAt   int64    `dynamodbav:"createdAt"   json:"createdAt"`
 }
