@@ -1,7 +1,4 @@
 import { Stack, StackProps, CfnOutput, SecretValue } from 'aws-cdk-lib';
-// Note: SecretValue.unsafePlainText is intentional — CFN does not support SSM SecureString
-// dynamic references on AWS::Cognito::UserPoolIdentityProvider. The secret travels via
-// GitHub Actions secret → CDK context → private CDK S3 bucket (encrypted at rest).
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import { Construct } from 'constructs';
 
@@ -23,7 +20,7 @@ export class AuthStack extends Stack {
       signInAliases: { email: true },
       autoVerify: { email: true },
       standardAttributes: {
-        email: { required: true, mutable: true }, // mutable required for Google IdP to map email
+        email: { required: true, mutable: false },
       },
       passwordPolicy: {
         minLength: 8,
