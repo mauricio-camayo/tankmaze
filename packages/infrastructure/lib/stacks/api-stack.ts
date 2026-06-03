@@ -152,8 +152,10 @@ export class ApiStack extends Stack {
       MATCH_LOGS_BUCKET:     matchLogsBucket.bucketName,
       CODEBUILD_PROJECT:     codebuildProject.projectName,
       MATCH_RUNNER_FUNCTION: matchRunner.functionArn,
-      // SCOUT_TANK_ID, SCOUT_VERSION, BRUISER_TANK_ID, BRUISER_VERSION set via
-      // SSM Parameter Store or manually after first deploy.
+      SCOUT_TANK_ID:         'builtin-scout',
+      SCOUT_VERSION:         'v1',
+      BRUISER_TANK_ID:       'builtin-bruiser',
+      BRUISER_VERSION:       'v1',
     });
     tables.tanks.grantReadWriteData(tankApi);
     tables.tankVersions.grantReadWriteData(tankApi);
@@ -237,6 +239,7 @@ export class ApiStack extends Stack {
       '/maps',
       '/rankings',
       '/gamedays/{gameDayId}',
+      '/tanks/ai',
     ];
     for (const p of publicPaths) {
       httpApi.addRoutes({

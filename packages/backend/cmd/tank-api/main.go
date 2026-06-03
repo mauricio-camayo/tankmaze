@@ -161,6 +161,8 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 		return h.listTanks(ctx, req)
 	case method == "POST" && rawPath == "tanks":
 		return h.createTank(ctx, req)
+	case method == "GET" && rawPath == "tanks/ai":
+		return h.getAiTanks(ctx)
 	case method == "GET" && len(parts) == 2 && parts[0] == "tanks":
 		return h.getTank(ctx, req, parts[1])
 	case method == "DELETE" && len(parts) == 2 && parts[0] == "tanks":
@@ -327,6 +329,33 @@ func (h *handler) getTank(ctx context.Context, req events.APIGatewayV2HTTPReques
 		Versions []db.TankVersion `json:"versions"`
 	}
 	return jsonResp(http.StatusOK, getTankResponse{Tank: tank, Versions: versions}), nil
+}
+
+func (h *handler) getAiTanks(ctx context.Context) (events.APIGatewayV2HTTPResponse, error) {
+	type aiTankResponse struct {
+		db.Tank
+		Versions []db.TankVersion `json:"versions"`
+	}
+	pairs := [][2]string{
+		{h.scoutTankID, h.scoutVersion},
+		{h.bruiserTankID, h.bruiserVersion},
+	}
+	results := make([]aiTankResponse, 0, len(pairs))
+	for _, p := range pairs {
+		if p[0] == "" {
+			continue
+		}
+		tank, err := h.store.GetTank(ctx, p[0])
+		if err != nil {
+			continue
+		}
+		versions, err := h.store.ListVersionsByTank(ctx, p[0])
+		if err != nil || versions == nil {
+			versions = []db.TankVersion{}
+		}
+		results = append(results, aiTankResponse{Tank: tank, Versions: versions})
+	}
+	return jsonResp(http.StatusOK, results), nil
 }
 
 func (h *handler) deleteTank(ctx context.Context, req events.APIGatewayV2HTTPRequest, tankID string) (events.APIGatewayV2HTTPResponse, error) {

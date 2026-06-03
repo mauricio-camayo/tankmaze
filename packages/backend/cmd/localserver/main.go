@@ -125,6 +125,8 @@ func (srv *server) route(w http.ResponseWriter, r *http.Request) {
 		srv.listTanks(w, r)
 	case method == "POST" && rawPath == "tanks":
 		srv.createTank(w, r)
+	case method == "GET" && rawPath == "tanks/ai":
+		srv.getAiTanks(w)
 	case method == "GET" && n == 2 && parts[0] == "tanks":
 		srv.getTank(w, r, parts[1])
 	case method == "POST" && n == 3 && parts[0] == "tanks" && parts[2] == "versions":
@@ -168,6 +170,26 @@ func (srv *server) route(w http.ResponseWriter, r *http.Request) {
 }
 
 // ── Tank handlers ──────────────────────────────────────────────────────────
+
+func (srv *server) getAiTanks(w http.ResponseWriter) {
+	type aiTankResponse struct {
+		db.Tank
+		Versions []db.TankVersion `json:"versions"`
+	}
+	results := make([]aiTankResponse, 0, 2)
+	for _, id := range []string{"__scout__", "__bruiser__"} {
+		tank, err := srv.store.getTank(id)
+		if err != nil {
+			continue
+		}
+		versions := srv.store.listVersionsByTank(id)
+		if versions == nil {
+			versions = []db.TankVersion{}
+		}
+		results = append(results, aiTankResponse{Tank: tank, Versions: versions})
+	}
+	jsonOK(w, results)
+}
 
 func (srv *server) listTanks(w http.ResponseWriter, _ *http.Request) {
 	tanks := srv.store.listTanksByUser(localUserID)

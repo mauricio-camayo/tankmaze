@@ -159,19 +159,52 @@ export class StorageStack extends Stack {
 
     // ---- Built-in map seeder -------------------------------------------
 
-    const seederFn = new lambda.Function(this, 'MapSeeder', {
+    const mapSeederFn = new lambda.Function(this, 'MapSeeder', {
       runtime: lambda.Runtime.NODEJS_20_X,
       handler: 'index.handler',
       code: lambda.Code.fromAsset(path.join(__dirname, '../../lib/map-seeder')),
       environment: { TABLE_NAME: maps.tableName },
       timeout: Duration.seconds(60),
     });
-    maps.grantWriteData(seederFn);
-    maps.grantReadData(seederFn);
+    maps.grantWriteData(mapSeederFn);
+    maps.grantReadData(mapSeederFn);
 
     new Trigger(this, 'MapSeedTrigger', {
-      handler: seederFn,
+      handler: mapSeederFn,
       executeAfter: [maps],
+    });
+
+    // ---- AI tank WASM + source deployment ------------------------------
+    // Uploads pre-compiled scout/bruiser binaries and their Go source to
+    // the wasm-artifacts bucket under the ai/ prefix.
+
+    const aiTanksDeploy = new s3deploy.BucketDeployment(this, 'AiTanksDeployment', {
+      sources: [s3deploy.Source.asset(path.join(__dirname, '../ai-tanks'))],
+      destinationBucket: this.wasmBucket,
+      destinationKeyPrefix: 'ai/',
+      prune: false,
+    });
+
+    // ---- AI tank DB seeder --------------------------------------------
+
+    const tankSeederFn = new lambda.Function(this, 'TankSeeder', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../lib/tank-seeder')),
+      environment: {
+        TANKS_TABLE:         tanks.tableName,
+        TANK_VERSIONS_TABLE: tankVersions.tableName,
+        WASM_BUCKET:         this.wasmBucket.bucketName,
+      },
+      timeout: Duration.seconds(60),
+    });
+    tanks.grantReadWriteData(tankSeederFn);
+    tankVersions.grantReadWriteData(tankSeederFn);
+    this.wasmBucket.grantRead(tankSeederFn);
+
+    new Trigger(this, 'TankSeedTrigger', {
+      handler: tankSeederFn,
+      executeAfter: [tanks, tankVersions, aiTanksDeploy],
     });
   }
 }

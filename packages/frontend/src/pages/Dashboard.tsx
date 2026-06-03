@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { listTanks } from '../services/api';
-import type { Tank } from '../types';
+import { listTanks, listAiTanks, forkTank } from '../services/api';
+import type { Tank, TankVersion } from '../types';
 import { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
 
 function relativeTime(ts: number | null): string {
@@ -101,17 +101,64 @@ function badgeStyle(bg: string, color: string): React.CSSProperties {
   return { background: bg, color, fontSize: 11, padding: '2px 7px', borderRadius: 4, fontWeight: 500 };
 }
 
+type AiTank = Tank & { versions: TankVersion[] };
+
+const AI_DESCRIPTIONS: Record<string, string> = {
+  Scout:   'High speed, medium sensor range. Great starting point for mobility-focused builds.',
+  Bruiser: 'High damage and armor, slow speed. Start here for a tanky, close-range strategy.',
+};
+
+function AiTankCard({ aiTank, onForked }: { aiTank: AiTank; onForked: () => void }) {
+  const navigate = useNavigate();
+  const [forking, setForking] = useState(false);
+  const readyVersion = aiTank.versions.find((v) => v.compileStatus === 'ready');
+
+  async function handleFork() {
+    if (!readyVersion) return;
+    setForking(true);
+    try {
+      const newTank = await forkTank(aiTank.tankId, readyVersion.version);
+      onForked();
+      navigate(`/tanks/${newTank.tankId}/edit`);
+    } catch {
+      setForking(false);
+    }
+  }
+
+  return (
+    <div style={{ ...cardStyle, flex: 1, minWidth: 220 }}>
+      <div style={{ fontWeight: 700, fontSize: 15, color: '#e2e8f0', marginBottom: 6 }}>{aiTank.name}</div>
+      <p style={{ margin: '0 0 14px', fontSize: 13, color: '#64748b', lineHeight: 1.5 }}>
+        {AI_DESCRIPTIONS[aiTank.name] ?? ''}
+      </p>
+      <button
+        onClick={handleFork}
+        disabled={forking || !readyVersion}
+        style={{ ...primaryButtonStyle, width: '100%' }}
+      >
+        {forking ? 'Forking…' : `Fork ${aiTank.name}`}
+      </button>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [tanks, setTanks] = useState<Tank[]>([]);
+  const [aiTanks, setAiTanks] = useState<AiTank[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  function reload() {
     listTanks()
       .then((data) => setTanks(data ?? []))
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    reload();
+    listAiTanks().then((data) => setAiTanks(data ?? [])).catch(() => {});
   }, []);
 
   function handleNewTank() {
@@ -120,6 +167,18 @@ export default function Dashboard() {
 
   return (
     <Layout>
+      {aiTanks.length > 0 && (
+        <div style={{ marginBottom: 36 }}>
+          <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Start from a template
+          </h3>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            {aiTanks.map((ai) => (
+              <AiTankCard key={ai.tankId} aiTank={ai} onForked={reload} />
+            ))}
+          </div>
+        </div>
+      )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
         <h2 style={{ margin: 0, fontSize: 22, color: '#e2e8f0' }}>My Tanks</h2>
         <button onClick={handleNewTank} style={primaryButtonStyle}>

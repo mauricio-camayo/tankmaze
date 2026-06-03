@@ -511,6 +511,17 @@ func (srv *server) compileWasm(source string) ([]byte, string, error) {
 	return data, fmt.Sprintf("%x", h), nil
 }
 
+func aiConfig(name string) db.VersionConfig {
+	switch name {
+	case "scout":
+		return db.VersionConfig{Speed: 5, SensorRange: 3, Damage: 2, Armor: 2, FireRate: 3}
+	case "bruiser":
+		return db.VersionConfig{Speed: 2, SensorRange: 2, Damage: 5, Armor: 5, FireRate: 1}
+	default:
+		return db.VersionConfig{}
+	}
+}
+
 // compileAITank builds a testdata tank to WASM and registers it in the server's store.
 func (srv *server) compileAITank(name string) error {
 	dir := filepath.Join(tanksBaseDir(), name)
@@ -544,7 +555,7 @@ func (srv *server) compileAITank(name string) error {
 	srv.setWasm(wasmKey, data)
 
 	tankID := "__" + name + "__"
-	displayName := strings.ToUpper(name[:1]) + name[1:] // Title case
+	displayName := strings.ToUpper(name[:1]) + name[1:]
 	srv.store.putTank(db.Tank{
 		TankID:    tankID,
 		UserID:    aiUserID,
@@ -555,6 +566,7 @@ func (srv *server) compileAITank(name string) error {
 		TankID:        tankID,
 		Version:       "v1",
 		VersionType:   "major",
+		Config:        aiConfig(name),
 		WasmS3Key:     wasmKey,
 		CompileStatus: "ready",
 		CreatedAt:     time.Now().Unix(),
