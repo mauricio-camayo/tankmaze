@@ -14,19 +14,13 @@ export class AuthStack extends Stack {
     const callbackUrls = ['http://localhost:5173'];
     if (process.env.SITE_URL) callbackUrls.push(process.env.SITE_URL);
 
-    // Logical ID changed (UserPool → UserPool2) to force CloudFormation replacement.
-    // email must be mutable:true so Cognito can re-apply IdP attribute mapping on
-    // every federated sign-in; mutable:false causes "Attribute cannot be updated"
-    // for returning Google users.
-    this.userPool = new cognito.UserPool(this, 'UserPool2', {
+    this.userPool = new cognito.UserPool(this, 'UserPool', {
       userPoolName: 'tankmaze-users',
       selfSignUpEnabled: true,
       signInAliases: { email: true },
       autoVerify: { email: true },
       standardAttributes: {
-        email: { required: true, mutable: true },
-        givenName: { required: false, mutable: true },
-        profilePicture: { required: false, mutable: true },
+        email: { required: true, mutable: false },
       },
       passwordPolicy: {
         minLength: 8,
@@ -43,9 +37,7 @@ export class AuthStack extends Stack {
       description: 'TankMaze platform administrators',
     });
 
-    // Domain prefix changed alongside pool recreation to avoid collision while
-    // CloudFormation deletes the old domain before the new one is ready.
-    const domainPrefix = `tankmaze-auth-${this.account}`;
+    const domainPrefix = `tankmaze-${this.account}`;
     this.userPool.addDomain('Domain', {
       cognitoDomain: { domainPrefix },
     });
@@ -60,7 +52,10 @@ export class AuthStack extends Stack {
         clientSecretValue: SecretValue.unsafePlainText(googleClientSecret),
         scopes: ['email', 'profile', 'openid'],
         attributeMapping: {
-          email: cognito.ProviderAttribute.GOOGLE_EMAIL,
+          // email is intentionally NOT mapped here. Cognito sets it automatically
+          // from the OIDC token on first sign-in. Mapping it explicitly would try
+          // to UPDATE the attribute on every subsequent sign-in, which fails because
+          // email is mutable:false on this pool.
           givenName: cognito.ProviderAttribute.GOOGLE_NAME,
           profilePicture: cognito.ProviderAttribute.other('picture'),
         },
