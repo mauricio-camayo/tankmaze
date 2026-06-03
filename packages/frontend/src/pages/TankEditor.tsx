@@ -3,6 +3,7 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import Editor from '@monaco-editor/react';
 import Layout from '../components/Layout';
 import {
+  createTank,
   getTank,
   submitVersion,
   getVersionStatus,
@@ -276,9 +277,13 @@ export default function TankEditor() {
 
   const pollCancelRef = useRef(false);
 
-  // Load tank on mount
+  // Load tank on mount — skip for the 'new' route (tank not created yet)
   useEffect(() => {
-    if (!tankId) return;
+    if (!tankId || tankId === 'new') {
+      setSource(defaultSource(DEFAULT_CONFIG));
+      setPageLoading(false);
+      return;
+    }
     getTank(tankId)
       .then(({ versions: v, ...t }) => {
         setTank(t);
@@ -339,17 +344,16 @@ export default function TankEditor() {
     return () => { pollCancelRef.current = true; };
   }, [saveStatus, pendingVersion, tankId]);
 
-  // Persist source to localStorage on change
+  // Persist source to localStorage on change (skip while in new-tank mode)
   useEffect(() => {
-    if (tankId && source) localStorage.setItem(`tankmaze-src-${tankId}`, source);
+    if (tankId && tankId !== 'new' && source) localStorage.setItem(`tankmaze-src-${tankId}`, source);
   }, [tankId, source]);
 
   useEffect(() => {
-    if (tankId) localStorage.setItem(`tankmaze-cfg-${tankId}`, JSON.stringify(config));
+    if (tankId && tankId !== 'new') localStorage.setItem(`tankmaze-cfg-${tankId}`, JSON.stringify(config));
   }, [tankId, config]);
 
   async function handleSave() {
-    if (!tankId) return;
     const statSum = STAT_NAMES.reduce((acc, k) => acc + config[k], 0);
     if (statSum !== STAT_SUM_TARGET) {
       setSaveError(`Stat points must sum to ${STAT_SUM_TARGET} (currently ${statSum})`);
@@ -359,7 +363,13 @@ export default function TankEditor() {
     setSaveStatus('submitting');
     setSaveError(null);
     try {
-      const v = await submitVersion(tankId, source, config);
+      let id = tankId;
+      if (!id || id === 'new') {
+        const created = await createTank(config.name || 'My Tank');
+        id = created.tankId;
+        navigate(`/tanks/${id}/edit`, { replace: true });
+      }
+      const v = await submitVersion(id, source, config);
       setPendingVersion(v.version);
       setSaveStatus('polling');
     } catch (e) {

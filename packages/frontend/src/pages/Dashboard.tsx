@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { listTanks, createTank } from '../services/api';
+import { listTanks } from '../services/api';
 import type { Tank } from '../types';
 import { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
 
@@ -106,7 +106,6 @@ export default function Dashboard() {
   const [tanks, setTanks] = useState<Tank[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     listTanks()
@@ -115,23 +114,16 @@ export default function Dashboard() {
       .finally(() => setLoading(false));
   }, []);
 
-  async function handleNewTank() {
-    setCreating(true);
-    try {
-      const tank = await createTank();
-      navigate(`/tanks/${tank.tankId}/edit`);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to create tank');
-      setCreating(false);
-    }
+  function handleNewTank() {
+    navigate('/tanks/new/edit');
   }
 
   return (
     <Layout>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
         <h2 style={{ margin: 0, fontSize: 22, color: '#e2e8f0' }}>My Tanks</h2>
-        <button onClick={handleNewTank} disabled={creating} style={primaryButtonStyle}>
-          {creating ? 'Creating…' : '+ New Tank'}
+        <button onClick={handleNewTank} style={primaryButtonStyle}>
+          + New Tank
         </button>
       </div>
 
@@ -150,8 +142,8 @@ export default function Dashboard() {
           <p style={{ color: '#64748b', marginBottom: 16 }}>
             You haven't created any tanks yet.
           </p>
-          <button onClick={handleNewTank} disabled={creating} style={primaryButtonStyle}>
-            {creating ? 'Creating…' : '+ New Tank'}
+          <button onClick={handleNewTank} style={primaryButtonStyle}>
+            + New Tank
           </button>
         </div>
       )}

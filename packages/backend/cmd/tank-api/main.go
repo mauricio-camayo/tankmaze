@@ -163,6 +163,8 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 		return h.createTank(ctx, req)
 	case method == "GET" && len(parts) == 2 && parts[0] == "tanks":
 		return h.getTank(ctx, req, parts[1])
+	case method == "DELETE" && len(parts) == 2 && parts[0] == "tanks":
+		return h.deleteTank(ctx, req, parts[1])
 	case method == "POST" && len(parts) == 3 && parts[0] == "tanks" && parts[2] == "versions":
 		return h.submitVersion(ctx, req, parts[1])
 	case method == "GET" && len(parts) == 5 && parts[0] == "tanks" && parts[2] == "versions" && parts[4] == "status":
@@ -325,6 +327,43 @@ func (h *handler) getTank(ctx context.Context, req events.APIGatewayV2HTTPReques
 		Versions []db.TankVersion `json:"versions"`
 	}
 	return jsonResp(http.StatusOK, getTankResponse{Tank: tank, Versions: versions}), nil
+}
+
+func (h *handler) deleteTank(ctx context.Context, req events.APIGatewayV2HTTPRequest, tankID string) (events.APIGatewayV2HTTPResponse, error) {
+	uid := userID(req)
+	if uid == "" {
+		return errResp(http.StatusUnauthorized, "unauthorized"), nil
+	}
+	tank, err := h.store.GetTank(ctx, tankID)
+	if errors.Is(err, db.ErrNotFound) {
+		return errResp(http.StatusNotFound, "tank not found"), nil
+	}
+	if err != nil {
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	if tank.UserID != uid {
+		return errResp(http.StatusForbidden, "forbidden"), nil
+	}
+	versions, err := h.store.ListVersionsByTank(ctx, tankID)
+	if err != nil {
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	for _, v := range versions {
+		if v.RegisteredForGameDay != "" {
+			return errResp(http.StatusConflict, "tank is registered for a game day and cannot be deleted"), nil
+		}
+	}
+	for _, v := range versions {
+		if err := h.store.DeleteVersion(ctx, tankID, v.Version); err != nil {
+			log.Printf("delete version %s/%s: %v", tankID, v.Version, err)
+			return errResp(http.StatusInternalServerError, "internal error"), nil
+		}
+	}
+	if err := h.store.DeleteTank(ctx, tankID); err != nil {
+		log.Printf("delete tank %s: %v", tankID, err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusNoContent}, nil
 }
 
 // ---- Version handlers -------------------------------------------------------

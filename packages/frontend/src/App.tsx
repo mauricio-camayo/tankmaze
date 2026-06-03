@@ -42,6 +42,7 @@ function AppRoutes() {
       <Route path="/gameday/:gameDayId" element={<GameDay />} />
       <Route element={<RequireAuth />}>
         <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/tanks/new/edit" element={<TankEditor />} />
         <Route path="/tanks/:tankId" element={<TankDetail />} />
         <Route path="/tanks/:tankId/edit" element={<TankEditor />} />
       </Route>

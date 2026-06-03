@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import Layout, { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
-import { getTank } from '../services/api';
+import { getTank, deleteTank } from '../services/api';
 import type { Tank, TankVersion } from '../types';
 import ForkDialog from '../components/ForkDialog';
 
@@ -155,6 +155,8 @@ export default function TankDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showFork, setShowFork] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!tankId) return;
@@ -239,13 +241,45 @@ export default function TankDetail() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, flexShrink: 0, marginLeft: 16 }}>
+        <div style={{ display: 'flex', gap: 8, flexShrink: 0, marginLeft: 16, alignItems: 'center' }}>
           {latestReadyMajor && !tank.scoreTransferredTo && (
             <button onClick={() => setShowFork(true)} style={ghostButtonStyle}>Fork</button>
           )}
           <button onClick={() => navigate(`/tanks/${tankId}/edit`)} style={primaryButtonStyle}>
             Edit
           </button>
+          {confirmDelete ? (
+            <>
+              <span style={{ color: '#f87171', fontSize: 13 }}>Delete forever?</span>
+              <button
+                onClick={async () => {
+                  setDeleting(true);
+                  try {
+                    await deleteTank(tankId!);
+                    navigate('/dashboard');
+                  } catch (e) {
+                    setDeleting(false);
+                    setConfirmDelete(false);
+                    alert(e instanceof Error ? e.message : 'Delete failed');
+                  }
+                }}
+                disabled={deleting}
+                style={{ ...ghostButtonStyle, borderColor: '#7f1d1d', color: '#f87171' }}
+              >
+                {deleting ? 'Deleting…' : 'Yes, delete'}
+              </button>
+              <button onClick={() => setConfirmDelete(false)} style={ghostButtonStyle}>
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              style={{ ...ghostButtonStyle, borderColor: '#7f1d1d', color: '#f87171' }}
+            >
+              Delete
+            </button>
+          )}
         </div>
       </div>
 

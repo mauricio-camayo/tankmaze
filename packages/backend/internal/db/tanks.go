@@ -11,6 +11,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
+// DeleteTank removes a tank record by tankId.
+func (s *Store) DeleteTank(ctx context.Context, tankID string) error {
+	_, err := s.db.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+		TableName: &s.tanksTable,
+		Key:       tankKey(tankID),
+	})
+	return err
+}
+
 // PutTank writes a tank record, overwriting any existing record for the same tankId.
 func (s *Store) PutTank(ctx context.Context, t Tank) error {
 	item, err := attributevalue.MarshalMap(t)

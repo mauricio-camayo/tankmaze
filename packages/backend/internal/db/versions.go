@@ -9,6 +9,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
+// DeleteVersion removes a single version record.
+func (s *Store) DeleteVersion(ctx context.Context, tankID, version string) error {
+	_, err := s.db.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+		TableName: &s.versionsTable,
+		Key:       versionKey(tankID, version),
+	})
+	return err
+}
+
 // PutVersion writes a version record, overwriting any existing record for the
 // same (tankId, version) pair.
 func (s *Store) PutVersion(ctx context.Context, v TankVersion) error {
