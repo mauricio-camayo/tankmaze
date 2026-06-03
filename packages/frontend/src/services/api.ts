@@ -24,7 +24,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 export const listTanks = () => request<Tank[]>('/tanks');
 export const getTank = (id: string) =>
   request<Tank & { versions: TankVersion[] }>(`/tanks/${id}`);
-export const createTank = () => request<Tank>('/tanks', { method: 'POST' });
+export const createTank = () =>
+  request<Tank>('/tanks', { method: 'POST', body: JSON.stringify({ name: 'My Tank' }) });
 export const forkTank = (tankId: string, version: string) =>
   request<Tank>(`/tanks?forkFrom=${tankId}&forkVersion=${encodeURIComponent(version)}`, {
     method: 'POST',

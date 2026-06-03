@@ -798,9 +798,6 @@ func (h *handler) getMatchTicks(ctx context.Context, req events.APIGatewayV2HTTP
 // ---- Rankings and Game Days -------------------------------------------------
 
 func (h *handler) getRankings(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	if userID(req) == "" {
-		return errResp(http.StatusUnauthorized, "unauthorized"), nil
-	}
 	tanks, err := h.store.ScanTanksByScore(ctx)
 	if err != nil {
 		return errResp(http.StatusInternalServerError, "internal error"), nil
@@ -833,9 +830,6 @@ func (h *handler) getRankings(ctx context.Context, req events.APIGatewayV2HTTPRe
 }
 
 func (h *handler) getGameDay(ctx context.Context, req events.APIGatewayV2HTTPRequest, gameDayID string) (events.APIGatewayV2HTTPResponse, error) {
-	if userID(req) == "" {
-		return errResp(http.StatusUnauthorized, "unauthorized"), nil
-	}
 	gd, err := h.store.GetGameDay(ctx, gameDayID)
 	if errors.Is(err, db.ErrNotFound) {
 		return errResp(http.StatusNotFound, "game day not found"), nil
@@ -972,16 +966,17 @@ func (h *handler) triggerBuild(ctx context.Context, tankID, version, sourceKey, 
 }
 
 // userID extracts the Cognito sub from the JWT authorizer claims.
+// Returns "" on public routes where Authorizer is nil.
 func userID(req events.APIGatewayV2HTTPRequest) string {
-	if req.RequestContext.Authorizer.JWT != nil {
-		return req.RequestContext.Authorizer.JWT.Claims["sub"]
+	if req.RequestContext.Authorizer == nil || req.RequestContext.Authorizer.JWT == nil {
+		return ""
 	}
-	return ""
+	return req.RequestContext.Authorizer.JWT.Claims["sub"]
 }
 
 // isAdmin returns true if the caller belongs to the "platform-admin" Cognito group.
 func isAdmin(req events.APIGatewayV2HTTPRequest) bool {
-	if req.RequestContext.Authorizer.JWT == nil {
+	if req.RequestContext.Authorizer == nil || req.RequestContext.Authorizer.JWT == nil {
 		return false
 	}
 	return strings.Contains(req.RequestContext.Authorizer.JWT.Claims["cognito:groups"], "platform-admin")
