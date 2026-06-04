@@ -34,21 +34,8 @@ const DEFAULT_CONFIG: TankConfig = {
   name: 'My Tank', speed: 3, sensorRange: 3, damage: 3, armor: 3, fireRate: 3,
 };
 
-function defaultSource(cfg: TankConfig): string {
-  return `package tank
-
-import . "github.com/tankmaze/sdk"
-
-var Config = TankConfig{
-\tName:        "${cfg.name}",
-\tSpeed:       ${cfg.speed},
-\tSensorRange: ${cfg.sensorRange},
-\tDamage:      ${cfg.damage},
-\tArmor:       ${cfg.armor},
-\tFireRate:    ${cfg.fireRate},
-}
-
-func Tick(s Sensors) Action {
+function defaultSource(): string {
+  return `func Tick(s Sensors) Action {
 \tif s.ProximityAlert && s.FireCooldown == 0 {
 \t\treturn Action{Type: Fire}
 \t}
@@ -58,6 +45,29 @@ func Tick(s Sensors) Action {
 \treturn Action{Type: Rotate, Direction: Right}
 }
 `;
+}
+
+function buildSource(body: string, cfg: TankConfig): string {
+  return `package tank
+
+import . "github.com/tankmaze/sdk"
+
+var Config = TankConfig{
+\tName:        ${JSON.stringify(cfg.name)},
+\tSpeed:       ${cfg.speed},
+\tSensorRange: ${cfg.sensorRange},
+\tDamage:      ${cfg.damage},
+\tArmor:       ${cfg.armor},
+\tFireRate:    ${cfg.fireRate},
+}
+
+${body}`;
+}
+
+// Strip the locked preamble from sources loaded from S3 or old localStorage values.
+function stripPreamble(src: string): string {
+  const idx = src.indexOf('\n\nfunc ');
+  return idx >= 0 ? src.slice(idx + 2) : src;
 }
 
 function isMajor(v: string) { return /^v\d+$/.test(v); }
@@ -152,6 +162,44 @@ function ConfigPanel({
           </span>
         </div>
       </div>
+    </div>
+  );
+}
+
+function PreambleBanner({ cfg }: { cfg: TankConfig }) {
+  const [expanded, setExpanded] = useState(false);
+  const preamble = `package tank
+
+import . "github.com/tankmaze/sdk"
+
+var Config = TankConfig{
+\tName:        ${JSON.stringify(cfg.name)},
+\tSpeed:       ${cfg.speed},
+\tSensorRange: ${cfg.sensorRange},
+\tDamage:      ${cfg.damage},
+\tArmor:       ${cfg.armor},
+\tFireRate:    ${cfg.fireRate},
+}`;
+
+  return (
+    <div style={{ marginBottom: 8, border: '1px solid #2d2d4e', borderRadius: 6, overflow: 'hidden' }}>
+      <button
+        onClick={() => setExpanded((e) => !e)}
+        style={{
+          width: '100%', background: '#1a1a2e', border: 'none', color: '#64748b',
+          padding: '6px 12px', textAlign: 'left', cursor: 'pointer', fontSize: 12,
+          display: 'flex', alignItems: 'center', gap: 6,
+        }}
+      >
+        <span>{expanded ? '▾' : '▸'}</span>
+        <span>Preamble (read-only) — package, imports, Config</span>
+      </button>
+      {expanded && (
+        <pre style={{
+          margin: 0, padding: '10px 14px', background: '#0d0d1a',
+          color: '#64748b', fontSize: 12, overflowX: 'auto', userSelect: 'none',
+        }}>{preamble}</pre>
+      )}
     </div>
   );
 }
@@ -291,7 +339,7 @@ export default function TankEditor() {
   // Load tank on mount — skip for the 'new' route (tank not created yet)
   useEffect(() => {
     if (!tankId || tankId === 'new') {
-      setSource(defaultSource(DEFAULT_CONFIG));
+      setSource(defaultSource());
       setPageLoading(false);
       return;
     }
@@ -303,9 +351,10 @@ export default function TankEditor() {
         const latestVer = sortedByAge(v ?? [])[0];
 
         // Source: localStorage → own version → fork origin → default.
+        // Always strip preamble — old localStorage/S3 values may include it.
         const savedSrc = localStorage.getItem(`tankmaze-src-${tankId}`);
         if (savedSrc) {
-          setSource(savedSrc);
+          setSource(stripPreamble(savedSrc));
         } else {
           const attempts: Array<[string, string]> = [];
           if (latestVer?.sourceS3Key) attempts.push([tankId, latestVer.version]);
@@ -316,12 +365,12 @@ export default function TankEditor() {
           for (const [tid, ver] of attempts) {
             try {
               const { source: fetched } = await getVersionSource(tid, ver);
-              setSource(fetched);
+              setSource(stripPreamble(fetched));
               loaded = true;
               break;
             } catch { /* try next */ }
           }
-          if (!loaded) setSource(defaultSource(DEFAULT_CONFIG));
+          if (!loaded) setSource(defaultSource());
         }
 
         // Config: prefer localStorage, then seed from API (tank name + version stats).
@@ -420,7 +469,7 @@ export default function TankEditor() {
         await updateTank(id, { name: config.name.trim() });
         setTank({ ...tank, name: config.name.trim() });
       }
-      const v = await submitVersion(id, source, config);
+      const v = await submitVersion(id, buildSource(source, config), config);
       setPendingVersion(v.version);
       setSaveStatus('polling');
     } catch (e) {
@@ -564,6 +613,9 @@ export default function TankEditor() {
         error={saveError}
         version={pendingVersion ?? latestVersion?.version}
       />
+
+      {/* Preamble banner */}
+      <PreambleBanner cfg={config} />
 
       {/* Monaco */}
       <div style={{ border: '1px solid #2d2d4e', borderRadius: 8, overflow: 'hidden' }}>
