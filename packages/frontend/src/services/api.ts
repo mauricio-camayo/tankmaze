@@ -34,6 +34,11 @@ export const forkTank = (tankId: string, version: string) =>
   request<Tank>(`/tanks?forkFrom=${tankId}&forkVersion=${encodeURIComponent(version)}`, {
     method: 'POST',
   });
+export const updateTank = (tankId: string, updates: { name: string }) =>
+  request<{ name: string }>(`/tanks/${tankId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
 
 // Versions
 export const submitVersion = (tankId: string, source: string, config: object) =>
@@ -44,6 +49,10 @@ export const submitVersion = (tankId: string, source: string, config: object) =>
 export const getVersionStatus = (tankId: string, version: string) =>
   request<Pick<TankVersion, 'compileStatus' | 'compileError'>>(
     `/tanks/${tankId}/versions/${encodeURIComponent(version)}/status`,
+  );
+export const getVersionSource = (tankId: string, version: string) =>
+  request<{ source: string }>(
+    `/tanks/${tankId}/versions/${encodeURIComponent(version)}/source`,
   );
 export const promoteVersion = (tankId: string, version: string) =>
   request<TankVersion>(

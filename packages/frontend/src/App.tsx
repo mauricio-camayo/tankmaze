@@ -61,7 +61,7 @@ export default function App() {
       getAuthUser().then(async (u) => {
         if (u) {
           const profile = await getUserProfile();
-          setUser({ userId: u.userId, username: u.username, ...profile });
+          setUser({ userId: profile.sub ?? u.userId, username: u.username, name: profile.name, picture: profile.picture });
         } else {
           setUser(null);
         }

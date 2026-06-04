@@ -58,13 +58,14 @@ export async function getAuthUser() {
   }
 }
 
-export async function getUserProfile(): Promise<{ name?: string; picture?: string }> {
+export async function getUserProfile(): Promise<{ sub?: string; name?: string; picture?: string }> {
   if (LOCAL_DEV) return { name: 'Local User' };
   try {
     const session = await fetchAuthSession();
     const payload = session.tokens?.idToken?.payload;
     if (!payload) return {};
     return {
+      sub: payload['sub'] as string | undefined,
       name: (payload['given_name'] ?? payload['name']) as string | undefined,
       picture: payload['picture'] as string | undefined,
     };

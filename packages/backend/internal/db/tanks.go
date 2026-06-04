@@ -113,6 +113,23 @@ func (s *Store) UpdateTankStats(ctx context.Context, tankID string, stats TankSt
 	return err
 }
 
+// UpdateTankName updates the name field on a tank record.
+func (s *Store) UpdateTankName(ctx context.Context, tankID, name string) error {
+	upd := expression.Set(expression.Name("name"), expression.Value(name))
+	expr, err := expression.NewBuilder().WithUpdate(upd).Build()
+	if err != nil {
+		return fmt.Errorf("build expression: %w", err)
+	}
+	_, err = s.db.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName:                 &s.tanksTable,
+		Key:                       tankKey(tankID),
+		UpdateExpression:          expr.Update(),
+		ExpressionAttributeNames:  expr.Names(),
+		ExpressionAttributeValues: expr.Values(),
+	})
+	return err
+}
+
 // ScanTanksByScore returns all tanks sorted by GlobalScore descending. Used to
 // build the global leaderboard. Results are sorted in application memory.
 func (s *Store) ScanTanksByScore(ctx context.Context) ([]Tank, error) {

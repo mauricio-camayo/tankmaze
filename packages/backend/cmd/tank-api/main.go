@@ -28,6 +28,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"net/http"
@@ -65,7 +66,12 @@ type createTankBody struct {
 }
 
 type submitVersionBody struct {
-	Source string `json:"source"`
+	Source string           `json:"source"`
+	Config db.VersionConfig `json:"config"`
+}
+
+type updateTankBody struct {
+	Name string `json:"name"`
 }
 
 type registerVersionBody struct {
@@ -167,10 +173,14 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 		return h.getTank(ctx, req, parts[1])
 	case method == "DELETE" && len(parts) == 2 && parts[0] == "tanks":
 		return h.deleteTank(ctx, req, parts[1])
+	case method == "PATCH" && len(parts) == 2 && parts[0] == "tanks":
+		return h.updateTank(ctx, req, parts[1])
 	case method == "POST" && len(parts) == 3 && parts[0] == "tanks" && parts[2] == "versions":
 		return h.submitVersion(ctx, req, parts[1])
 	case method == "GET" && len(parts) == 5 && parts[0] == "tanks" && parts[2] == "versions" && parts[4] == "status":
 		return h.getVersionStatus(ctx, req, parts[1], parts[3])
+	case method == "GET" && len(parts) == 5 && parts[0] == "tanks" && parts[2] == "versions" && parts[4] == "source":
+		return h.getVersionSource(ctx, req, parts[1], parts[3])
 	case method == "POST" && len(parts) == 5 && parts[0] == "tanks" && parts[2] == "versions" && parts[4] == "promote":
 		return h.promoteVersion(ctx, req, parts[1], parts[3])
 	case method == "POST" && len(parts) == 5 && parts[0] == "tanks" && parts[2] == "versions" && parts[4] == "register":
@@ -294,6 +304,7 @@ func (h *handler) createTank(ctx context.Context, req events.APIGatewayV2HTTPReq
 				TankID:        tankID,
 				Version:       "v0.1",
 				VersionType:   "minor",
+				Config:        srcVer.Config,
 				SourceS3Key:   newSrcKey,
 				CompileStatus: "pending",
 				CreatedAt:     time.Now().Unix(),
@@ -468,6 +479,7 @@ func (h *handler) submitVersion(ctx context.Context, req events.APIGatewayV2HTTP
 		TankID:        tankID,
 		Version:       nextVer,
 		VersionType:   "minor",
+		Config:        body.Config,
 		SourceS3Key:   sourceKey,
 		CompileStatus: "pending",
 		CreatedAt:     time.Now().Unix(),
@@ -509,6 +521,48 @@ func (h *handler) getVersionStatus(ctx context.Context, req events.APIGatewayV2H
 		"compileStatus": ver.CompileStatus,
 		"compileError":  ver.CompileError,
 	}), nil
+}
+
+func (h *handler) getVersionSource(ctx context.Context, req events.APIGatewayV2HTTPRequest, tankID, version string) (events.APIGatewayV2HTTPResponse, error) {
+	uid := userID(req)
+	if uid == "" {
+		return errResp(http.StatusUnauthorized, "unauthorized"), nil
+	}
+	tank, err := h.store.GetTank(ctx, tankID)
+	if errors.Is(err, db.ErrNotFound) {
+		return errResp(http.StatusNotFound, "tank not found"), nil
+	}
+	if err != nil {
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	isAiTank := tankID == h.scoutTankID || tankID == h.bruiserTankID
+	if tank.UserID != uid && !isAiTank {
+		return errResp(http.StatusForbidden, "forbidden"), nil
+	}
+	ver, err := h.store.GetVersion(ctx, tankID, version)
+	if errors.Is(err, db.ErrNotFound) {
+		return errResp(http.StatusNotFound, "version not found"), nil
+	}
+	if err != nil {
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	if ver.SourceS3Key == "" {
+		return errResp(http.StatusNotFound, "source not available"), nil
+	}
+	out, err := h.s3.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(h.wasmBucket),
+		Key:    aws.String(ver.SourceS3Key),
+	})
+	if err != nil {
+		log.Printf("get source %s/%s: %v", tankID, version, err)
+		return errResp(http.StatusInternalServerError, "failed to fetch source"), nil
+	}
+	defer out.Body.Close()
+	srcBytes, err := io.ReadAll(out.Body)
+	if err != nil {
+		return errResp(http.StatusInternalServerError, "failed to read source"), nil
+	}
+	return jsonResp(http.StatusOK, map[string]string{"source": string(srcBytes)}), nil
 }
 
 func (h *handler) promoteVersion(ctx context.Context, req events.APIGatewayV2HTTPRequest, tankID, version string) (events.APIGatewayV2HTTPResponse, error) {
@@ -660,6 +714,39 @@ func (h *handler) deregisterVersion(ctx context.Context, req events.APIGatewayV2
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
 	return jsonResp(http.StatusOK, map[string]bool{"deregistered": true}), nil
+}
+
+func (h *handler) updateTank(ctx context.Context, req events.APIGatewayV2HTTPRequest, tankID string) (events.APIGatewayV2HTTPResponse, error) {
+	uid := userID(req)
+	if uid == "" {
+		return errResp(http.StatusUnauthorized, "unauthorized"), nil
+	}
+	tank, err := h.store.GetTank(ctx, tankID)
+	if errors.Is(err, db.ErrNotFound) {
+		return errResp(http.StatusNotFound, "tank not found"), nil
+	}
+	if err != nil {
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	if tank.UserID != uid {
+		return errResp(http.StatusForbidden, "forbidden"), nil
+	}
+	var body updateTankBody
+	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
+		return errResp(http.StatusBadRequest, "invalid request body"), nil
+	}
+	body.Name = strings.TrimSpace(body.Name)
+	if body.Name == "" {
+		return errResp(http.StatusBadRequest, "name is required"), nil
+	}
+	if len(body.Name) > maxTankNameLen {
+		return errResp(http.StatusBadRequest, fmt.Sprintf("name must be %d characters or fewer", maxTankNameLen)), nil
+	}
+	if err := h.store.UpdateTankName(ctx, tankID, body.Name); err != nil {
+		log.Printf("update tank name %s: %v", tankID, err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	return jsonResp(http.StatusOK, map[string]string{"name": body.Name}), nil
 }
 
 // ---- Score transfer ---------------------------------------------------------
@@ -1066,7 +1153,19 @@ func authorName(req events.APIGatewayV2HTTPRequest) string {
 	if req.RequestContext.Authorizer == nil || req.RequestContext.Authorizer.JWT == nil {
 		return ""
 	}
-	return req.RequestContext.Authorizer.JWT.Claims["name"]
+	claims := req.RequestContext.Authorizer.JWT.Claims
+	for _, key := range []string{"name", "given_name", "email"} {
+		if v := claims[key]; v != "" {
+			if key == "email" {
+				if at := strings.Index(v, "@"); at > 0 {
+					return v[:at]
+				}
+			}
+			return v
+		}
+	}
+	log.Printf("authorName: no usable name claim found; available claims: %v", claims)
+	return ""
 }
 
 func authorNameOrID(t db.Tank) string {

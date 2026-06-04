@@ -554,6 +554,14 @@ func (srv *server) compileAITank(name string) error {
 	wasmKey := fmt.Sprintf("__ai__/%s/tank.wasm", name)
 	srv.setWasm(wasmKey, data)
 
+	// Store source so fork-copy works and getVersionSource can serve it directly.
+	srcKey := fmt.Sprintf("__ai__/%s/source.go", name)
+	if srcBytes, err := os.ReadFile(filepath.Join(dir, "main.go")); err == nil {
+		srv.mu.Lock()
+		srv.srcData[srcKey] = srcBytes
+		srv.mu.Unlock()
+	}
+
 	tankID := "__" + name + "__"
 	displayName := strings.ToUpper(name[:1]) + name[1:]
 	srv.store.putTank(db.Tank{
@@ -568,6 +576,7 @@ func (srv *server) compileAITank(name string) error {
 		VersionType:   "major",
 		Config:        aiConfig(name),
 		WasmS3Key:     wasmKey,
+		SourceS3Key:   srcKey,
 		CompileStatus: "ready",
 		CreatedAt:     time.Now().Unix(),
 	})

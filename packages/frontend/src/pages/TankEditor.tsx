@@ -7,11 +7,13 @@ import {
   getTank,
   submitVersion,
   getVersionStatus,
+  getVersionSource,
   promoteVersion,
   startMatch,
   listMaps,
   registerForGameDay,
   withdrawRegistration,
+  updateTank,
   type OpponentSpec,
 } from '../services/api';
 import type { Tank, TankVersion, TankConfig, GameMap } from '../types';
@@ -294,24 +296,59 @@ export default function TankEditor() {
       return;
     }
     getTank(tankId)
-      .then(({ versions: v, ...t }) => {
+      .then(async ({ versions: v, ...t }) => {
         setTank(t);
         setVersions(v ?? []);
-        // Restore last edited source from localStorage
-        const saved = localStorage.getItem(`tankmaze-src-${tankId}`);
-        const savedCfg = localStorage.getItem(`tankmaze-cfg-${tankId}`);
-        setSource(saved ?? defaultSource(DEFAULT_CONFIG));
-        setConfig(savedCfg ? (JSON.parse(savedCfg) as TankConfig) : DEFAULT_CONFIG);
-        // Reflect latest version's compile status
-        const latest = sortedByAge(v ?? [])[0];
-        if (latest?.compileStatus === 'ready') setSaveStatus('ready');
-        if (latest?.compileStatus === 'failed') {
-          setSaveStatus('failed');
-          setSaveError(latest.compileError ?? 'Unknown error');
+
+        const latestVer = sortedByAge(v ?? [])[0];
+
+        // Source: localStorage → own version → fork origin → default.
+        const savedSrc = localStorage.getItem(`tankmaze-src-${tankId}`);
+        if (savedSrc) {
+          setSource(savedSrc);
+        } else {
+          const attempts: Array<[string, string]> = [];
+          if (latestVer?.sourceS3Key) attempts.push([tankId, latestVer.version]);
+          if (t.forkedFromTankId && t.forkedFromVersion) {
+            attempts.push([t.forkedFromTankId, t.forkedFromVersion]);
+          }
+          let loaded = false;
+          for (const [tid, ver] of attempts) {
+            try {
+              const { source: fetched } = await getVersionSource(tid, ver);
+              setSource(fetched);
+              loaded = true;
+              break;
+            } catch { /* try next */ }
+          }
+          if (!loaded) setSource(defaultSource(DEFAULT_CONFIG));
         }
-        // Resume polling if compile was in-flight when user left
-        if (latest?.compileStatus === 'pending' || latest?.compileStatus === 'compiling') {
-          setPendingVersion(latest.version);
+
+        // Config: prefer localStorage, then seed from API (tank name + version stats).
+        const savedCfg = localStorage.getItem(`tankmaze-cfg-${tankId}`);
+        if (savedCfg) {
+          setConfig(JSON.parse(savedCfg) as TankConfig);
+        } else {
+          const vc = latestVer?.config;
+          setConfig({
+            name: t.name || DEFAULT_CONFIG.name,
+            speed: vc?.speed ?? DEFAULT_CONFIG.speed,
+            sensorRange: vc?.sensorRange ?? DEFAULT_CONFIG.sensorRange,
+            damage: vc?.damage ?? DEFAULT_CONFIG.damage,
+            armor: vc?.armor ?? DEFAULT_CONFIG.armor,
+            fireRate: vc?.fireRate ?? DEFAULT_CONFIG.fireRate,
+          });
+        }
+
+        // Reflect latest version's compile status.
+        if (latestVer?.compileStatus === 'ready') setSaveStatus('ready');
+        if (latestVer?.compileStatus === 'failed') {
+          setSaveStatus('failed');
+          setSaveError(latestVer.compileError ?? 'Unknown error');
+        }
+        // Resume polling if compile was in-flight when user left.
+        if (latestVer?.compileStatus === 'pending' || latestVer?.compileStatus === 'compiling') {
+          setPendingVersion(latestVer.version);
           setSaveStatus('polling');
         }
       })
@@ -377,6 +414,9 @@ export default function TankEditor() {
         const created = await createTank(config.name || 'My Tank');
         id = created.tankId;
         navigate(`/tanks/${id}/edit`, { replace: true });
+      } else if (tank && config.name.trim() !== '' && config.name.trim() !== tank.name) {
+        await updateTank(id, { name: config.name.trim() });
+        setTank({ ...tank, name: config.name.trim() });
       }
       const v = await submitVersion(id, source, config);
       setPendingVersion(v.version);
@@ -516,6 +556,13 @@ export default function TankEditor() {
       {/* Config */}
       <ConfigPanel config={config} onChange={setConfig} />
 
+      {/* Status — shown between config and editor so it's always visible */}
+      <StatusBar
+        status={saveStatus}
+        error={saveError}
+        version={pendingVersion ?? latestVersion?.version}
+      />
+
       {/* Monaco */}
       <div style={{ border: '1px solid #2d2d4e', borderRadius: 8, overflow: 'hidden' }}>
         <Editor
@@ -535,13 +582,6 @@ export default function TankEditor() {
           }}
         />
       </div>
-
-      {/* Status */}
-      <StatusBar
-        status={saveStatus}
-        error={saveError}
-        version={pendingVersion ?? latestVersion?.version}
-      />
 
       {/* Test dialog */}
       {showTestDialog && (

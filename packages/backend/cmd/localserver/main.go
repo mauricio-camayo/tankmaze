@@ -129,10 +129,14 @@ func (srv *server) route(w http.ResponseWriter, r *http.Request) {
 		srv.getAiTanks(w)
 	case method == "GET" && n == 2 && parts[0] == "tanks":
 		srv.getTank(w, r, parts[1])
+	case method == "PATCH" && n == 2 && parts[0] == "tanks":
+		srv.updateTank(w, r, parts[1])
 	case method == "POST" && n == 3 && parts[0] == "tanks" && parts[2] == "versions":
 		srv.submitVersion(w, r, parts[1])
 	case method == "GET" && n == 5 && parts[0] == "tanks" && parts[2] == "versions" && parts[4] == "status":
 		srv.getVersionStatus(w, r, parts[1], parts[3])
+	case method == "GET" && n == 5 && parts[0] == "tanks" && parts[2] == "versions" && parts[4] == "source":
+		srv.getVersionSource(w, r, parts[1], parts[3])
 	case method == "POST" && n == 5 && parts[0] == "tanks" && parts[2] == "versions" && parts[4] == "promote":
 		srv.promoteVersion(w, r, parts[1], parts[3])
 	case method == "POST" && n == 5 && parts[0] == "tanks" && parts[2] == "versions" && parts[4] == "register":
@@ -275,7 +279,38 @@ func (srv *server) getTank(w http.ResponseWriter, _ *http.Request, tankID string
 	if versions == nil {
 		versions = []db.TankVersion{}
 	}
-	jsonOK(w, map[string]any{"tank": tank, "versions": versions})
+	type getTankResp struct {
+		db.Tank
+		Versions []db.TankVersion `json:"versions"`
+	}
+	jsonOK(w, getTankResp{Tank: tank, Versions: versions})
+}
+
+func (srv *server) updateTank(w http.ResponseWriter, r *http.Request, tankID string) {
+	t, err := srv.store.getTank(tankID)
+	if errors.Is(err, db.ErrNotFound) {
+		jsonErr(w, http.StatusNotFound, "tank not found")
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		jsonErr(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	body.Name = strings.TrimSpace(body.Name)
+	if body.Name == "" {
+		jsonErr(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if len(body.Name) > maxNameLen {
+		jsonErr(w, http.StatusBadRequest, fmt.Sprintf("name must be %d chars or fewer", maxNameLen))
+		return
+	}
+	t.Name = body.Name
+	srv.store.putTank(t)
+	jsonOK(w, map[string]string{"name": body.Name})
 }
 
 // ── Version handlers ────────────────────────────────────────────────────────
@@ -345,6 +380,22 @@ func (srv *server) submitVersion(w http.ResponseWriter, r *http.Request, tankID 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{"version": nextVer})
+}
+
+func (srv *server) getVersionSource(w http.ResponseWriter, _ *http.Request, tankID, version string) {
+	ver, err := srv.store.getVersion(tankID, version)
+	if errors.Is(err, db.ErrNotFound) {
+		jsonErr(w, http.StatusNotFound, "version not found")
+		return
+	}
+	srv.mu.RLock()
+	srcBytes := srv.srcData[ver.SourceS3Key]
+	srv.mu.RUnlock()
+	if len(srcBytes) == 0 {
+		jsonErr(w, http.StatusNotFound, "source not available")
+		return
+	}
+	jsonOK(w, map[string]string{"source": string(srcBytes)})
 }
 
 func (srv *server) getVersionStatus(w http.ResponseWriter, _ *http.Request, tankID, version string) {
