@@ -16,12 +16,12 @@ function isMajor(v: string): boolean {
 }
 
 function pct(n: number | null): string {
-  if (n === null) return '—';
+  if (n === null) return '0%';
   return `${Math.round(n * 100)}%`;
 }
 
 function num(n: number | null, decimals = 0): string {
-  if (n === null) return '—';
+  if (n === null) return '0';
   return decimals > 0 ? n.toFixed(decimals) : String(Math.round(n));
 }
 
@@ -87,8 +87,7 @@ function MajorVersionCard({ major, minors, isOwner }: { major: TankVersion; mino
           </div>
         </div>
 
-        {(major.matchesPlayed ?? 0) > 0 ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'auto auto', gap: '2px 16px', fontSize: 13 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'auto auto', gap: '2px 16px', fontSize: 13 }}>
             <span style={{ color: '#64748b' }}>Win rate</span>
             <span style={{ color: '#4ade80', fontWeight: 600, textAlign: 'right' }}>{pct(major.winRate)}</span>
             <span style={{ color: '#64748b' }}>Matches</span>
@@ -98,9 +97,6 @@ function MajorVersionCard({ major, minors, isOwner }: { major: TankVersion; mino
             <span style={{ color: '#64748b' }}>Avg survival</span>
             <span style={{ color: '#e2e8f0', textAlign: 'right' }}>{num(major.avgSurvivalTicks)} tks</span>
           </div>
-        ) : (
-          <span style={{ color: '#475569', fontSize: 12 }}>No ranked matches yet</span>
-        )}
       </div>
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
@@ -220,9 +216,9 @@ export default function TankDetail() {
             {tank.name}
           </h1>
           <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
-            {rank !== null && (
-              <span style={{ color: '#fbbf24', fontSize: 13, fontWeight: 600 }}>#{rank}</span>
-            )}
+            <span style={{ color: '#fbbf24', fontSize: 13, fontWeight: 600 }}>
+              {rank !== null ? `#${rank}` : '#—'}
+            </span>
             <span style={{ color: '#a78bfa', fontSize: 20, fontWeight: 700 }}>
               {tank.globalScore.toLocaleString()} pts
             </span>
