@@ -148,20 +148,22 @@ export class ApiStack extends Stack {
     // tank-api
     const tankApi = goLambda('TankApi', 'tank-api', {
       ...tableEnvVars(tables),
-      WASM_BUCKET:           wasmBucket.bucketName,
-      MATCH_LOGS_BUCKET:     matchLogsBucket.bucketName,
-      CODEBUILD_PROJECT:     codebuildProject.projectName,
-      MATCH_RUNNER_FUNCTION: matchRunner.functionArn,
-      SCOUT_TANK_ID:         'builtin-scout',
-      SCOUT_VERSION:         'v1',
-      BRUISER_TANK_ID:       'builtin-bruiser',
-      BRUISER_VERSION:       'v1',
-      USER_POOL_ID:          userPoolId,
+      WASM_BUCKET:                   wasmBucket.bucketName,
+      MATCH_LOGS_BUCKET:             matchLogsBucket.bucketName,
+      CODEBUILD_PROJECT:             codebuildProject.projectName,
+      MATCH_RUNNER_FUNCTION:         matchRunner.functionArn,
+      SCOUT_TANK_ID:                 'builtin-scout',
+      SCOUT_VERSION:                 'v1',
+      BRUISER_TANK_ID:               'builtin-bruiser',
+      BRUISER_VERSION:               'v1',
+      USER_POOL_ID:                  userPoolId,
+      SCHEDULER_INVOKE_ROLE_ARN:     schedulerInvokeRole.roleArn,
+      TOURNAMENT_SCHEDULER_FUNCTION: tournamentScheduler.functionArn,
     });
     tables.tanks.grantReadWriteData(tankApi);
     tables.tankVersions.grantReadWriteData(tankApi);
     tables.matches.grantReadWriteData(tankApi);
-    tables.gamedays.grantReadData(tankApi);
+    tables.gamedays.grantReadWriteData(tankApi);
     tables.rankings.grantReadData(tankApi);
     tables.maps.grantReadWriteData(tankApi);
     wasmBucket.grantReadWrite(tankApi);
@@ -189,6 +191,22 @@ export class ApiStack extends Stack {
         'cognito-idp:AdminDeleteUser',
       ],
       resources: [`arn:aws:cognito-idp:${this.region}:${this.account}:userpool/${userPoolId}`],
+    }));
+
+    // EventBridge Scheduler permissions for game day CRUD
+    tankApi.addToRolePolicy(new iam.PolicyStatement({
+      actions: [
+        'scheduler:CreateSchedule',
+        'scheduler:DeleteSchedule',
+        'scheduler:GetSchedule',
+      ],
+      resources: [
+        `arn:aws:scheduler:${this.region}:${this.account}:schedule/tankmaze-gamedays/*`,
+      ],
+    }));
+    tankApi.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['iam:PassRole'],
+      resources: [schedulerInvokeRole.roleArn],
     }));
 
     // ---- WebSocket API (observer) --------------------------------------
@@ -253,6 +271,7 @@ export class ApiStack extends Stack {
     const publicPaths = [
       '/maps',
       '/rankings',
+      '/gamedays',
       '/gamedays/{gameDayId}',
       '/tanks/ai',
     ];

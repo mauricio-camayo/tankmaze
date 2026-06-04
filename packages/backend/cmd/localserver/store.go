@@ -24,6 +24,7 @@ type memStore struct {
 	mapSlugs map[string]string       // slug → mapId
 	rankings map[string][]db.Ranking // tankId → []Ranking
 	users    map[string]localUser    // sub → user
+	gamedays map[string]db.GameDay
 }
 
 func newStore() *memStore {
@@ -35,6 +36,7 @@ func newStore() *memStore {
 		mapSlugs: make(map[string]string),
 		rankings: make(map[string][]db.Ranking),
 		users:    make(map[string]localUser),
+		gamedays: make(map[string]db.GameDay),
 	}
 	s.users[localUserID] = localUser{
 		Sub:     localUserID,
@@ -366,6 +368,43 @@ func (s *memStore) toggleUserAdmin(sub string) bool {
 	u.IsAdmin = !u.IsAdmin
 	s.users[sub] = u
 	return u.IsAdmin
+}
+
+// ── Game Day management ────────────────────────────────────────────────────
+
+func (s *memStore) putGameDay(gd db.GameDay) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.gamedays[gd.GameDayID] = gd
+}
+
+func (s *memStore) getGameDay(gameDayID string) (db.GameDay, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	gd, ok := s.gamedays[gameDayID]
+	if !ok {
+		return db.GameDay{}, db.ErrNotFound
+	}
+	return gd, nil
+}
+
+func (s *memStore) listGameDays() []db.GameDay {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	result := make([]db.GameDay, 0, len(s.gamedays))
+	for _, gd := range s.gamedays {
+		result = append(result, gd)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt > result[j].CreatedAt
+	})
+	return result
+}
+
+func (s *memStore) deleteGameDay(gameDayID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.gamedays, gameDayID)
 }
 
 func (s *memStore) deleteUser(sub string) {

@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -13,6 +14,40 @@ const (
 	PhaseFinal      = "final"
 	// Elimination phase keys follow the pattern "r1", "r2", … (e.g. "r" + strconv.Itoa(round)).
 )
+
+// ListGameDays returns all Game Day records sorted by createdAt descending.
+func (s *Store) ListGameDays(ctx context.Context) ([]GameDay, error) {
+	out, err := s.db.Scan(ctx, &dynamodb.ScanInput{
+		TableName: &s.gamedaysTable,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("scan gamedays: %w", err)
+	}
+	gds := make([]GameDay, 0, len(out.Items))
+	for _, item := range out.Items {
+		var gd GameDay
+		if err := attributevalue.UnmarshalMap(item, &gd); err != nil {
+			return nil, fmt.Errorf("unmarshal gameday: %w", err)
+		}
+		gds = append(gds, gd)
+	}
+	sort.Slice(gds, func(i, j int) bool {
+		return gds[i].CreatedAt > gds[j].CreatedAt
+	})
+	return gds, nil
+}
+
+// DeleteGameDay removes the Game Day record with the given gameDayId.
+func (s *Store) DeleteGameDay(ctx context.Context, gameDayID string) error {
+	_, err := s.db.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+		TableName: &s.gamedaysTable,
+		Key:       gamedayKey(gameDayID),
+	})
+	if err != nil {
+		return fmt.Errorf("delete gameday %s: %w", gameDayID, err)
+	}
+	return nil
+}
 
 // PutGameDay writes a Game Day record, overwriting any existing record for the
 // same gameDayId.

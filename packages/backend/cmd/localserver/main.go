@@ -157,6 +157,12 @@ func (srv *server) route(w http.ResponseWriter, r *http.Request) {
 	// Rankings / Game Days
 	case method == "GET" && rawPath == "rankings":
 		srv.getRankings(w, r)
+	case method == "GET" && rawPath == "gamedays":
+		srv.listGameDays(w)
+	case method == "POST" && rawPath == "gamedays":
+		srv.createGameDay(w, r)
+	case method == "DELETE" && n == 2 && parts[0] == "gamedays":
+		srv.deleteGameDay(w, r, parts[1])
 	case method == "GET" && n == 2 && parts[0] == "gamedays":
 		srv.getGameDay(w, r, parts[1])
 
@@ -709,9 +715,77 @@ func (srv *server) getRankings(w http.ResponseWriter, _ *http.Request) {
 	jsonOK(w, result)
 }
 
-func (srv *server) getGameDay(w http.ResponseWriter, _ *http.Request, _ string) {
-	// No game days in local mode.
-	jsonErr(w, http.StatusNotFound, "no game days in local dev mode")
+func (srv *server) listGameDays(w http.ResponseWriter) {
+	gds := srv.store.listGameDays()
+	if gds == nil {
+		gds = []db.GameDay{}
+	}
+	jsonOK(w, gds)
+}
+
+func (srv *server) createGameDay(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		RegistrationCloseAt string `json:"registrationCloseAt"`
+		RoundRobinAt        string `json:"roundRobinAt"`
+		EliminationR1At     string `json:"eliminationR1At"`
+		EliminationR2At     string `json:"eliminationR2At,omitempty"`
+		FinalAt             string `json:"finalAt"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		jsonErr(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if body.RegistrationCloseAt == "" || body.RoundRobinAt == "" || body.EliminationR1At == "" || body.FinalAt == "" {
+		jsonErr(w, http.StatusBadRequest, "registrationCloseAt, roundRobinAt, eliminationR1At, finalAt are required")
+		return
+	}
+
+	elimination := []string{body.EliminationR1At}
+	if body.EliminationR2At != "" {
+		elimination = append(elimination, body.EliminationR2At)
+	}
+
+	gd := db.GameDay{
+		GameDayID: newUUID(),
+		Schedule: db.GameDaySchedule{
+			RegistrationClose: body.RegistrationCloseAt,
+			RoundRobin:        body.RoundRobinAt,
+			Elimination:       elimination,
+			Final:             body.FinalAt,
+		},
+		Phases: db.GameDayPhases{
+			RoundRobin: db.PhaseStatus{Status: "upcoming"},
+			Final:      db.PhaseStatus{Status: "upcoming"},
+		},
+		CreatedAt: time.Now().Unix(),
+	}
+	srv.store.putGameDay(gd)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(gd)
+}
+
+func (srv *server) deleteGameDay(w http.ResponseWriter, _ *http.Request, gameDayID string) {
+	gd, err := srv.store.getGameDay(gameDayID)
+	if errors.Is(err, db.ErrNotFound) {
+		jsonErr(w, http.StatusNotFound, "game day not found")
+		return
+	}
+	if gd.Phases.RoundRobin.Status != "upcoming" {
+		jsonErr(w, http.StatusConflict, "game day has already started")
+		return
+	}
+	srv.store.deleteGameDay(gameDayID)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (srv *server) getGameDay(w http.ResponseWriter, _ *http.Request, gameDayID string) {
+	gd, err := srv.store.getGameDay(gameDayID)
+	if errors.Is(err, db.ErrNotFound) {
+		jsonErr(w, http.StatusNotFound, "game day not found")
+		return
+	}
+	jsonOK(w, gd)
 }
 
 // ── Map handlers ────────────────────────────────────────────────────────────

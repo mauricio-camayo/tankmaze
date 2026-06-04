@@ -57,6 +57,8 @@ import (
 	ltypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	schedulersvc "github.com/aws/aws-sdk-go-v2/service/scheduler"
+	schedulertypes "github.com/aws/aws-sdk-go-v2/service/scheduler/types"
 
 	"github.com/tankmaze/backend/internal/db"
 )
@@ -105,6 +107,14 @@ type opponentSpec struct {
 	Version string `json:"version,omitempty"` // own: opponent version
 }
 
+type createGameDayBody struct {
+	RegistrationCloseAt string `json:"registrationCloseAt"`
+	RoundRobinAt        string `json:"roundRobinAt"`
+	EliminationR1At     string `json:"eliminationR1At"`
+	EliminationR2At     string `json:"eliminationR2At,omitempty"`
+	FinalAt             string `json:"finalAt"`
+}
+
 type createMapBody struct {
 	Slug        string   `json:"slug"`
 	Name        string   `json:"name"`
@@ -137,21 +147,24 @@ type adminUserResp struct {
 // ---- Handler ----------------------------------------------------------------
 
 type handler struct {
-	store            *db.Store
-	s3               *s3.Client
-	cb               *codebuild.Client
-	lambdaSvc        *lambdasvc.Client
-	cognito          *cognitoidp.Client
-	wasmBucket       string
-	logsBucket       string
-	codebuildProject string
-	matchRunnerFunc  string
-	versionsTable    string // forwarded to CodeBuild as env override
-	scoutTankID      string
-	scoutVersion     string
-	bruiserTankID    string
-	bruiserVersion   string
-	userPoolID       string
+	store                  *db.Store
+	s3                     *s3.Client
+	cb                     *codebuild.Client
+	lambdaSvc              *lambdasvc.Client
+	cognito                *cognitoidp.Client
+	schedulerSvc           *schedulersvc.Client
+	wasmBucket             string
+	logsBucket             string
+	codebuildProject       string
+	matchRunnerFunc        string
+	versionsTable          string // forwarded to CodeBuild as env override
+	scoutTankID            string
+	scoutVersion           string
+	bruiserTankID          string
+	bruiserVersion         string
+	userPoolID             string
+	schedulerRoleArn       string
+	tournamentSchedulerArn string
 }
 
 var h *handler
@@ -164,21 +177,24 @@ func main() {
 	}
 
 	h = &handler{
-		store:            db.New(dynamodb.NewFromConfig(cfg)),
-		s3:               s3.NewFromConfig(cfg),
-		cb:               codebuild.NewFromConfig(cfg),
-		lambdaSvc:        lambdasvc.NewFromConfig(cfg),
-		cognito:          cognitoidp.NewFromConfig(cfg),
-		wasmBucket:       os.Getenv("WASM_BUCKET"),
-		logsBucket:       os.Getenv("MATCH_LOGS_BUCKET"),
-		codebuildProject: os.Getenv("CODEBUILD_PROJECT"),
-		matchRunnerFunc:  os.Getenv("MATCH_RUNNER_FUNCTION"),
-		versionsTable:    os.Getenv("TANK_VERSIONS_TABLE"),
-		scoutTankID:      os.Getenv("SCOUT_TANK_ID"),
-		scoutVersion:     os.Getenv("SCOUT_VERSION"),
-		bruiserTankID:    os.Getenv("BRUISER_TANK_ID"),
-		bruiserVersion:   os.Getenv("BRUISER_VERSION"),
-		userPoolID:       os.Getenv("USER_POOL_ID"),
+		store:                  db.New(dynamodb.NewFromConfig(cfg)),
+		s3:                     s3.NewFromConfig(cfg),
+		cb:                     codebuild.NewFromConfig(cfg),
+		lambdaSvc:              lambdasvc.NewFromConfig(cfg),
+		cognito:                cognitoidp.NewFromConfig(cfg),
+		schedulerSvc:           schedulersvc.NewFromConfig(cfg),
+		wasmBucket:             os.Getenv("WASM_BUCKET"),
+		logsBucket:             os.Getenv("MATCH_LOGS_BUCKET"),
+		codebuildProject:       os.Getenv("CODEBUILD_PROJECT"),
+		matchRunnerFunc:        os.Getenv("MATCH_RUNNER_FUNCTION"),
+		versionsTable:          os.Getenv("TANK_VERSIONS_TABLE"),
+		scoutTankID:            os.Getenv("SCOUT_TANK_ID"),
+		scoutVersion:           os.Getenv("SCOUT_VERSION"),
+		bruiserTankID:          os.Getenv("BRUISER_TANK_ID"),
+		bruiserVersion:         os.Getenv("BRUISER_VERSION"),
+		userPoolID:             os.Getenv("USER_POOL_ID"),
+		schedulerRoleArn:       os.Getenv("SCHEDULER_INVOKE_ROLE_ARN"),
+		tournamentSchedulerArn: os.Getenv("TOURNAMENT_SCHEDULER_FUNCTION"),
 	}
 
 	lambda.Start(h.handle)
@@ -230,6 +246,12 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 	// Rankings and Game Days
 	case method == "GET" && rawPath == "rankings":
 		return h.getRankings(ctx, req)
+	case method == "GET" && rawPath == "gamedays":
+		return h.listGameDays(ctx)
+	case method == "POST" && rawPath == "gamedays":
+		return h.createGameDay(ctx, req)
+	case method == "DELETE" && len(parts) == 2 && parts[0] == "gamedays":
+		return h.deleteGameDay(ctx, req, parts[1])
 	case method == "GET" && len(parts) == 2 && parts[0] == "gamedays":
 		return h.getGameDay(ctx, req, parts[1])
 
@@ -1073,6 +1095,175 @@ func (h *handler) getRankings(ctx context.Context, req events.APIGatewayV2HTTPRe
 		}
 	}
 	return jsonResp(http.StatusOK, result), nil
+}
+
+func (h *handler) listGameDays(ctx context.Context) (events.APIGatewayV2HTTPResponse, error) {
+	gds, err := h.store.ListGameDays(ctx)
+	if err != nil {
+		log.Printf("list gamedays: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	if gds == nil {
+		gds = []db.GameDay{}
+	}
+	return jsonResp(http.StatusOK, gds), nil
+}
+
+func (h *handler) createGameDay(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	if !isAdmin(req) {
+		return errResp(http.StatusForbidden, "admin access required"), nil
+	}
+
+	var body createGameDayBody
+	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
+		return errResp(http.StatusBadRequest, "invalid request body"), nil
+	}
+
+	parseAt := func(s, field string) (time.Time, bool) {
+		t, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			return time.Time{}, false
+		}
+		return t.UTC(), true
+	}
+	regClose, ok := parseAt(body.RegistrationCloseAt, "registrationCloseAt")
+	if !ok {
+		return errResp(http.StatusBadRequest, "registrationCloseAt must be ISO 8601"), nil
+	}
+	rrAt, ok := parseAt(body.RoundRobinAt, "roundRobinAt")
+	if !ok {
+		return errResp(http.StatusBadRequest, "roundRobinAt must be ISO 8601"), nil
+	}
+	elimR1At, ok := parseAt(body.EliminationR1At, "eliminationR1At")
+	if !ok {
+		return errResp(http.StatusBadRequest, "eliminationR1At must be ISO 8601"), nil
+	}
+	finalAt, ok := parseAt(body.FinalAt, "finalAt")
+	if !ok {
+		return errResp(http.StatusBadRequest, "finalAt must be ISO 8601"), nil
+	}
+
+	elimination := []string{body.EliminationR1At}
+	var elimR2At time.Time
+	if body.EliminationR2At != "" {
+		elimR2At, ok = parseAt(body.EliminationR2At, "eliminationR2At")
+		if !ok {
+			return errResp(http.StatusBadRequest, "eliminationR2At must be ISO 8601"), nil
+		}
+		elimination = append(elimination, body.EliminationR2At)
+	}
+
+	gameDayID := newUUID()
+	now := time.Now().Unix()
+	gd := db.GameDay{
+		GameDayID: gameDayID,
+		Schedule: db.GameDaySchedule{
+			RegistrationClose: body.RegistrationCloseAt,
+			RoundRobin:        body.RoundRobinAt,
+			Elimination:       elimination,
+			Final:             body.FinalAt,
+		},
+		Phases: db.GameDayPhases{
+			RoundRobin: db.PhaseStatus{Status: "upcoming"},
+			Final:      db.PhaseStatus{Status: "upcoming"},
+		},
+		CreatedAt: now,
+	}
+
+	if err := h.store.PutGameDay(ctx, gd); err != nil {
+		log.Printf("put gameday: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+
+	atExpr := func(t time.Time) string {
+		return "at(" + t.Format("2006-01-02T15:04:05") + ")"
+	}
+	phases := []struct {
+		name  string
+		phase string
+		expr  string
+	}{
+		{gameDayID + "-reg-close", "registration_close", atExpr(regClose)},
+		{gameDayID + "-rr", "round_robin", atExpr(rrAt)},
+		{gameDayID + "-elim-r1", "elimination_r1", atExpr(elimR1At)},
+		{gameDayID + "-final", "final", atExpr(finalAt)},
+	}
+	if body.EliminationR2At != "" {
+		phases = append(phases, struct {
+			name  string
+			phase string
+			expr  string
+		}{gameDayID + "-elim-r2", "elimination_r2", atExpr(elimR2At)})
+	}
+
+	for _, p := range phases {
+		payload, _ := json.Marshal(map[string]string{"gameDayId": gameDayID, "phase": p.phase})
+		_, err := h.schedulerSvc.CreateSchedule(ctx, &schedulersvc.CreateScheduleInput{
+			Name:               aws.String(p.name),
+			GroupName:          aws.String("tankmaze-gamedays"),
+			ScheduleExpression: aws.String(p.expr),
+			FlexibleTimeWindow: &schedulertypes.FlexibleTimeWindow{
+				Mode: schedulertypes.FlexibleTimeWindowModeOff,
+			},
+			Target: &schedulertypes.Target{
+				Arn:     aws.String(h.tournamentSchedulerArn),
+				RoleArn: aws.String(h.schedulerRoleArn),
+				Input:   aws.String(string(payload)),
+			},
+			ActionAfterCompletion: schedulertypes.ActionAfterCompletionDelete,
+		})
+		if err != nil {
+			log.Printf("create schedule %s: %v", p.name, err)
+			// Best-effort cleanup: delete the game day record since schedules couldn't be created.
+			if delErr := h.store.DeleteGameDay(ctx, gameDayID); delErr != nil {
+				log.Printf("rollback delete gameday %s: %v", gameDayID, delErr)
+			}
+			return errResp(http.StatusInternalServerError, "failed to create schedules"), nil
+		}
+	}
+
+	return jsonResp(http.StatusCreated, gd), nil
+}
+
+func (h *handler) deleteGameDay(ctx context.Context, req events.APIGatewayV2HTTPRequest, gameDayID string) (events.APIGatewayV2HTTPResponse, error) {
+	if !isAdmin(req) {
+		return errResp(http.StatusForbidden, "admin access required"), nil
+	}
+	gd, err := h.store.GetGameDay(ctx, gameDayID)
+	if errors.Is(err, db.ErrNotFound) {
+		return errResp(http.StatusNotFound, "game day not found"), nil
+	}
+	if err != nil {
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+
+	// Reject if any phase has already started.
+	if gd.Phases.RoundRobin.Status != "upcoming" {
+		return errResp(http.StatusConflict, "game day has already started"), nil
+	}
+
+	scheduleNames := []string{
+		gameDayID + "-reg-close",
+		gameDayID + "-rr",
+		gameDayID + "-elim-r1",
+		gameDayID + "-elim-r2",
+		gameDayID + "-final",
+	}
+	for _, name := range scheduleNames {
+		if _, delErr := h.schedulerSvc.DeleteSchedule(ctx, &schedulersvc.DeleteScheduleInput{
+			Name:      aws.String(name),
+			GroupName: aws.String("tankmaze-gamedays"),
+		}); delErr != nil {
+			// 404 is fine — schedule may have already fired and self-deleted.
+			log.Printf("delete schedule %s: %v (ignored)", name, delErr)
+		}
+	}
+
+	if err := h.store.DeleteGameDay(ctx, gameDayID); err != nil {
+		log.Printf("delete gameday %s: %v", gameDayID, err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusNoContent}, nil
 }
 
 func (h *handler) getGameDay(ctx context.Context, req events.APIGatewayV2HTTPRequest, gameDayID string) (events.APIGatewayV2HTTPResponse, error) {
