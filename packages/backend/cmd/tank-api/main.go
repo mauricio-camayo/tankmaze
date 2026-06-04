@@ -228,20 +228,21 @@ func (h *handler) createTank(ctx context.Context, req events.APIGatewayV2HTTPReq
 		return errResp(http.StatusUnauthorized, "unauthorized"), nil
 	}
 
+	forkFrom := req.QueryStringParameters["forkFrom"]
+	forkVersion := req.QueryStringParameters["forkVersion"]
+
 	var body createTankBody
-	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
+	// Body is optional for forks — the name can be set/changed in the editor.
+	if err := json.Unmarshal([]byte(req.Body), &body); err != nil && forkFrom == "" {
 		return errResp(http.StatusBadRequest, "invalid request body"), nil
 	}
 	body.Name = strings.TrimSpace(body.Name)
-	if body.Name == "" {
+	if body.Name == "" && forkFrom == "" {
 		return errResp(http.StatusBadRequest, "name is required"), nil
 	}
 	if len(body.Name) > maxTankNameLen {
 		return errResp(http.StatusBadRequest, fmt.Sprintf("name must be %d characters or fewer", maxTankNameLen)), nil
 	}
-
-	forkFrom := req.QueryStringParameters["forkFrom"]
-	forkVersion := req.QueryStringParameters["forkVersion"]
 
 	// Validate fork source before creating the tank record.
 	var srcVer *db.TankVersion
@@ -263,6 +264,7 @@ func (h *handler) createTank(ctx context.Context, req events.APIGatewayV2HTTPReq
 	tank := db.Tank{
 		TankID:            tankID,
 		UserID:            uid,
+		AuthorName:        authorName(req),
 		Name:              body.Name,
 		LastActiveAt:      time.Now().Unix(),
 		ForkedFromTankID:  forkFrom,
@@ -888,7 +890,7 @@ func (h *handler) getRankings(ctx context.Context, req events.APIGatewayV2HTTPRe
 			Rank:           i + 1,
 			TankID:         t.TankID,
 			TankName:       t.Name,
-			AuthorUsername: t.UserID,
+			AuthorUsername: authorNameOrID(t),
 			GlobalScore:    t.GlobalScore,
 			BestFinish:     t.BestFinish,
 			GameDays:       t.GameDaysCount,
@@ -1041,6 +1043,20 @@ func userID(req events.APIGatewayV2HTTPRequest) string {
 		return ""
 	}
 	return req.RequestContext.Authorizer.JWT.Claims["sub"]
+}
+
+func authorName(req events.APIGatewayV2HTTPRequest) string {
+	if req.RequestContext.Authorizer == nil || req.RequestContext.Authorizer.JWT == nil {
+		return ""
+	}
+	return req.RequestContext.Authorizer.JWT.Claims["name"]
+}
+
+func authorNameOrID(t db.Tank) string {
+	if t.AuthorName != "" {
+		return t.AuthorName
+	}
+	return t.UserID
 }
 
 // isAdmin returns true if the caller belongs to the "platform-admin" Cognito group.

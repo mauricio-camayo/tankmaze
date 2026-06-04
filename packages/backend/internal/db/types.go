@@ -10,6 +10,7 @@ type Tank struct {
 	GameDaysCount        int    `dynamodbav:"gameDaysCount"        json:"gameDaysCount"`
 	LastActiveAt         int64  `dynamodbav:"lastActiveAt"         json:"lastActiveAt"`
 	CreatedAt            int64  `dynamodbav:"createdAt"            json:"createdAt"`
+	AuthorName           string `dynamodbav:"authorName,omitempty"           json:"authorName,omitempty"`
 	ForkedFromTankID     string `dynamodbav:"forkedFromTankId,omitempty"     json:"forkedFromTankId,omitempty"`
 	ForkedFromVersion    string `dynamodbav:"forkedFromVersion,omitempty"    json:"forkedFromVersion,omitempty"`
 	ScoreTransferredTo   string `dynamodbav:"scoreTransferredTo,omitempty"   json:"scoreTransferredTo,omitempty"`
