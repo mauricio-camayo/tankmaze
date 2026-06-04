@@ -261,12 +261,14 @@ func (h *handler) createTank(ctx context.Context, req events.APIGatewayV2HTTPReq
 	}
 
 	tankID := newUUID()
+	now := time.Now().Unix()
 	tank := db.Tank{
 		TankID:            tankID,
 		UserID:            uid,
 		AuthorName:        authorName(req),
 		Name:              body.Name,
-		LastActiveAt:      time.Now().Unix(),
+		CreatedAt:         now,
+		LastActiveAt:      now,
 		ForkedFromTankID:  forkFrom,
 		ForkedFromVersion: forkVersion,
 	}
@@ -319,17 +321,30 @@ func (h *handler) getTank(ctx context.Context, req events.APIGatewayV2HTTPReques
 	if err != nil {
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
-	if tank.UserID != uid {
-		return errResp(http.StatusForbidden, "forbidden"), nil
-	}
 	versions, err := h.store.ListVersionsByTank(ctx, tankID)
 	if err != nil {
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
+
 	type getTankResponse struct {
 		db.Tank
 		Versions []db.TankVersion `json:"versions"`
 	}
+
+	if tank.UserID != uid {
+		// Public view: major versions only, no WASM/source artifact keys.
+		pub := make([]db.TankVersion, 0)
+		for _, v := range versions {
+			if v.VersionType == "major" {
+				v.SourceS3Key = ""
+				v.WasmS3Key = ""
+				v.WasmSHA256 = ""
+				pub = append(pub, v)
+			}
+		}
+		return jsonResp(http.StatusOK, getTankResponse{Tank: tank, Versions: pub}), nil
+	}
+
 	return jsonResp(http.StatusOK, getTankResponse{Tank: tank, Versions: versions}), nil
 }
 
