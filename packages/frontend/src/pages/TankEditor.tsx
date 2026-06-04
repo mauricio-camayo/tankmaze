@@ -325,9 +325,11 @@ export default function TankEditor() {
         }
 
         // Config: prefer localStorage, then seed from API (tank name + version stats).
+        // Always override name from the API — localStorage name can be stale or empty.
         const savedCfg = localStorage.getItem(`tankmaze-cfg-${tankId}`);
         if (savedCfg) {
-          setConfig(JSON.parse(savedCfg) as TankConfig);
+          const parsed = JSON.parse(savedCfg) as TankConfig;
+          setConfig({ ...parsed, name: t.name || parsed.name || DEFAULT_CONFIG.name });
         } else {
           const vc = latestVer?.config;
           setConfig({

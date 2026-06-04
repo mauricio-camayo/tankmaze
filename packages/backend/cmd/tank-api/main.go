@@ -373,6 +373,17 @@ func (h *handler) getTank(ctx context.Context, req events.APIGatewayV2HTTPReques
 		return jsonResp(http.StatusOK, getTankResponse{Tank: tank, Versions: pub}), nil
 	}
 
+	// Lazy backfill: if the owner has no authorName stored, derive it from their
+	// current JWT and persist it so it appears on the leaderboard going forward.
+	if tank.AuthorName == "" {
+		if name := authorName(req); name != "" {
+			tank.AuthorName = name
+			if err := h.store.UpdateAuthorName(ctx, tankID, name); err != nil {
+				log.Printf("backfill authorName %s: %v", tankID, err)
+			}
+		}
+	}
+
 	return jsonResp(http.StatusOK, getTankResponse{Tank: tank, Versions: versions}), nil
 }
 
