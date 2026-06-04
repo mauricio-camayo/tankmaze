@@ -347,27 +347,28 @@ func (s *memStore) listUsers() []localUser {
 	return result
 }
 
-func (s *memStore) updateUserEnabled(sub string, enabled bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	u, ok := s.users[sub]
-	if !ok {
-		return
-	}
-	u.Enabled = enabled
-	s.users[sub] = u
-}
-
-func (s *memStore) toggleUserAdmin(sub string) bool {
+func (s *memStore) updateUserEnabled(sub string, enabled bool) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	u, ok := s.users[sub]
 	if !ok {
 		return false
 	}
+	u.Enabled = enabled
+	s.users[sub] = u
+	return true
+}
+
+func (s *memStore) toggleUserAdmin(sub string) (isAdmin bool, found bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ok := s.users[sub]
+	if !ok {
+		return false, false
+	}
 	u.IsAdmin = !u.IsAdmin
 	s.users[sub] = u
-	return u.IsAdmin
+	return u.IsAdmin, true
 }
 
 // ── Game Day management ────────────────────────────────────────────────────
@@ -407,9 +408,12 @@ func (s *memStore) deleteGameDay(gameDayID string) {
 	delete(s.gamedays, gameDayID)
 }
 
-func (s *memStore) deleteUser(sub string) {
+func (s *memStore) deleteUser(sub string) (found bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if _, ok := s.users[sub]; !ok {
+		return false
+	}
 	delete(s.users, sub)
 	// cascade: remove all tanks owned by this user
 	for tankID, t := range s.tanks {
@@ -419,4 +423,5 @@ func (s *memStore) deleteUser(sub string) {
 			delete(s.rankings, tankID)
 		}
 	}
+	return true
 }

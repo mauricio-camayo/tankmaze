@@ -901,7 +901,11 @@ func (srv *server) adminToggleUserRole(w http.ResponseWriter, r *http.Request, s
 		jsonErr(w, http.StatusBadRequest, "cannot modify your own admin role")
 		return
 	}
-	isAdmin := srv.store.toggleUserAdmin(sub)
+	isAdmin, found := srv.store.toggleUserAdmin(sub)
+	if !found {
+		jsonErr(w, http.StatusNotFound, "user not found")
+		return
+	}
 	jsonOK(w, map[string]bool{"isAdmin": isAdmin})
 }
 
@@ -910,7 +914,10 @@ func (srv *server) adminDeleteUser(w http.ResponseWriter, r *http.Request, sub s
 		jsonErr(w, http.StatusBadRequest, "cannot delete yourself")
 		return
 	}
-	srv.store.deleteUser(sub)
+	if !srv.store.deleteUser(sub) {
+		jsonErr(w, http.StatusNotFound, "user not found")
+		return
+	}
 	jsonOK(w, map[string]string{"status": "deleted"})
 }
 
