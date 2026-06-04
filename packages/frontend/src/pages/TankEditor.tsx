@@ -335,11 +335,16 @@ export default function TankEditor() {
   const [registering, setRegistering] = useState(false);
 
   const pollCancelRef = useRef(false);
+  // Prevents the config persistence effect from writing DEFAULT_CONFIG to
+  // localStorage before getTank resolves and loads the real config.
+  const configLoadedRef = useRef(false);
 
   // Load tank on mount — skip for the 'new' route (tank not created yet)
   useEffect(() => {
+    configLoadedRef.current = false;
     if (!tankId || tankId === 'new') {
       setSource(defaultSource());
+      configLoadedRef.current = true;
       setPageLoading(false);
       return;
     }
@@ -390,6 +395,8 @@ export default function TankEditor() {
             fireRate: vc?.fireRate ?? DEFAULT_CONFIG.fireRate,
           });
         }
+
+        configLoadedRef.current = true;
 
         // Reflect latest version's compile status.
         if (latestVer?.compileStatus === 'ready') setSaveStatus('ready');
@@ -447,7 +454,9 @@ export default function TankEditor() {
   }, [tankId, source]);
 
   useEffect(() => {
-    if (tankId && tankId !== 'new') localStorage.setItem(`tankmaze-cfg-${tankId}`, JSON.stringify(config));
+    if (configLoadedRef.current && tankId && tankId !== 'new') {
+      localStorage.setItem(`tankmaze-cfg-${tankId}`, JSON.stringify(config));
+    }
   }, [tankId, config]);
 
   async function handleSave() {
