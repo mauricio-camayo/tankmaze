@@ -15,6 +15,9 @@
 //	GET    /matches/{id}                       – match metadata + result
 //	GET    /matches/{id}/ticks                 – redirect to pre-signed S3 tick log URL
 //	GET    /rankings                           – global leaderboard
+//	GET    /gamedays                           – list all game days (no auth required)
+//	POST   /gamedays                           – create game day + EventBridge schedules (admin only)
+//	DELETE /gamedays/{id}                      – cancel game day (admin only, no phase started)
 //	GET    /gamedays/{id}                      – Game Day bracket and phase status
 //	GET    /maps                               – list active maps (no auth required)
 //	POST   /maps                               – create map (admin only)
