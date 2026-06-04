@@ -4,6 +4,7 @@ import Layout, { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../comp
 import { getTank, deleteTank } from '../services/api';
 import type { Tank, TankVersion } from '../types';
 import ForkDialog from '../components/ForkDialog';
+import { useAuthStore } from '../store/authStore';
 
 function majorOf(version: string): string {
   const m = version.match(/^(v\d+)/);
@@ -63,7 +64,7 @@ function StatPips({ value }: { value: number }) {
   );
 }
 
-function MajorVersionCard({ major, minors }: { major: TankVersion; minors: TankVersion[] }) {
+function MajorVersionCard({ major, minors, isOwner }: { major: TankVersion; minors: TankVersion[]; isOwner: boolean }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -72,8 +73,8 @@ function MajorVersionCard({ major, minors }: { major: TankVersion; minors: TankV
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <span style={{ color: '#a78bfa', fontWeight: 700, fontSize: 15 }}>{major.version}</span>
-            <StatusDot status={major.compileStatus} />
-            <span style={{ color: '#64748b', fontSize: 12 }}>{major.compileStatus}</span>
+            {isOwner && <StatusDot status={major.compileStatus} />}
+            {isOwner && <span style={{ color: '#64748b', fontSize: 12 }}>{major.compileStatus}</span>}
             {major.disqualified && (
               <span style={{ background: '#f87171', color: '#fff', fontSize: 10, padding: '1px 6px', borderRadius: 4, fontWeight: 600 }}>DQ</span>
             )}
@@ -151,6 +152,7 @@ function MajorVersionCard({ major, minors }: { major: TankVersion; minors: TankV
 export default function TankDetail() {
   const { tankId } = useParams<{ tankId: string }>();
   const navigate = useNavigate();
+  const currentUser = useAuthStore((s) => s.user);
   const [tank, setTank] = useState<(Tank & { versions: TankVersion[] }) | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -173,6 +175,8 @@ export default function TankDetail() {
     return <Layout><div style={{ color: '#f87171' }}>{error ?? 'Tank not found'}</div></Layout>;
   }
 
+  const isOwner = tank.userId === currentUser?.userId;
+
   const majors = tank.versions
     .filter((v) => isMajor(v.version))
     .sort((a, b) => b.createdAt - a.createdAt);
@@ -191,8 +195,8 @@ export default function TankDetail() {
   return (
     <Layout>
       <div style={{ marginBottom: 20 }}>
-        <Link to="/dashboard" style={{ color: '#64748b', fontSize: 13, textDecoration: 'none' }}>
-          ← My tanks
+        <Link to={isOwner ? '/dashboard' : '/leaderboard'} style={{ color: '#64748b', fontSize: 13, textDecoration: 'none' }}>
+          {isOwner ? '← My tanks' : '← Leaderboard'}
         </Link>
       </div>
 
@@ -245,10 +249,12 @@ export default function TankDetail() {
           {latestReadyMajor && !tank.scoreTransferredTo && (
             <button onClick={() => setShowFork(true)} style={ghostButtonStyle}>Fork</button>
           )}
-          <button onClick={() => navigate(`/tanks/${tankId}/edit`)} style={primaryButtonStyle}>
-            Edit
-          </button>
-          {confirmDelete ? (
+          {isOwner && (
+            <button onClick={() => navigate(`/tanks/${tankId}/edit`)} style={primaryButtonStyle}>
+              Edit
+            </button>
+          )}
+          {isOwner && (confirmDelete ? (
             <>
               <span style={{ color: '#f87171', fontSize: 13 }}>Delete forever?</span>
               <button
@@ -279,7 +285,7 @@ export default function TankDetail() {
             >
               Delete
             </button>
-          )}
+          ))}
         </div>
       </div>
 
@@ -295,7 +301,7 @@ export default function TankDetail() {
         </div>
       ) : (
         majors.map((major) => (
-          <MajorVersionCard key={major.version} major={major} minors={minorsByMajor[major.version] ?? []} />
+          <MajorVersionCard key={major.version} major={major} minors={minorsByMajor[major.version] ?? []} isOwner={isOwner} />
         ))
       )}
 

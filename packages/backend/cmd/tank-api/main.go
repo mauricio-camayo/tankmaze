@@ -332,13 +332,15 @@ func (h *handler) getTank(ctx context.Context, req events.APIGatewayV2HTTPReques
 	}
 
 	if tank.UserID != uid {
-		// Public view: major versions only, no WASM/source artifact keys.
+		// Public view: major versions only, no build artifact or compile metadata.
 		pub := make([]db.TankVersion, 0)
 		for _, v := range versions {
 			if v.VersionType == "major" {
 				v.SourceS3Key = ""
 				v.WasmS3Key = ""
 				v.WasmSHA256 = ""
+				v.CompileStatus = ""
+				v.CompileError = ""
 				pub = append(pub, v)
 			}
 		}
