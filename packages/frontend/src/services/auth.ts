@@ -58,16 +58,18 @@ export async function getAuthUser() {
   }
 }
 
-export async function getUserProfile(): Promise<{ sub?: string; name?: string; picture?: string }> {
-  if (LOCAL_DEV) return { name: 'Local User' };
+export async function getUserProfile(): Promise<{ sub?: string; name?: string; picture?: string; isAdmin?: boolean }> {
+  if (LOCAL_DEV) return { name: 'Local User', isAdmin: true };
   try {
     const session = await fetchAuthSession();
     const payload = session.tokens?.idToken?.payload;
     if (!payload) return {};
+    const groups = payload['cognito:groups'] as string[] | undefined;
     return {
       sub: payload['sub'] as string | undefined,
       name: (payload['given_name'] ?? payload['name']) as string | undefined,
       picture: payload['picture'] as string | undefined,
+      isAdmin: groups?.includes('platform-admin') ?? false,
     };
   } catch {
     return {};

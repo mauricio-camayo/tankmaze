@@ -5,6 +5,7 @@ interface AuthUser {
   username: string;
   name?: string;
   picture?: string;
+  isAdmin?: boolean;
 }
 
 interface AuthStore {

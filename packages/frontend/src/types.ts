@@ -18,6 +18,7 @@ export interface Tank {
   tankId: string;
   userId: string;
   name: string;
+  authorName: string;
   globalScore: number;
   bestFinish: number | null;
   gameDaysCount: number;

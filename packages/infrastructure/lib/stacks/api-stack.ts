@@ -156,6 +156,7 @@ export class ApiStack extends Stack {
       SCOUT_VERSION:         'v1',
       BRUISER_TANK_ID:       'builtin-bruiser',
       BRUISER_VERSION:       'v1',
+      USER_POOL_ID:          userPoolId,
     });
     tables.tanks.grantReadWriteData(tankApi);
     tables.tankVersions.grantReadWriteData(tankApi);
@@ -174,6 +175,20 @@ export class ApiStack extends Stack {
     tankApi.addToRolePolicy(new iam.PolicyStatement({
       actions: ['s3:GetObject'],
       resources: [matchLogsBucket.arnForObjects('*')],
+    }));
+    // Cognito admin operations for the admin panel
+    tankApi.addToRolePolicy(new iam.PolicyStatement({
+      actions: [
+        'cognito-idp:ListUsers',
+        'cognito-idp:ListUsersInGroup',
+        'cognito-idp:AdminListGroupsForUser',
+        'cognito-idp:AdminDisableUser',
+        'cognito-idp:AdminEnableUser',
+        'cognito-idp:AdminAddUserToGroup',
+        'cognito-idp:AdminRemoveUserFromGroup',
+        'cognito-idp:AdminDeleteUser',
+      ],
+      resources: [`arn:aws:cognito-idp:${this.region}:${this.account}:userpool/${userPoolId}`],
     }));
 
     // ---- WebSocket API (observer) --------------------------------------

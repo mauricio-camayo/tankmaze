@@ -7,25 +7,43 @@ import (
 	"github.com/tankmaze/backend/internal/db"
 )
 
+type localUser struct {
+	Sub     string
+	Email   string
+	Name    string
+	Enabled bool
+	IsAdmin bool
+}
+
 type memStore struct {
 	mu       sync.RWMutex
 	tanks    map[string]db.Tank
 	versions map[string][]db.TankVersion // tankId → slice
 	matches  map[string]db.Match
 	maps     map[string]db.Map
-	mapSlugs map[string]string        // slug → mapId
-	rankings map[string][]db.Ranking  // tankId → []Ranking
+	mapSlugs map[string]string       // slug → mapId
+	rankings map[string][]db.Ranking // tankId → []Ranking
+	users    map[string]localUser    // sub → user
 }
 
 func newStore() *memStore {
-	return &memStore{
+	s := &memStore{
 		tanks:    make(map[string]db.Tank),
 		versions: make(map[string][]db.TankVersion),
 		matches:  make(map[string]db.Match),
 		maps:     make(map[string]db.Map),
 		mapSlugs: make(map[string]string),
 		rankings: make(map[string][]db.Ranking),
+		users:    make(map[string]localUser),
 	}
+	s.users[localUserID] = localUser{
+		Sub:     localUserID,
+		Email:   "dev@localhost",
+		Name:    "Local User",
+		Enabled: true,
+		IsAdmin: true,
+	}
+	return s
 }
 
 func (s *memStore) listTanksByUser(uid string) []db.Tank {
@@ -290,4 +308,76 @@ func (s *memStore) updateMap(mapID, name, description string, isActive bool) {
 	m.Description = description
 	m.IsActive = isActive
 	s.maps[mapID] = m
+}
+
+// ── Tank / version deletion ─────────────────────────────────────────────────
+
+func (s *memStore) deleteTank(tankID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.tanks, tankID)
+	delete(s.versions, tankID)
+	delete(s.rankings, tankID)
+}
+
+func (s *memStore) listAllTanks() []db.Tank {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	result := make([]db.Tank, 0, len(s.tanks))
+	for _, t := range s.tanks {
+		result = append(result, t)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].GlobalScore > result[j].GlobalScore
+	})
+	return result
+}
+
+// ── User management ─────────────────────────────────────────────────────────
+
+func (s *memStore) listUsers() []localUser {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	result := make([]localUser, 0, len(s.users))
+	for _, u := range s.users {
+		result = append(result, u)
+	}
+	return result
+}
+
+func (s *memStore) updateUserEnabled(sub string, enabled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ok := s.users[sub]
+	if !ok {
+		return
+	}
+	u.Enabled = enabled
+	s.users[sub] = u
+}
+
+func (s *memStore) toggleUserAdmin(sub string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ok := s.users[sub]
+	if !ok {
+		return false
+	}
+	u.IsAdmin = !u.IsAdmin
+	s.users[sub] = u
+	return u.IsAdmin
+}
+
+func (s *memStore) deleteUser(sub string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.users, sub)
+	// cascade: remove all tanks owned by this user
+	for tankID, t := range s.tanks {
+		if t.UserID == sub {
+			delete(s.tanks, tankID)
+			delete(s.versions, tankID)
+			delete(s.rankings, tankID)
+		}
+	}
 }

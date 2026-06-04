@@ -9,6 +9,8 @@ import TankDetail from './pages/TankDetail';
 import TankEditor from './pages/TankEditor';
 import Leaderboard from './pages/Leaderboard';
 import GameDay from './pages/GameDay';
+import AdminUsers from './pages/admin/Users';
+import AdminTanks from './pages/admin/Tanks';
 
 // Watch imports Phaser (~1 MB) — keep it in a separate lazy chunk
 const Watch = lazy(() => import('./pages/Watch'));
@@ -31,6 +33,13 @@ function RequireAuth() {
   return <Outlet />;
 }
 
+function RequireAdmin() {
+  const { user, loading } = useAuthStore();
+  if (loading) return <div>Loading…</div>;
+  if (!user?.isAdmin) return <Navigate to="/dashboard" replace />;
+  return <Outlet />;
+}
+
 function AppRoutes() {
   const { user, loading } = useAuthStore();
 
@@ -45,6 +54,10 @@ function AppRoutes() {
         <Route path="/tanks/new/edit" element={<TankEditor />} />
         <Route path="/tanks/:tankId" element={<TankDetail />} />
         <Route path="/tanks/:tankId/edit" element={<TankEditor />} />
+      </Route>
+      <Route element={<RequireAdmin />}>
+        <Route path="/admin/users" element={<AdminUsers />} />
+        <Route path="/admin/tanks" element={<AdminTanks />} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
@@ -61,7 +74,7 @@ export default function App() {
       getAuthUser().then(async (u) => {
         if (u) {
           const profile = await getUserProfile();
-          setUser({ userId: profile.sub ?? u.userId, username: u.username, name: profile.name, picture: profile.picture });
+          setUser({ userId: profile.sub ?? u.userId, username: u.username, name: profile.name, picture: profile.picture, isAdmin: profile.isAdmin });
         } else {
           setUser(null);
         }

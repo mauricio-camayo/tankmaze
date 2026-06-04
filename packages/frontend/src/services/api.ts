@@ -116,3 +116,30 @@ export const updateMap = (
     method: 'PATCH',
     body: JSON.stringify(updates),
   });
+
+// Admin
+export interface AdminUser {
+  sub: string;
+  email: string;
+  name: string;
+  enabled: boolean;
+  isAdmin: boolean;
+}
+
+export const adminListUsers = (nextToken?: string) =>
+  request<{ users: AdminUser[]; nextToken?: string }>(
+    `/admin/users${nextToken ? `?nextToken=${encodeURIComponent(nextToken)}` : ''}`,
+  );
+export const adminUpdateUser = (sub: string, disabled: boolean) =>
+  request<void>(`/admin/users/${sub}`, { method: 'PATCH', body: JSON.stringify({ disabled }) });
+export const adminToggleUserRole = (sub: string) =>
+  request<{ isAdmin: boolean }>(`/admin/users/${sub}/role`, { method: 'PATCH' });
+export const adminDeleteUser = (sub: string) =>
+  request<void>(`/admin/users/${sub}`, { method: 'DELETE' });
+
+export const adminListTanks = () =>
+  request<{ tanks: Tank[] }>('/admin/tanks');
+export const adminUpdateTank = (tankId: string, name: string) =>
+  request<void>(`/admin/tanks/${tankId}`, { method: 'PATCH', body: JSON.stringify({ name }) });
+export const adminDeleteTank = (tankId: string) =>
+  request<void>(`/admin/tanks/${tankId}`, { method: 'DELETE' });

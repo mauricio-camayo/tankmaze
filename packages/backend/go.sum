@@ -26,6 +26,8 @@ github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi v1.24.0 h1:Q0/xEz44
 github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi v1.24.0/go.mod h1:zJtUxSHKzEvu7CeiViuk5MgDNTWaCSxrGtkJhzO3+A8=
 github.com/aws/aws-sdk-go-v2/service/codebuild v1.60.0 h1:TrTjtw8YV2HjLwtE97dKDc1/bAkGRIf+xRsG1a+WwEE=
 github.com/aws/aws-sdk-go-v2/service/codebuild v1.60.0/go.mod h1:13SjlSpfNt71ZBZZqLMSy08j9jSPA9D5179dKV9RRz4=
+github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider v1.48.0 h1:0Ph3YCW0bkw5cZbH3MAWCNC5lbhnn0vTIX6UlVlXRnY=
+github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider v1.48.0/go.mod h1:U+GnB0KkXI5SgVMzW2J1FHMGbAiObr1XaIGZSMejLlI=
 github.com/aws/aws-sdk-go-v2/service/dynamodb v1.39.2 h1:XcdIh35yg1J8bAiUOLtL/PoPMSGsD72Zanwmim8jEXc=
 github.com/aws/aws-sdk-go-v2/service/dynamodb v1.39.2/go.mod h1:516U/KQM3zdcahNBjHUZKGWNfNnIYyt7sxLeqOx78b0=
 github.com/aws/aws-sdk-go-v2/service/dynamodbstreams v1.24.12 h1:/EeYqntHifxLw+uNaUTH/D099gCuy/TDDgLT3vNTLcM=

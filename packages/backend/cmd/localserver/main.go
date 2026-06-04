@@ -168,6 +168,22 @@ func (srv *server) route(w http.ResponseWriter, r *http.Request) {
 	case method == "PATCH" && n == 2 && parts[0] == "maps":
 		srv.updateMap(w, r, parts[1])
 
+	// Admin
+	case method == "GET" && rawPath == "admin/users":
+		srv.adminListUsers(w)
+	case method == "PATCH" && n == 3 && parts[0] == "admin" && parts[1] == "users":
+		srv.adminUpdateUser(w, r, parts[2])
+	case method == "PATCH" && n == 4 && parts[0] == "admin" && parts[1] == "users" && parts[3] == "role":
+		srv.adminToggleUserRole(w, r, parts[2])
+	case method == "DELETE" && n == 3 && parts[0] == "admin" && parts[1] == "users":
+		srv.adminDeleteUser(w, r, parts[2])
+	case method == "GET" && rawPath == "admin/tanks":
+		srv.adminListTanks(w)
+	case method == "PATCH" && n == 3 && parts[0] == "admin" && parts[1] == "tanks":
+		srv.adminUpdateTank(w, r, parts[2])
+	case method == "DELETE" && n == 3 && parts[0] == "admin" && parts[1] == "tanks":
+		srv.adminDeleteTank(w, r, parts[2])
+
 	default:
 		jsonErr(w, http.StatusNotFound, "not found")
 	}
@@ -774,6 +790,86 @@ func (srv *server) updateMap(w http.ResponseWriter, r *http.Request, mapID strin
 	}
 	srv.store.updateMap(mapID, name, description, isActive)
 	jsonOK(w, map[string]any{"mapId": mapID, "name": name, "description": description, "isActive": isActive})
+}
+
+// ── Admin handlers ─────────────────────────────────────────────────────────
+
+func (srv *server) adminListUsers(w http.ResponseWriter) {
+	type userResp struct {
+		Sub     string `json:"sub"`
+		Email   string `json:"email"`
+		Name    string `json:"name"`
+		Enabled bool   `json:"enabled"`
+		IsAdmin bool   `json:"isAdmin"`
+	}
+	users := srv.store.listUsers()
+	resp := make([]userResp, 0, len(users))
+	for _, u := range users {
+		resp = append(resp, userResp{Sub: u.Sub, Email: u.Email, Name: u.Name, Enabled: u.Enabled, IsAdmin: u.IsAdmin})
+	}
+	jsonOK(w, map[string]any{"users": resp})
+}
+
+func (srv *server) adminUpdateUser(w http.ResponseWriter, r *http.Request, sub string) {
+	var body struct {
+		Disabled bool `json:"disabled"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		jsonErr(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	srv.store.updateUserEnabled(sub, !body.Disabled)
+	jsonOK(w, map[string]string{"status": "ok"})
+}
+
+func (srv *server) adminToggleUserRole(w http.ResponseWriter, r *http.Request, sub string) {
+	if sub == localUserID {
+		jsonErr(w, http.StatusBadRequest, "cannot modify your own admin role")
+		return
+	}
+	isAdmin := srv.store.toggleUserAdmin(sub)
+	jsonOK(w, map[string]bool{"isAdmin": isAdmin})
+}
+
+func (srv *server) adminDeleteUser(w http.ResponseWriter, r *http.Request, sub string) {
+	if sub == localUserID {
+		jsonErr(w, http.StatusBadRequest, "cannot delete yourself")
+		return
+	}
+	srv.store.deleteUser(sub)
+	jsonOK(w, map[string]string{"status": "deleted"})
+}
+
+func (srv *server) adminListTanks(w http.ResponseWriter) {
+	tanks := srv.store.listAllTanks()
+	jsonOK(w, map[string]any{"tanks": tanks})
+}
+
+func (srv *server) adminUpdateTank(w http.ResponseWriter, r *http.Request, tankID string) {
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := readJSON(r, &body); err != nil || body.Name == "" {
+		jsonErr(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	t, err := srv.store.getTank(tankID)
+	if err != nil {
+		jsonErr(w, http.StatusNotFound, "tank not found")
+		return
+	}
+	t.Name = body.Name
+	srv.store.putTank(t)
+	jsonOK(w, map[string]string{"status": "ok"})
+}
+
+func (srv *server) adminDeleteTank(w http.ResponseWriter, r *http.Request, tankID string) {
+	if _, err := srv.store.getTank(tankID); err != nil {
+		jsonErr(w, http.StatusNotFound, "tank not found")
+		return
+	}
+	srv.store.deleteTank(tankID)
+	jsonOK(w, map[string]string{"status": "deleted"})
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────

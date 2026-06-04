@@ -19,6 +19,13 @@
 //	GET    /maps                               – list active maps (no auth required)
 //	POST   /maps                               – create map (admin only)
 //	PATCH  /maps/{id}                          – update map name/description/isActive (admin only)
+//	GET    /admin/users                        – list all Cognito users (admin only)
+//	PATCH  /admin/users/{sub}                  – enable/disable user (admin only)
+//	PATCH  /admin/users/{sub}/role             – toggle platform-admin group (admin only, no self-demotion)
+//	DELETE /admin/users/{sub}                  – delete user + all their tanks (admin only)
+//	GET    /admin/tanks                        – list all tanks (admin only)
+//	PATCH  /admin/tanks/{id}                   – rename any tank (admin only)
+//	DELETE /admin/tanks/{id}                   – force-delete any tank (admin only)
 package main
 
 import (
@@ -41,6 +48,8 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	cognitoidp "github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
+	cognitotypes "github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
 	"github.com/aws/aws-sdk-go-v2/service/codebuild"
 	cbtypes "github.com/aws/aws-sdk-go-v2/service/codebuild/types"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -109,6 +118,22 @@ type updateMapBody struct {
 	IsActive    *bool  `json:"isActive"`
 }
 
+type adminUpdateUserBody struct {
+	Disabled *bool `json:"disabled"`
+}
+
+type adminUpdateTankBody struct {
+	Name string `json:"name"`
+}
+
+type adminUserResp struct {
+	Sub     string `json:"sub"`
+	Email   string `json:"email"`
+	Name    string `json:"name"`
+	Enabled bool   `json:"enabled"`
+	IsAdmin bool   `json:"isAdmin"`
+}
+
 // ---- Handler ----------------------------------------------------------------
 
 type handler struct {
@@ -116,6 +141,7 @@ type handler struct {
 	s3               *s3.Client
 	cb               *codebuild.Client
 	lambdaSvc        *lambdasvc.Client
+	cognito          *cognitoidp.Client
 	wasmBucket       string
 	logsBucket       string
 	codebuildProject string
@@ -125,6 +151,7 @@ type handler struct {
 	scoutVersion     string
 	bruiserTankID    string
 	bruiserVersion   string
+	userPoolID       string
 }
 
 var h *handler
@@ -141,6 +168,7 @@ func main() {
 		s3:               s3.NewFromConfig(cfg),
 		cb:               codebuild.NewFromConfig(cfg),
 		lambdaSvc:        lambdasvc.NewFromConfig(cfg),
+		cognito:          cognitoidp.NewFromConfig(cfg),
 		wasmBucket:       os.Getenv("WASM_BUCKET"),
 		logsBucket:       os.Getenv("MATCH_LOGS_BUCKET"),
 		codebuildProject: os.Getenv("CODEBUILD_PROJECT"),
@@ -150,6 +178,7 @@ func main() {
 		scoutVersion:     os.Getenv("SCOUT_VERSION"),
 		bruiserTankID:    os.Getenv("BRUISER_TANK_ID"),
 		bruiserVersion:   os.Getenv("BRUISER_VERSION"),
+		userPoolID:       os.Getenv("USER_POOL_ID"),
 	}
 
 	lambda.Start(h.handle)
@@ -211,6 +240,22 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 		return h.createMap(ctx, req)
 	case method == "PATCH" && len(parts) == 2 && parts[0] == "maps":
 		return h.updateMap(ctx, req, parts[1])
+
+	// Admin
+	case method == "GET" && rawPath == "admin/users":
+		return h.adminListUsers(ctx, req)
+	case method == "PATCH" && len(parts) == 3 && parts[0] == "admin" && parts[1] == "users":
+		return h.adminUpdateUser(ctx, req, parts[2])
+	case method == "PATCH" && len(parts) == 4 && parts[0] == "admin" && parts[1] == "users" && parts[3] == "role":
+		return h.adminToggleUserRole(ctx, req, parts[2])
+	case method == "DELETE" && len(parts) == 3 && parts[0] == "admin" && parts[1] == "users":
+		return h.adminDeleteUser(ctx, req, parts[2])
+	case method == "GET" && rawPath == "admin/tanks":
+		return h.adminListTanks(ctx, req)
+	case method == "PATCH" && len(parts) == 3 && parts[0] == "admin" && parts[1] == "tanks":
+		return h.adminUpdateTank(ctx, req, parts[2])
+	case method == "DELETE" && len(parts) == 3 && parts[0] == "admin" && parts[1] == "tanks":
+		return h.adminDeleteTank(ctx, req, parts[2])
 
 	default:
 		return errResp(http.StatusNotFound, "not found"), nil
@@ -1199,6 +1244,245 @@ func authorNameOrID(t db.Tank) string {
 		return t.AuthorName
 	}
 	return t.UserID
+}
+
+// ---- Admin handlers ---------------------------------------------------------
+
+func cognitoAttr(attrs []cognitotypes.AttributeType, name string) string {
+	for _, a := range attrs {
+		if aws.ToString(a.Name) == name {
+			return aws.ToString(a.Value)
+		}
+	}
+	return ""
+}
+
+func (h *handler) getUsernameBySub(ctx context.Context, sub string) (string, error) {
+	out, err := h.cognito.ListUsers(ctx, &cognitoidp.ListUsersInput{
+		UserPoolId: aws.String(h.userPoolID),
+		Filter:     aws.String(fmt.Sprintf(`sub = "%s"`, sub)),
+		Limit:      aws.Int32(1),
+	})
+	if err != nil {
+		return "", fmt.Errorf("list users: %w", err)
+	}
+	if len(out.Users) == 0 {
+		return "", fmt.Errorf("user not found")
+	}
+	return aws.ToString(out.Users[0].Username), nil
+}
+
+func (h *handler) adminListUsers(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	if !isAdmin(req) {
+		return errResp(http.StatusForbidden, "forbidden"), nil
+	}
+
+	listInput := &cognitoidp.ListUsersInput{
+		UserPoolId: aws.String(h.userPoolID),
+		Limit:      aws.Int32(50),
+	}
+	if tok := req.QueryStringParameters["nextToken"]; tok != "" {
+		listInput.PaginationToken = aws.String(tok)
+	}
+	usersOut, err := h.cognito.ListUsers(ctx, listInput)
+	if err != nil {
+		log.Printf("admin list users: %v", err)
+		return errResp(http.StatusInternalServerError, "failed to list users"), nil
+	}
+
+	adminOut, _ := h.cognito.ListUsersInGroup(ctx, &cognitoidp.ListUsersInGroupInput{
+		UserPoolId: aws.String(h.userPoolID),
+		GroupName:  aws.String("platform-admin"),
+	})
+	adminSubs := map[string]bool{}
+	if adminOut != nil {
+		for _, u := range adminOut.Users {
+			if sub := cognitoAttr(u.Attributes, "sub"); sub != "" {
+				adminSubs[sub] = true
+			}
+		}
+	}
+
+	users := make([]adminUserResp, 0, len(usersOut.Users))
+	for _, u := range usersOut.Users {
+		sub := cognitoAttr(u.Attributes, "sub")
+		users = append(users, adminUserResp{
+			Sub:     sub,
+			Email:   cognitoAttr(u.Attributes, "email"),
+			Name:    cognitoAttr(u.Attributes, "name"),
+			Enabled: u.Enabled,
+			IsAdmin: adminSubs[sub],
+		})
+	}
+
+	resp := map[string]interface{}{"users": users}
+	if usersOut.PaginationToken != nil {
+		resp["nextToken"] = *usersOut.PaginationToken
+	}
+	return jsonResp(http.StatusOK, resp), nil
+}
+
+func (h *handler) adminUpdateUser(ctx context.Context, req events.APIGatewayV2HTTPRequest, sub string) (events.APIGatewayV2HTTPResponse, error) {
+	if !isAdmin(req) {
+		return errResp(http.StatusForbidden, "forbidden"), nil
+	}
+	var body adminUpdateUserBody
+	if err := json.Unmarshal([]byte(req.Body), &body); err != nil || body.Disabled == nil {
+		return errResp(http.StatusBadRequest, "disabled field required"), nil
+	}
+	username, err := h.getUsernameBySub(ctx, sub)
+	if err != nil {
+		return errResp(http.StatusNotFound, "user not found"), nil
+	}
+	if *body.Disabled {
+		_, err = h.cognito.AdminDisableUser(ctx, &cognitoidp.AdminDisableUserInput{
+			UserPoolId: aws.String(h.userPoolID),
+			Username:   aws.String(username),
+		})
+	} else {
+		_, err = h.cognito.AdminEnableUser(ctx, &cognitoidp.AdminEnableUserInput{
+			UserPoolId: aws.String(h.userPoolID),
+			Username:   aws.String(username),
+		})
+	}
+	if err != nil {
+		log.Printf("admin update user %s: %v", sub, err)
+		return errResp(http.StatusInternalServerError, "failed to update user"), nil
+	}
+	return jsonResp(http.StatusOK, map[string]string{"status": "ok"}), nil
+}
+
+func (h *handler) adminToggleUserRole(ctx context.Context, req events.APIGatewayV2HTTPRequest, sub string) (events.APIGatewayV2HTTPResponse, error) {
+	if !isAdmin(req) {
+		return errResp(http.StatusForbidden, "forbidden"), nil
+	}
+	if sub == userID(req) {
+		return errResp(http.StatusBadRequest, "cannot modify your own admin role"), nil
+	}
+	username, err := h.getUsernameBySub(ctx, sub)
+	if err != nil {
+		return errResp(http.StatusNotFound, "user not found"), nil
+	}
+	groupsOut, err := h.cognito.AdminListGroupsForUser(ctx, &cognitoidp.AdminListGroupsForUserInput{
+		UserPoolId: aws.String(h.userPoolID),
+		Username:   aws.String(username),
+	})
+	if err != nil {
+		log.Printf("list groups for user %s: %v", sub, err)
+		return errResp(http.StatusInternalServerError, "failed to get user groups"), nil
+	}
+	isCurrentlyAdmin := false
+	for _, g := range groupsOut.Groups {
+		if aws.ToString(g.GroupName) == "platform-admin" {
+			isCurrentlyAdmin = true
+			break
+		}
+	}
+	if isCurrentlyAdmin {
+		_, err = h.cognito.AdminRemoveUserFromGroup(ctx, &cognitoidp.AdminRemoveUserFromGroupInput{
+			UserPoolId: aws.String(h.userPoolID),
+			Username:   aws.String(username),
+			GroupName:  aws.String("platform-admin"),
+		})
+	} else {
+		_, err = h.cognito.AdminAddUserToGroup(ctx, &cognitoidp.AdminAddUserToGroupInput{
+			UserPoolId: aws.String(h.userPoolID),
+			Username:   aws.String(username),
+			GroupName:  aws.String("platform-admin"),
+		})
+	}
+	if err != nil {
+		log.Printf("toggle admin role for %s: %v", sub, err)
+		return errResp(http.StatusInternalServerError, "failed to toggle role"), nil
+	}
+	return jsonResp(http.StatusOK, map[string]bool{"isAdmin": !isCurrentlyAdmin}), nil
+}
+
+func (h *handler) adminDeleteUser(ctx context.Context, req events.APIGatewayV2HTTPRequest, sub string) (events.APIGatewayV2HTTPResponse, error) {
+	if !isAdmin(req) {
+		return errResp(http.StatusForbidden, "forbidden"), nil
+	}
+	if sub == userID(req) {
+		return errResp(http.StatusBadRequest, "cannot delete yourself"), nil
+	}
+	username, err := h.getUsernameBySub(ctx, sub)
+	if err != nil {
+		return errResp(http.StatusNotFound, "user not found"), nil
+	}
+	tanks, err := h.store.ScanTanksByScore(ctx)
+	if err != nil {
+		log.Printf("scan tanks for deleted user %s: %v", sub, err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	for _, t := range tanks {
+		if t.UserID != sub {
+			continue
+		}
+		versions, _ := h.store.ListVersionsByTank(ctx, t.TankID)
+		for _, v := range versions {
+			if err := h.store.DeleteVersion(ctx, t.TankID, v.Version); err != nil {
+				log.Printf("delete version %s/%s: %v", t.TankID, v.Version, err)
+			}
+		}
+		if err := h.store.DeleteTank(ctx, t.TankID); err != nil {
+			log.Printf("delete tank %s: %v", t.TankID, err)
+		}
+	}
+	if _, err := h.cognito.AdminDeleteUser(ctx, &cognitoidp.AdminDeleteUserInput{
+		UserPoolId: aws.String(h.userPoolID),
+		Username:   aws.String(username),
+	}); err != nil {
+		log.Printf("cognito delete user %s: %v", sub, err)
+		return errResp(http.StatusInternalServerError, "failed to delete user"), nil
+	}
+	return jsonResp(http.StatusOK, map[string]string{"status": "deleted"}), nil
+}
+
+func (h *handler) adminListTanks(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	if !isAdmin(req) {
+		return errResp(http.StatusForbidden, "forbidden"), nil
+	}
+	tanks, err := h.store.ScanTanksByScore(ctx)
+	if err != nil {
+		log.Printf("admin list tanks: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	return jsonResp(http.StatusOK, map[string]interface{}{"tanks": tanks}), nil
+}
+
+func (h *handler) adminUpdateTank(ctx context.Context, req events.APIGatewayV2HTTPRequest, tankID string) (events.APIGatewayV2HTTPResponse, error) {
+	if !isAdmin(req) {
+		return errResp(http.StatusForbidden, "forbidden"), nil
+	}
+	var body adminUpdateTankBody
+	if err := json.Unmarshal([]byte(req.Body), &body); err != nil || body.Name == "" {
+		return errResp(http.StatusBadRequest, "name is required"), nil
+	}
+	if err := h.store.UpdateTankName(ctx, tankID, body.Name); err != nil {
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	return jsonResp(http.StatusOK, map[string]string{"status": "ok"}), nil
+}
+
+func (h *handler) adminDeleteTank(ctx context.Context, req events.APIGatewayV2HTTPRequest, tankID string) (events.APIGatewayV2HTTPResponse, error) {
+	if !isAdmin(req) {
+		return errResp(http.StatusForbidden, "forbidden"), nil
+	}
+	if _, err := h.store.GetTank(ctx, tankID); errors.Is(err, db.ErrNotFound) {
+		return errResp(http.StatusNotFound, "tank not found"), nil
+	}
+	versions, err := h.store.ListVersionsByTank(ctx, tankID)
+	if err == nil {
+		for _, v := range versions {
+			if err := h.store.DeleteVersion(ctx, tankID, v.Version); err != nil {
+				log.Printf("admin delete version %s/%s: %v", tankID, v.Version, err)
+			}
+		}
+	}
+	if err := h.store.DeleteTank(ctx, tankID); err != nil {
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	return jsonResp(http.StatusOK, map[string]string{"status": "deleted"}), nil
 }
 
 // isAdmin returns true if the caller belongs to the "platform-admin" Cognito group.

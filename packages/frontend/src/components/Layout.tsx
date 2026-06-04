@@ -28,6 +28,7 @@ export default function Layout({ children }: LayoutProps) {
             TankMaze
           </Link>
           <Link to="/leaderboard" style={navLinkStyle}>Leaderboard</Link>
+          {user?.isAdmin && <Link to="/admin/users" style={{ ...navLinkStyle, color: '#f59e0b' }}>Admin</Link>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {user && (
