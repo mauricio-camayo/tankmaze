@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import Layout, { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
-import { getTank, deleteTank } from '../services/api';
+import { getTank, deleteTank, getRankings } from '../services/api';
 import type { Tank, TankVersion } from '../types';
 import ForkDialog from '../components/ForkDialog';
 import { useAuthStore } from '../store/authStore';
@@ -136,9 +136,16 @@ function MajorVersionCard({ major, minors, isOwner }: { major: TankVersion; mino
                       <span style={{ color: '#f87171', fontSize: 11 }}>compile failed</span>
                     )}
                   </div>
-                  <span style={{ color: '#475569', fontSize: 11 }}>
-                    {new Date(mv.createdAt * 1000).toLocaleDateString()}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    {isOwner && (mv.testMatchCount ?? 0) > 0 && (
+                      <span style={{ color: '#475569', fontSize: 11 }}>
+                        {mv.testMatchCount} test{mv.testMatchCount !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                    <span style={{ color: '#475569', fontSize: 11 }}>
+                      {new Date(mv.createdAt * 1000).toLocaleDateString()}
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -156,6 +163,7 @@ export default function TankDetail() {
   const [tank, setTank] = useState<(Tank & { versions: TankVersion[] }) | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [rank, setRank] = useState<number | null>(null);
   const [showFork, setShowFork] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -166,6 +174,12 @@ export default function TankDetail() {
       .then(setTank)
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
+    getRankings()
+      .then((entries) => {
+        const entry = entries.find((r) => r.tankId === tankId);
+        if (entry) setRank(entry.rank);
+      })
+      .catch(() => { /* rank unavailable — leave null */ });
   }, [tankId]);
 
   if (loading) {
@@ -206,6 +220,9 @@ export default function TankDetail() {
             {tank.name}
           </h1>
           <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+            {rank !== null && (
+              <span style={{ color: '#fbbf24', fontSize: 13, fontWeight: 600 }}>#{rank}</span>
+            )}
             <span style={{ color: '#a78bfa', fontSize: 20, fontWeight: 700 }}>
               {tank.globalScore.toLocaleString()} pts
             </span>
@@ -215,6 +232,12 @@ export default function TankDetail() {
             <span style={{ color: '#64748b', fontSize: 13 }}>
               {tank.gameDaysCount} game {tank.gameDaysCount === 1 ? 'day' : 'days'}
             </span>
+            {tank.createdAt > 0 && (
+              <span style={{ color: '#64748b', fontSize: 13 }}
+                title={new Date(tank.createdAt * 1000).toLocaleDateString()}>
+                submitted {relativeTime(tank.createdAt)}
+              </span>
+            )}
           </div>
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

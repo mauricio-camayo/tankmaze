@@ -343,17 +343,32 @@ func (h *handler) getTank(ctx context.Context, req events.APIGatewayV2HTTPReques
 	}
 
 	if tank.UserID != uid {
-		// Public view: major versions only, no build artifact or compile metadata.
-		pub := make([]db.TankVersion, 0)
-		for _, v := range versions {
-			if v.VersionType == "major" {
-				v.SourceS3Key = ""
-				v.WasmS3Key = ""
-				v.WasmSHA256 = ""
-				v.CompileStatus = ""
-				v.CompileError = ""
-				pub = append(pub, v)
+		// Public view: only the latest major version, build artifacts and compile
+		// metadata stripped.
+		var latestMaj *db.TankVersion
+		var latestMajNum int
+		for i, v := range versions {
+			if v.VersionType != "major" {
+				continue
 			}
+			maj, _, _, ok := parseVersion(v.Version)
+			if !ok {
+				continue
+			}
+			if latestMaj == nil || maj > latestMajNum {
+				cp := versions[i]
+				cp.SourceS3Key = ""
+				cp.WasmS3Key = ""
+				cp.WasmSHA256 = ""
+				cp.CompileStatus = ""
+				cp.CompileError = ""
+				latestMaj = &cp
+				latestMajNum = maj
+			}
+		}
+		pub := make([]db.TankVersion, 0, 1)
+		if latestMaj != nil {
+			pub = append(pub, *latestMaj)
 		}
 		return jsonResp(http.StatusOK, getTankResponse{Tank: tank, Versions: pub}), nil
 	}
