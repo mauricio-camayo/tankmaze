@@ -160,7 +160,7 @@ export class StorageStack extends Stack {
     // ---- Built-in map seeder -------------------------------------------
 
     const mapSeederFn = new lambda.Function(this, 'MapSeeder', {
-      runtime: lambda.Runtime.NODEJS_20_X,
+      runtime: lambda.Runtime.NODEJS_22_X,
       handler: 'index.handler',
       code: lambda.Code.fromAsset(path.join(__dirname, '../../lib/map-seeder')),
       environment: { TABLE_NAME: maps.tableName },
@@ -188,7 +188,7 @@ export class StorageStack extends Stack {
     // ---- AI tank DB seeder --------------------------------------------
 
     const tankSeederFn = new lambda.Function(this, 'TankSeeder', {
-      runtime: lambda.Runtime.NODEJS_20_X,
+      runtime: lambda.Runtime.NODEJS_22_X,
       handler: 'index.handler',
       code: lambda.Code.fromAsset(path.join(__dirname, '../../lib/tank-seeder')),
       environment: {
