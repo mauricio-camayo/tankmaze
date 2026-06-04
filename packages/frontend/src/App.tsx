@@ -9,6 +9,7 @@ import TankDetail from './pages/TankDetail';
 import TankEditor from './pages/TankEditor';
 import Leaderboard from './pages/Leaderboard';
 import GameDay from './pages/GameDay';
+import GameDayList from './pages/GameDayList';
 import AdminUsers from './pages/admin/Users';
 import AdminTanks from './pages/admin/Tanks';
 
@@ -48,6 +49,7 @@ function AppRoutes() {
       <Route path="/login" element={loading ? null : user ? <Navigate to="/dashboard" replace /> : <Login />} />
       <Route path="/watch" element={<Suspense fallback={null}><Watch /></Suspense>} />
       <Route path="/leaderboard" element={<Leaderboard />} />
+      <Route path="/gamedays" element={<GameDayList />} />
       <Route path="/gameday/:gameDayId" element={<GameDay />} />
       <Route element={<RequireAuth />}>
         <Route path="/dashboard" element={<Dashboard />} />

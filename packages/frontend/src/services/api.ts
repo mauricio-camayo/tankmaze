@@ -100,8 +100,18 @@ export const getMatchTicks = (matchId: string) =>
 export const getRankings = () => request<RankingEntry[]>('/rankings');
 
 // GameDay
+export const listGameDays = () => request<GameDay[]>('/gamedays');
 export const getGameDay = (gameDayId: string) =>
   request<GameDay>(`/gamedays/${gameDayId}`);
+export const createGameDay = (body: {
+  registrationCloseAt: string;
+  roundRobinAt: string;
+  eliminationR1At: string;
+  eliminationR2At?: string;
+  finalAt: string;
+}) => request<GameDay>('/gamedays', { method: 'POST', body: JSON.stringify(body) });
+export const deleteGameDay = (gameDayId: string) =>
+  request<void>(`/gamedays/${gameDayId}`, { method: 'DELETE' });
 
 // Maps (no auth required for GET)
 export const listMaps = () => request<GameMap[]>('/maps');

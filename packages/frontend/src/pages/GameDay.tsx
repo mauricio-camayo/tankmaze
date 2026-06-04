@@ -2,16 +2,14 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import Layout, { cardStyle } from '../components/Layout';
 import { getGameDay } from '../services/api';
-import type { GameDay, BracketSlot, GameDayPhaseStatus } from '../types';
+import type { GameDay, BracketSlot, GameDayPhaseStatus, GameDayGroup } from '../types';
 
-const PHASE_LABELS: Record<string, string> = {
-  roundRobin: 'Round Robin',
-  eliminationR1: 'Elimination R1',
-  eliminationR2: 'Elimination R2',
+const BRACKET_LABELS: Record<string, string> = {
+  r1: 'Elimination R1',
+  r2: 'Elimination R2',
+  r3: 'Elimination R3',
   final: 'Final',
 };
-
-const PHASE_ORDER = ['roundRobin', 'eliminationR1', 'eliminationR2', 'final'];
 
 function PhaseBadge({ status }: { status: GameDayPhaseStatus['status'] }) {
   const styles: Record<string, [string, string]> = {
@@ -29,6 +27,23 @@ function PhaseBadge({ status }: { status: GameDayPhaseStatus['status'] }) {
     }}>
       {status}
     </span>
+  );
+}
+
+function PhaseRow({ label, phase }: { label: string; phase: GameDayPhaseStatus }) {
+  const timeLabel = phase.status === 'complete' && phase.endedAt
+    ? `ended ${new Date(phase.endedAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    : phase.status === 'running' && phase.startedAt
+    ? `started ${new Date(phase.startedAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    : '';
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <PhaseBadge status={phase.status} />
+        <span style={{ color: '#e2e8f0', fontSize: 14 }}>{label}</span>
+      </div>
+      {timeLabel && <span style={{ color: '#475569', fontSize: 12 }}>{timeLabel}</span>}
+    </div>
   );
 }
 
@@ -71,7 +86,7 @@ function BracketRound({ name, slots }: { name: string; slots: BracketSlot[] }) {
   return (
     <div style={{ flexShrink: 0 }}>
       <div style={{ color: '#64748b', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
-        {PHASE_LABELS[name] ?? name}
+        {BRACKET_LABELS[name] ?? name}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {pairs.map((pair, i) => (
@@ -81,6 +96,42 @@ function BracketRound({ name, slots }: { name: string; slots: BracketSlot[] }) {
             <SlotCell slot={pair[1]} />
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function GroupCard({ group, gi, placementPoints }: { group: GameDayGroup; gi: number; placementPoints: Record<string, number> }) {
+  return (
+    <div>
+      <div style={{ color: '#475569', fontSize: 11, marginBottom: 6 }}>
+        Group {String.fromCharCode(65 + gi)}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {group.tanks.map(({ tankId }) => (
+          <Link key={tankId} to={`/tanks/${tankId}`} style={{
+            color: '#94a3b8', fontSize: 13, textDecoration: 'none',
+            padding: '4px 8px', borderRadius: 4, background: '#0f0f1a',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          }}>
+            <span>…{tankId.slice(-8)}</span>
+            {placementPoints[tankId] !== undefined && (
+              <span style={{ color: '#a78bfa', fontSize: 12, fontWeight: 600 }}>
+                +{placementPoints[tankId]} pts
+              </span>
+            )}
+          </Link>
+        ))}
+        {group.standings && group.standings.length > 0 && (
+          <div style={{ marginTop: 6, fontSize: 11, color: '#475569' }}>
+            {group.standings.map((s) => (
+              <div key={s.tankId} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 8px' }}>
+                <span>…{s.tankId.slice(-8)}</span>
+                <span>{s.wins}W / {s.losses}L</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -110,18 +161,19 @@ export default function GameDayPage() {
   if (loading) return <Layout><div style={{ color: '#64748b', padding: '40px 0' }}>Loading…</div></Layout>;
   if (error || !gameDay) return <Layout><div style={{ color: '#f87171' }}>{error ?? 'Game day not found'}</div></Layout>;
 
-  const phases = PHASE_ORDER.filter((p) => p in gameDay.phases);
-
-  const bracketRounds = Object.entries(gameDay.bracket)
+  const bracketRounds = Object.entries(gameDay.bracket ?? {})
     .filter(([, slots]) => slots.length > 0)
-    .sort(([a], [b]) => PHASE_ORDER.indexOf(a) - PHASE_ORDER.indexOf(b));
+    .sort(([a], [b]) => {
+      const order = ['r1', 'r2', 'r3', 'final'];
+      return order.indexOf(a) - order.indexOf(b);
+    });
 
-  const standings = Object.entries(gameDay.placementPoints)
-    .sort(([, a], [, b]) => b - a);
-
+  const standings = Object.entries(gameDay.placementPoints ?? {}).sort(([, a], [, b]) => b - a);
   const showGroups = gameDay.groups.length > 0;
   const showBracket = bracketRounds.length > 0;
   const showRegistered = !showGroups && !showBracket && gameDay.registeredTanks.length > 0;
+
+  const { phases, schedule } = gameDay;
 
   return (
     <Layout>
@@ -137,32 +189,34 @@ export default function GameDayPage() {
       </div>
 
       {/* Phase timeline */}
-      {phases.length > 0 && (
-        <div style={{ ...cardStyle, marginBottom: 20 }}>
-          <div style={{ color: '#64748b', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 14 }}>
-            Phases
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {phases.map((phase) => {
-              const ps = gameDay.phases[phase];
-              const timeLabel = ps.status === 'complete' && ps.endedAt
-                ? `ended ${new Date(ps.endedAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                : ps.status === 'running' && ps.startedAt
-                ? `started ${new Date(ps.startedAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                : '';
-              return (
-                <div key={phase} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <PhaseBadge status={ps.status} />
-                    <span style={{ color: '#e2e8f0', fontSize: 14 }}>{PHASE_LABELS[phase] ?? phase}</span>
-                  </div>
-                  {timeLabel && <span style={{ color: '#475569', fontSize: 12 }}>{timeLabel}</span>}
-                </div>
-              );
-            })}
-          </div>
+      <div style={{ ...cardStyle, marginBottom: 20 }}>
+        <div style={{ color: '#64748b', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 14 }}>
+          Schedule
         </div>
-      )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ color: '#94a3b8', fontSize: 14 }}>Registration closes</span>
+            <span style={{ color: '#475569', fontSize: 12 }}>
+              {new Date(schedule.registrationClose).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            </span>
+          </div>
+          <PhaseRow label="Round Robin" phase={phases.roundRobin} />
+          {(schedule.elimination ?? []).map((ts, i) => {
+            const ps = phases.elimination?.[`r${i + 1}`];
+            return ps ? (
+              <PhaseRow key={i} label={`Elimination R${i + 1}`} phase={ps} />
+            ) : (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ color: '#94a3b8', fontSize: 14 }}>Elimination R{i + 1}</span>
+                <span style={{ color: '#475569', fontSize: 12 }}>
+                  {new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            );
+          })}
+          <PhaseRow label="Final" phase={phases.final} />
+        </div>
+      </div>
 
       {/* Groups + standings side-by-side */}
       {(showGroups || standings.length > 0) && (
@@ -178,27 +232,7 @@ export default function GameDayPage() {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 {gameDay.groups.map((group, gi) => (
-                  <div key={gi}>
-                    <div style={{ color: '#475569', fontSize: 11, marginBottom: 6 }}>
-                      Group {String.fromCharCode(65 + gi)}
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      {group.map((tankId) => (
-                        <Link key={tankId} to={`/tanks/${tankId}`} style={{
-                          color: '#94a3b8', fontSize: 13, textDecoration: 'none',
-                          padding: '4px 8px', borderRadius: 4, background: '#0f0f1a',
-                          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                        }}>
-                          <span>…{tankId.slice(-8)}</span>
-                          {gameDay.placementPoints[tankId] !== undefined && (
-                            <span style={{ color: '#a78bfa', fontSize: 12, fontWeight: 600 }}>
-                              +{gameDay.placementPoints[tankId]} pts
-                            </span>
-                          )}
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
+                  <GroupCard key={group.groupId} group={group} gi={gi} placementPoints={gameDay.placementPoints ?? {}} />
                 ))}
               </div>
             </div>

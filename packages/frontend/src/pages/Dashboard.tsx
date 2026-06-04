@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { listTanks, listAiTanks, forkTank } from '../services/api';
-import type { Tank, TankVersion } from '../types';
+import { listTanks, listAiTanks, forkTank, listGameDays } from '../services/api';
+import type { Tank, TankVersion, GameDay } from '../types';
 import { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
 
 function relativeTime(ts: number | null): string {
@@ -101,6 +101,63 @@ function badgeStyle(bg: string, color: string): React.CSSProperties {
   return { background: bg, color, fontSize: 11, padding: '2px 7px', borderRadius: 4, fontWeight: 500 };
 }
 
+function nextPhaseTime(gd: GameDay): string {
+  const { phases, schedule } = gd;
+  if (phases.roundRobin.status === 'upcoming') {
+    return `Round Robin ${new Date(schedule.roundRobin).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
+  }
+  if (phases.roundRobin.status === 'running') return 'Round Robin in progress';
+  if (phases.final.status === 'upcoming') {
+    return `Final ${new Date(schedule.final).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
+  }
+  if (phases.final.status === 'running') return 'Final in progress';
+  return 'Wrapping up';
+}
+
+function GameDayCard({ gd }: { gd: GameDay }) {
+  const isFinal = gd.phases.final.status === 'complete';
+  const isActive =
+    gd.phases.roundRobin.status === 'running' ||
+    gd.phases.final.status === 'running' ||
+    Object.values(gd.phases.elimination ?? {}).some((p) => p.status === 'running');
+
+  return (
+    <div style={{ ...cardStyle, marginBottom: 24, borderColor: isActive ? '#4ade8040' : '#2d2d4e' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <span style={{
+              fontSize: 11, fontWeight: 600, textTransform: 'uppercase', padding: '2px 8px', borderRadius: 4,
+              color: isActive ? '#4ade80' : '#fbbf24',
+              background: isActive ? 'rgba(74,222,128,0.1)' : 'rgba(251,191,36,0.1)',
+              border: `1px solid ${isActive ? '#4ade80' : '#fbbf24'}`,
+            }}>
+              {isFinal ? 'complete' : isActive ? 'active' : 'upcoming'}
+            </span>
+            <span style={{ color: '#e2e8f0', fontSize: 15, fontWeight: 600 }}>
+              Game Day — {new Date(gd.createdAt * 1000).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+            </span>
+          </div>
+          {!isFinal && (
+            <div style={{ fontSize: 12, color: '#64748b' }}>{nextPhaseTime(gd)}</div>
+          )}
+          {gd.registeredTanks.length > 0 && (
+            <div style={{ fontSize: 12, color: '#a78bfa', marginTop: 4 }}>
+              {gd.registeredTanks.length} tank{gd.registeredTanks.length !== 1 ? 's' : ''} registered
+            </div>
+          )}
+        </div>
+        <Link
+          to={`/gameday/${gd.gameDayId}`}
+          style={{ ...ghostButtonStyle, textDecoration: 'none', display: 'inline-block', flexShrink: 0 }}
+        >
+          View
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 type AiTank = Tank & { versions: TankVersion[] };
 
 const AI_DESCRIPTIONS: Record<string, string> = {
@@ -146,6 +203,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [tanks, setTanks] = useState<Tank[]>([]);
   const [aiTanks, setAiTanks] = useState<AiTank[]>([]);
+  const [featuredGameDay, setFeaturedGameDay] = useState<GameDay | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -159,6 +217,12 @@ export default function Dashboard() {
   useEffect(() => {
     reload();
     listAiTanks().then((data) => setAiTanks(data ?? [])).catch(() => {});
+    listGameDays()
+      .then((days) => {
+        const active = (days ?? []).find((d) => d.phases.final.status !== 'complete');
+        setFeaturedGameDay(active ?? null);
+      })
+      .catch(() => {});
   }, []);
 
   function handleNewTank() {
@@ -167,6 +231,7 @@ export default function Dashboard() {
 
   return (
     <Layout>
+      {featuredGameDay && <GameDayCard gd={featuredGameDay} />}
       {aiTanks.length > 0 && (
         <div style={{ marginBottom: 36 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
