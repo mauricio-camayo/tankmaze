@@ -179,7 +179,7 @@ export class StorageStack extends Stack {
     // the wasm-artifacts bucket under the ai/ prefix.
 
     const aiTanksDeploy = new s3deploy.BucketDeployment(this, 'AiTanksDeployment', {
-      sources: [s3deploy.Source.asset(path.join(__dirname, '../ai-tanks'))],
+      sources: [s3deploy.Source.asset(path.join(__dirname, '../../lib/ai-tanks'))],
       destinationBucket: this.wasmBucket,
       destinationKeyPrefix: 'ai/',
       prune: false,
