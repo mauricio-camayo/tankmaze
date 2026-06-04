@@ -39,7 +39,7 @@ export class ObserverSocket {
 
   private openSocket() {
     const endpoint = import.meta.env.VITE_WS_ENDPOINT as string;
-    this.ws = new WebSocket(endpoint);
+    this.ws = new WebSocket(`${endpoint}?matchId=${encodeURIComponent(this.matchId)}`);
 
     this.ws.onopen = () => {
       this.send({ action: 'OBSERVE', matchId: this.matchId });
