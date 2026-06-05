@@ -130,12 +130,13 @@ export class StorageStack extends Stack {
       ],
     });
 
-    // Deploy tankmaze SDK source to wasm-artifacts so the CodeBuild buildspec
-    // can download it without internet access.
-    new s3deploy.BucketDeployment(this, 'SdkDeployment', {
-      sources: [s3deploy.Source.asset(path.join(__dirname, '../../../sdk'))],
+    // Deploy the GOPROXY-format directory for github.com/tankmaze/sdk@v0.0.0 so
+    // CodeBuild can resolve the SDK module via GOPROXY=file:///tmp/goproxy without
+    // any internet egress.
+    new s3deploy.BucketDeployment(this, 'SdkProxyDeployment', {
+      sources: [s3deploy.Source.asset(path.join(__dirname, '../../lib/sdk-proxy'))],
       destinationBucket: this.wasmBucket,
-      destinationKeyPrefix: 'sdk/',
+      destinationKeyPrefix: 'goproxy/',
       prune: false,
     });
 

@@ -49,8 +49,8 @@ export class BuildStack extends Stack {
 
     // Buildspec — downloads source from S3, builds WASM, uploads artifact.
     // Uses Go 1.21 from the standard managed image (highest available in STANDARD_7_0).
-    // The SDK is copied from wasm-artifacts/sdk/ into a local replace-path so
-    // no external module downloads are needed.
+    // The SDK module is served from a GOPROXY file:// directory seeded in S3 so
+    // no external module downloads are needed and no replace directives are required.
     const buildSpec = codebuild.BuildSpec.fromObject({
       version: '0.2',
       phases: {
@@ -59,27 +59,21 @@ export class BuildStack extends Stack {
         },
         pre_build: {
           commands: [
-            // Create SDK module directory and populate it from S3
-            'mkdir -p /tmp/sdk',
-            'aws s3 cp s3://$WASM_BUCKET/sdk/types.go /tmp/sdk/types.go',
-            'printf "module github.com/tankmaze/sdk\\ngo 1.21\\n" > /tmp/sdk/go.mod',
+            // Seed the local GOPROXY from S3
+            'aws s3 cp s3://$WASM_BUCKET/goproxy/ /tmp/goproxy/ --recursive',
 
             // Download tank source
             'mkdir -p /tmp/build',
             'aws s3 cp s3://$WASM_BUCKET/$SOURCE_S3_KEY /tmp/build/main.go',
 
-            // Create go.mod with local replace directive
-            [
-              'printf "module tank\\ngo 1.21\\nrequire github.com/tankmaze/sdk v0.0.0\\n',
-              'replace github.com/tankmaze/sdk v0.0.0 => /tmp/sdk\\n"',
-              '> /tmp/build/go.mod',
-            ].join(' '),
+            // go.mod — no replace directive needed; GOPROXY resolves the SDK locally
+            'printf "module tank\\ngo 1.21\\nrequire github.com/tankmaze/sdk v0.0.0\\n" > /tmp/build/go.mod',
           ],
         },
         build: {
           commands: [
             'cd /tmp/build',
-            'CGO_ENABLED=0 GOOS=wasip1 GOARCH=wasm GOTOOLCHAIN=local GONOSUMDB=* GOPROXY=off go build -mod=mod -o /tmp/tank.wasm .',
+            'CGO_ENABLED=0 GOOS=wasip1 GOARCH=wasm GOTOOLCHAIN=local GONOSUMDB=* GONOSUMCHECK=* GOPROXY=file:///tmp/goproxy go build -mod=mod -o /tmp/tank.wasm .',
             'SHA256=$(sha256sum /tmp/tank.wasm | awk \'{print $1}\')',
           ],
         },
