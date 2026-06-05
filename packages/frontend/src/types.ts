@@ -130,7 +130,7 @@ export interface GameDay {
     final: GameDayPhaseStatus;
   };
   registeredTanks?: Array<{ tankId: string; version: string }>;
-  groups: GameDayGroup[];
+  groups?: GameDayGroup[];
   bracket: Record<string, BracketSlot[]>;
   placementPoints: Record<string, number>;
   createdAt: number;

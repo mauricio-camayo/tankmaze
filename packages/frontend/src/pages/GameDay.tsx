@@ -169,7 +169,7 @@ export default function GameDayPage() {
     });
 
   const standings = Object.entries(gameDay.placementPoints ?? {}).sort(([, a], [, b]) => b - a);
-  const showGroups = gameDay.groups.length > 0;
+  const showGroups = (gameDay.groups ?? []).length > 0;
   const showBracket = bracketRounds.length > 0;
   const showRegistered = !showGroups && !showBracket && (gameDay.registeredTanks ?? []).length > 0;
 
@@ -231,7 +231,7 @@ export default function GameDayPage() {
                 Groups
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {gameDay.groups.map((group, gi) => (
+                {(gameDay.groups ?? []).map((group, gi) => (
                   <GroupCard key={group.groupId} group={group} gi={gi} placementPoints={gameDay.placementPoints ?? {}} />
                 ))}
               </div>
