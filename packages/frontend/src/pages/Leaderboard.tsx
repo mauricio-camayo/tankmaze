@@ -5,6 +5,7 @@ import { getRankings } from '../services/api';
 import type { RankingEntry } from '../types';
 
 const DECAY_DAYS = 90;
+const PAGE_SIZE = 20;
 const COLS = '48px 1fr 140px 88px 60px 50px 110px';
 
 function ordinal(n: number | null): string {
@@ -93,13 +94,17 @@ export default function Leaderboard() {
   const [entries, setEntries] = useState<RankingEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     getRankings()
-      .then(setEntries)
+      .then((data) => { setEntries(data); setPage(1); })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
+
+  const pageCount = Math.ceil(entries.length / PAGE_SIZE);
+  const visible = entries.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <Layout>
@@ -132,9 +137,35 @@ export default function Leaderboard() {
             <span style={{ ...thStyle, textAlign: 'right' }}>Last active</span>
           </div>
 
-          {entries.map((e) => (
+          {visible.map((e) => (
             <LeaderboardRow key={e.tankId} entry={e} onClick={() => navigate(`/tanks/${e.tankId}`)} />
           ))}
+
+          {pageCount > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '16px 4px 4px' }}>
+              <button
+                onClick={() => setPage((p) => p - 1)}
+                disabled={page === 1}
+                style={{
+                  background: 'none', border: '1px solid #2d2d4e', color: page === 1 ? '#475569' : '#94a3b8',
+                  borderRadius: 6, padding: '4px 14px', cursor: page === 1 ? 'default' : 'pointer', fontSize: 13,
+                }}
+              >
+                Prev
+              </button>
+              <span style={{ color: '#64748b', fontSize: 13 }}>Page {page} of {pageCount}</span>
+              <button
+                onClick={() => setPage((p) => p + 1)}
+                disabled={page === pageCount}
+                style={{
+                  background: 'none', border: '1px solid #2d2d4e', color: page === pageCount ? '#475569' : '#94a3b8',
+                  borderRadius: 6, padding: '4px 14px', cursor: page === pageCount ? 'default' : 'pointer', fontSize: 13,
+                }}
+              >
+                Next
+              </button>
+            </div>
+          )}
         </div>
       )}
     </Layout>
