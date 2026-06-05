@@ -141,9 +141,9 @@ function GameDayCard({ gd }: { gd: GameDay }) {
           {!isFinal && (
             <div style={{ fontSize: 12, color: '#64748b' }}>{nextPhaseTime(gd)}</div>
           )}
-          {gd.registeredTanks.length > 0 && (
+          {(gd.registeredTanks ?? []).length > 0 && (
             <div style={{ fontSize: 12, color: '#a78bfa', marginTop: 4 }}>
-              {gd.registeredTanks.length} tank{gd.registeredTanks.length !== 1 ? 's' : ''} registered
+              {(gd.registeredTanks ?? []).length} tank{(gd.registeredTanks ?? []).length !== 1 ? 's' : ''} registered
             </div>
           )}
         </div>

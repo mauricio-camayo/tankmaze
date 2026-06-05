@@ -129,7 +129,7 @@ export interface GameDay {
     elimination?: Record<string, GameDayPhaseStatus>;
     final: GameDayPhaseStatus;
   };
-  registeredTanks: Array<{ tankId: string; version: string }>;
+  registeredTanks?: Array<{ tankId: string; version: string }>;
   groups: GameDayGroup[];
   bracket: Record<string, BracketSlot[]>;
   placementPoints: Record<string, number>;

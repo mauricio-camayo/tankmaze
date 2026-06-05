@@ -168,7 +168,7 @@ type GameDay struct {
 	GameDayID       string                   `dynamodbav:"gameDayId"                  json:"gameDayId"`
 	Schedule        GameDaySchedule          `dynamodbav:"schedule"                   json:"schedule"`
 	Phases          GameDayPhases            `dynamodbav:"phases"                     json:"phases"`
-	RegisteredTanks []MatchTank              `dynamodbav:"registeredTanks,omitempty"  json:"registeredTanks"`
+	RegisteredTanks []MatchTank              `dynamodbav:"registeredTanks,omitempty"  json:"registeredTanks,omitempty"`
 	Groups          []Group                  `dynamodbav:"groups,omitempty"           json:"groups"`
 	Bracket         map[string][]BracketSlot `dynamodbav:"bracket,omitempty"          json:"bracket,omitempty"`
 	PlacementPoints map[string]int           `dynamodbav:"placementPoints,omitempty"  json:"placementPoints,omitempty"`

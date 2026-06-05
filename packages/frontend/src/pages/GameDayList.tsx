@@ -82,8 +82,8 @@ function GameDayRow({ gd, onDeleted }: { gd: GameDay; onDeleted: () => void }) {
             <PhaseDot phase={gd.phases.final} />
             Final — {new Date(gd.schedule.final).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
           </span>
-          {gd.registeredTanks.length > 0 && (
-            <span style={{ color: '#a78bfa' }}>{gd.registeredTanks.length} registered</span>
+          {(gd.registeredTanks ?? []).length > 0 && (
+            <span style={{ color: '#a78bfa' }}>{(gd.registeredTanks ?? []).length} registered</span>
           )}
         </div>
       </div>

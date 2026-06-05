@@ -171,7 +171,7 @@ export default function GameDayPage() {
   const standings = Object.entries(gameDay.placementPoints ?? {}).sort(([, a], [, b]) => b - a);
   const showGroups = gameDay.groups.length > 0;
   const showBracket = bracketRounds.length > 0;
-  const showRegistered = !showGroups && !showBracket && gameDay.registeredTanks.length > 0;
+  const showRegistered = !showGroups && !showBracket && (gameDay.registeredTanks ?? []).length > 0;
 
   const { phases, schedule } = gameDay;
 
@@ -279,10 +279,10 @@ export default function GameDayPage() {
       {showRegistered && (
         <div style={cardStyle}>
           <div style={{ color: '#64748b', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 14 }}>
-            Registered — {gameDay.registeredTanks.length} tank{gameDay.registeredTanks.length !== 1 ? 's' : ''}
+            Registered — {(gameDay.registeredTanks ?? []).length} tank{(gameDay.registeredTanks ?? []).length !== 1 ? 's' : ''}
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {gameDay.registeredTanks.map(({ tankId, version }) => (
+            {(gameDay.registeredTanks ?? []).map(({ tankId, version }) => (
               <Link key={tankId} to={`/tanks/${tankId}`} style={{
                 color: '#94a3b8', fontSize: 12, textDecoration: 'none',
                 padding: '4px 10px', borderRadius: 6,
