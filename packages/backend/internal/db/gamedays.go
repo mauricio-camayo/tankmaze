@@ -139,3 +139,41 @@ func (s *Store) SetGameDayPlacementPoints(ctx context.Context, gameDayID string,
 	gd.PlacementPoints = points
 	return s.PutGameDay(ctx, gd)
 }
+
+// GameDayUpdate carries the mutable fields that PATCH /gamedays/{id} may change.
+// Only non-zero fields are applied; zero values leave the existing value unchanged.
+type GameDayUpdate struct {
+	RegistrationCloseAt string // ISO 8601; empty = no change
+	RoundRobinAt        string
+	EliminationAt       []string // nil = no change; non-nil replaces the whole slice
+	FinalAt             string
+}
+
+// ErrGameDayStarted is returned by UpdateGameDay when any phase has already
+// progressed past "upcoming", making schedule edits unsafe.
+var ErrGameDayStarted = fmt.Errorf("game day has already started")
+
+// UpdateGameDay applies mutable field changes to a Game Day using a
+// read-modify-write. Returns ErrGameDayStarted if RoundRobin.Status != "upcoming".
+func (s *Store) UpdateGameDay(ctx context.Context, gameDayID string, u GameDayUpdate) error {
+	gd, err := s.GetGameDay(ctx, gameDayID)
+	if err != nil {
+		return err
+	}
+	if gd.Phases.RoundRobin.Status != "upcoming" {
+		return ErrGameDayStarted
+	}
+	if u.RegistrationCloseAt != "" {
+		gd.Schedule.RegistrationClose = u.RegistrationCloseAt
+	}
+	if u.RoundRobinAt != "" {
+		gd.Schedule.RoundRobin = u.RoundRobinAt
+	}
+	if u.EliminationAt != nil {
+		gd.Schedule.Elimination = u.EliminationAt
+	}
+	if u.FinalAt != "" {
+		gd.Schedule.Final = u.FinalAt
+	}
+	return s.PutGameDay(ctx, gd)
+}

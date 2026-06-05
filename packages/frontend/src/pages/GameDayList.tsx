@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Layout, { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
-import { listGameDays, createGameDay, deleteGameDay } from '../services/api';
+import { listGameDays, createGameDay, deleteGameDay, patchGameDay } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import type { GameDay, GameDayPhaseStatus } from '../types';
 
@@ -44,9 +44,98 @@ function PhaseDot({ phase }: { phase: GameDayPhaseStatus }) {
   );
 }
 
-function GameDayRow({ gd, onDeleted }: { gd: GameDay; onDeleted: () => void }) {
+function isoToLocalDatetime(iso: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () => void; onCancel: () => void }) {
+  const [fields, setFields] = useState({
+    registrationClose: isoToLocalDatetime(gd.schedule.registrationClose),
+    roundRobin: isoToLocalDatetime(gd.schedule.roundRobin),
+    eliminationR1: isoToLocalDatetime(gd.schedule.elimination?.[0] ?? ''),
+    eliminationR2: isoToLocalDatetime(gd.schedule.elimination?.[1] ?? ''),
+    final: isoToLocalDatetime(gd.schedule.final),
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  function set(key: string, val: string) {
+    setFields((f) => ({ ...f, [key]: val }));
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setErr(null);
+    try {
+      await patchGameDay(gd.gameDayId, {
+        registrationCloseAt: new Date(fields.registrationClose).toISOString(),
+        roundRobinAt: new Date(fields.roundRobin).toISOString(),
+        eliminationR1At: new Date(fields.eliminationR1).toISOString(),
+        ...(fields.eliminationR2 ? { eliminationR2At: new Date(fields.eliminationR2).toISOString() } : {}),
+        finalAt: new Date(fields.final).toISOString(),
+      });
+      onSaved();
+    } catch (e2: unknown) {
+      setErr(e2 instanceof Error ? e2.message : 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inputStyle: React.CSSProperties = {
+    background: '#0f0f1a', border: '1px solid #2d2d4e', borderRadius: 6,
+    color: '#e2e8f0', padding: '6px 10px', fontSize: 13, width: '100%',
+    colorScheme: 'dark',
+  };
+  const labelStyle: React.CSSProperties = {
+    display: 'block', color: '#64748b', fontSize: 11,
+    textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4,
+  };
+
+  return (
+    <div style={{ ...cardStyle, marginTop: 12, borderColor: '#a78bfa' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <h4 style={{ margin: 0, color: '#a78bfa', fontSize: 14, fontWeight: 700 }}>Edit Schedule</h4>
+        <button onClick={onCancel} style={ghostButtonStyle}>Cancel</button>
+      </div>
+      <form onSubmit={handleSubmit}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+          {([
+            ['registrationClose', 'Registration closes'],
+            ['roundRobin', 'Round Robin starts'],
+            ['eliminationR1', 'Elimination R1 starts'],
+            ['eliminationR2', 'Elimination R2 starts (optional)'],
+            ['final', 'Final starts'],
+          ] as [string, string][]).map(([key, label]) => (
+            <div key={key}>
+              <label style={labelStyle}>{label}</label>
+              <input
+                type="datetime-local"
+                value={fields[key as keyof typeof fields]}
+                onChange={(e) => set(key, e.target.value)}
+                required={key !== 'eliminationR2'}
+                style={inputStyle}
+              />
+            </div>
+          ))}
+        </div>
+        {err && <div style={{ color: '#f87171', fontSize: 13, marginBottom: 10 }}>{err}</div>}
+        <button type="submit" disabled={saving} style={primaryButtonStyle}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function GameDayRow({ gd, onDeleted, onRefresh }: { gd: GameDay; onDeleted: () => void; onRefresh: () => void }) {
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [editing, setEditing] = useState(false);
   const { user } = useAuthStore();
   const status = phaseOverallStatus(gd);
 
@@ -63,47 +152,64 @@ function GameDayRow({ gd, onDeleted }: { gd: GameDay; onDeleted: () => void }) {
   }
 
   return (
-    <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-      <div style={{ flex: 1 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-          <StatusBadge status={status} />
-          <span style={{ color: '#e2e8f0', fontSize: 15, fontWeight: 600 }}>
-            {new Date(gd.createdAt * 1000).toLocaleDateString(undefined, {
-              weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
-            })}
-          </span>
+    <div style={cardStyle}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+            <StatusBadge status={status} />
+            <span style={{ color: '#e2e8f0', fontSize: 15, fontWeight: 600 }}>
+              {new Date(gd.createdAt * 1000).toLocaleDateString(undefined, {
+                weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+              })}
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12, color: '#64748b' }}>
+            <span>
+              <PhaseDot phase={gd.phases.roundRobin} />
+              Round Robin — {new Date(gd.schedule.roundRobin).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            </span>
+            <span>
+              <PhaseDot phase={gd.phases.final} />
+              Final — {new Date(gd.schedule.final).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            </span>
+            {(gd.registeredTanks ?? []).length > 0 && (
+              <span style={{ color: '#a78bfa' }}>{(gd.registeredTanks ?? []).length} registered</span>
+            )}
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12, color: '#64748b' }}>
-          <span>
-            <PhaseDot phase={gd.phases.roundRobin} />
-            Round Robin — {new Date(gd.schedule.roundRobin).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-          </span>
-          <span>
-            <PhaseDot phase={gd.phases.final} />
-            Final — {new Date(gd.schedule.final).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-          </span>
-          {(gd.registeredTanks ?? []).length > 0 && (
-            <span style={{ color: '#a78bfa' }}>{(gd.registeredTanks ?? []).length} registered</span>
+        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          <Link
+            to={`/gameday/${gd.gameDayId}`}
+            style={{ ...ghostButtonStyle, textDecoration: 'none', display: 'inline-block' }}
+          >
+            View
+          </Link>
+          {user?.isAdmin && status === 'upcoming' && (
+            <>
+              <button
+                onClick={() => { setEditing((v) => !v); setConfirmDelete(false); }}
+                style={{ ...ghostButtonStyle, borderColor: '#a78bfa', color: '#a78bfa', cursor: 'pointer' }}
+              >
+                {editing ? 'Close' : 'Edit'}
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                style={{ ...ghostButtonStyle, borderColor: '#7f1d1d', color: '#f87171', cursor: 'pointer' }}
+              >
+                {deleting ? 'Deleting…' : confirmDelete ? 'Confirm?' : 'Delete'}
+              </button>
+            </>
           )}
         </div>
       </div>
-      <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-        <Link
-          to={`/gameday/${gd.gameDayId}`}
-          style={{ ...ghostButtonStyle, textDecoration: 'none', display: 'inline-block' }}
-        >
-          View
-        </Link>
-        {user?.isAdmin && status === 'upcoming' && (
-          <button
-            onClick={handleDelete}
-            disabled={deleting}
-            style={{ ...ghostButtonStyle, borderColor: '#7f1d1d', color: '#f87171', cursor: 'pointer' }}
-          >
-            {deleting ? 'Deleting…' : confirmDelete ? 'Confirm?' : 'Delete'}
-          </button>
-        )}
-      </div>
+      {editing && (
+        <EditGameDayForm
+          gd={gd}
+          onSaved={() => { setEditing(false); onRefresh(); }}
+          onCancel={() => setEditing(false)}
+        />
+      )}
     </div>
   );
 }
@@ -257,7 +363,7 @@ export default function GameDayList() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {gameDays.map((gd) => (
-          <GameDayRow key={gd.gameDayId} gd={gd} onDeleted={load} />
+          <GameDayRow key={gd.gameDayId} gd={gd} onDeleted={load} onRefresh={load} />
         ))}
       </div>
     </Layout>

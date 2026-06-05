@@ -112,6 +112,16 @@ export const createGameDay = (body: {
 }) => request<GameDay>('/gamedays', { method: 'POST', body: JSON.stringify(body) });
 export const deleteGameDay = (gameDayId: string) =>
   request<void>(`/gamedays/${gameDayId}`, { method: 'DELETE' });
+export const patchGameDay = (
+  gameDayId: string,
+  body: {
+    registrationCloseAt?: string;
+    roundRobinAt?: string;
+    eliminationR1At?: string;
+    eliminationR2At?: string;
+    finalAt?: string;
+  },
+) => request<GameDay>(`/gamedays/${gameDayId}`, { method: 'PATCH', body: JSON.stringify(body) });
 
 // Maps (no auth required for GET)
 export const listMaps = () => request<GameMap[]>('/maps');

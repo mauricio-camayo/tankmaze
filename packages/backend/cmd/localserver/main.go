@@ -165,6 +165,8 @@ func (srv *server) route(w http.ResponseWriter, r *http.Request) {
 		srv.deleteGameDay(w, r, parts[1])
 	case method == "GET" && n == 2 && parts[0] == "gamedays":
 		srv.getGameDay(w, r, parts[1])
+	case method == "PATCH" && n == 2 && parts[0] == "gamedays":
+		srv.patchGameDay(w, r, parts[1])
 
 	// Maps
 	case method == "GET" && rawPath == "maps":
@@ -785,6 +787,47 @@ func (srv *server) getGameDay(w http.ResponseWriter, _ *http.Request, gameDayID 
 		jsonErr(w, http.StatusNotFound, "game day not found")
 		return
 	}
+	jsonOK(w, gd)
+}
+
+func (srv *server) patchGameDay(w http.ResponseWriter, r *http.Request, gameDayID string) {
+	gd, err := srv.store.getGameDay(gameDayID)
+	if errors.Is(err, db.ErrNotFound) {
+		jsonErr(w, http.StatusNotFound, "game day not found")
+		return
+	}
+	if gd.Phases.RoundRobin.Status != "upcoming" {
+		jsonErr(w, http.StatusConflict, "game day has already started")
+		return
+	}
+	var body struct {
+		RegistrationCloseAt string `json:"registrationCloseAt,omitempty"`
+		RoundRobinAt        string `json:"roundRobinAt,omitempty"`
+		EliminationR1At     string `json:"eliminationR1At,omitempty"`
+		EliminationR2At     string `json:"eliminationR2At,omitempty"`
+		FinalAt             string `json:"finalAt,omitempty"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		jsonErr(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if body.RegistrationCloseAt != "" {
+		gd.Schedule.RegistrationClose = body.RegistrationCloseAt
+	}
+	if body.RoundRobinAt != "" {
+		gd.Schedule.RoundRobin = body.RoundRobinAt
+	}
+	if body.EliminationR1At != "" {
+		elim := []string{body.EliminationR1At}
+		if body.EliminationR2At != "" {
+			elim = append(elim, body.EliminationR2At)
+		}
+		gd.Schedule.Elimination = elim
+	}
+	if body.FinalAt != "" {
+		gd.Schedule.Final = body.FinalAt
+	}
+	srv.store.putGameDay(gd)
 	jsonOK(w, gd)
 }
 

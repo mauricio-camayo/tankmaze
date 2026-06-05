@@ -19,6 +19,7 @@
 //	POST   /gamedays                           – create game day + EventBridge schedules (admin only)
 //	DELETE /gamedays/{id}                      – cancel game day (admin only, no phase started)
 //	GET    /gamedays/{id}                      – Game Day bracket and phase status
+//	PATCH  /gamedays/{id}                      – update phase schedule (admin only, upcoming only)
 //	GET    /maps                               – list active maps (no auth required)
 //	POST   /maps                               – create map (admin only)
 //	PATCH  /maps/{id}                          – update map name/description/isActive (admin only)
@@ -116,6 +117,14 @@ type createGameDayBody struct {
 	EliminationR1At     string `json:"eliminationR1At"`
 	EliminationR2At     string `json:"eliminationR2At,omitempty"`
 	FinalAt             string `json:"finalAt"`
+}
+
+type patchGameDayBody struct {
+	RegistrationCloseAt string `json:"registrationCloseAt,omitempty"`
+	RoundRobinAt        string `json:"roundRobinAt,omitempty"`
+	EliminationR1At     string `json:"eliminationR1At,omitempty"`
+	EliminationR2At     string `json:"eliminationR2At,omitempty"`
+	FinalAt             string `json:"finalAt,omitempty"`
 }
 
 type createMapBody struct {
@@ -257,6 +266,8 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 		return h.deleteGameDay(ctx, req, parts[1])
 	case method == "GET" && len(parts) == 2 && parts[0] == "gamedays":
 		return h.getGameDay(ctx, req, parts[1])
+	case method == "PATCH" && len(parts) == 2 && parts[0] == "gamedays":
+		return h.patchGameDay(ctx, req, parts[1])
 
 	// Maps
 	case method == "GET" && rawPath == "maps":
@@ -1274,6 +1285,64 @@ func (h *handler) getGameDay(ctx context.Context, req events.APIGatewayV2HTTPReq
 	if errors.Is(err, db.ErrNotFound) {
 		return errResp(http.StatusNotFound, "game day not found"), nil
 	}
+	if err != nil {
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	return jsonResp(http.StatusOK, gd), nil
+}
+
+func (h *handler) patchGameDay(ctx context.Context, req events.APIGatewayV2HTTPRequest, gameDayID string) (events.APIGatewayV2HTTPResponse, error) {
+	if !isAdmin(req) {
+		return errResp(http.StatusForbidden, "admin access required"), nil
+	}
+
+	var body patchGameDayBody
+	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
+		return errResp(http.StatusBadRequest, "invalid request body"), nil
+	}
+
+	parseAt := func(s string) (time.Time, bool) {
+		if s == "" {
+			return time.Time{}, true
+		}
+		t, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			return time.Time{}, false
+		}
+		return t.UTC(), true
+	}
+
+	for _, f := range []string{body.RegistrationCloseAt, body.RoundRobinAt, body.EliminationR1At, body.EliminationR2At, body.FinalAt} {
+		if _, ok := parseAt(f); !ok {
+			return errResp(http.StatusBadRequest, "timestamps must be ISO 8601"), nil
+		}
+	}
+
+	var elimAt []string
+	if body.EliminationR1At != "" {
+		elimAt = []string{body.EliminationR1At}
+		if body.EliminationR2At != "" {
+			elimAt = append(elimAt, body.EliminationR2At)
+		}
+	}
+
+	upd := db.GameDayUpdate{
+		RegistrationCloseAt: body.RegistrationCloseAt,
+		RoundRobinAt:        body.RoundRobinAt,
+		EliminationAt:       elimAt,
+		FinalAt:             body.FinalAt,
+	}
+
+	if err := h.store.UpdateGameDay(ctx, gameDayID, upd); errors.Is(err, db.ErrNotFound) {
+		return errResp(http.StatusNotFound, "game day not found"), nil
+	} else if errors.Is(err, db.ErrGameDayStarted) {
+		return errResp(http.StatusConflict, "game day has already started"), nil
+	} else if err != nil {
+		log.Printf("patch gameday %s: %v", gameDayID, err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+
+	gd, err := h.store.GetGameDay(ctx, gameDayID)
 	if err != nil {
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
