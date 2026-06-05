@@ -337,6 +337,7 @@ func (h *handler) createTank(ctx context.Context, req events.APIGatewayV2HTTPReq
 
 	// Validate fork source before creating the tank record.
 	var srcVer *db.TankVersion
+	var isAIFork bool
 	if forkFrom != "" && forkVersion != "" {
 		ver, err := h.store.GetVersion(ctx, forkFrom, forkVersion)
 		if errors.Is(err, db.ErrNotFound) {
@@ -349,6 +350,12 @@ func (h *handler) createTank(ctx context.Context, req events.APIGatewayV2HTTPReq
 			return errResp(http.StatusBadRequest, "fork source version is not ready"), nil
 		}
 		srcVer = &ver
+		// Detect AI-origin forks by checking tankId prefix or source tank userId.
+		if strings.HasPrefix(forkFrom, "builtin-") {
+			isAIFork = true
+		} else if srcTank, err := h.store.GetTank(ctx, forkFrom); err == nil && srcTank.UserID == "__ai__" {
+			isAIFork = true
+		}
 	}
 
 	tankID := newUUID()
@@ -371,16 +378,52 @@ func (h *handler) createTank(ctx context.Context, req events.APIGatewayV2HTTPReq
 	if srcVer != nil {
 		newSrcKey := fmt.Sprintf("%s/v0.1/source.go", tankID)
 		newWasmKey := fmt.Sprintf("%s/v0.1/tank.wasm", tankID)
-		_, err := h.s3.CopyObject(ctx, &s3.CopyObjectInput{
-			Bucket:           aws.String(h.wasmBucket),
-			CopySource:       aws.String(h.wasmBucket + "/" + srcVer.SourceS3Key),
-			Key:              aws.String(newSrcKey),
-			TaggingDirective: s3types.TaggingDirectiveReplace,
-			Tagging:          aws.String("versionType=minor"),
-		})
-		if err != nil {
-			log.Printf("fork copy source: %v", err)
+
+		var srcWriteErr error
+		if isAIFork {
+			// AI source is a full package main file — read it, convert to
+			// body-only dot-import style, then write the converted bytes.
+			obj, err := h.s3.GetObject(ctx, &s3.GetObjectInput{
+				Bucket: aws.String(h.wasmBucket),
+				Key:    aws.String(srcVer.SourceS3Key),
+			})
+			if err != nil {
+				log.Printf("fork read AI source: %v", err)
+				srcWriteErr = err
+			} else {
+				raw, err := io.ReadAll(obj.Body)
+				obj.Body.Close()
+				if err != nil {
+					log.Printf("fork read AI source body: %v", err)
+					srcWriteErr = err
+				} else {
+					converted := []byte(convertAISource(string(raw)))
+					_, srcWriteErr = h.s3.PutObject(ctx, &s3.PutObjectInput{
+						Bucket:      aws.String(h.wasmBucket),
+						Key:         aws.String(newSrcKey),
+						Body:        bytes.NewReader(converted),
+						ContentType: aws.String("text/plain; charset=utf-8"),
+						Tagging:     aws.String("versionType=minor"),
+					})
+					if srcWriteErr != nil {
+						log.Printf("fork write converted source: %v", srcWriteErr)
+					}
+				}
+			}
 		} else {
+			_, srcWriteErr = h.s3.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:           aws.String(h.wasmBucket),
+				CopySource:       aws.String(h.wasmBucket + "/" + srcVer.SourceS3Key),
+				Key:              aws.String(newSrcKey),
+				TaggingDirective: s3types.TaggingDirectiveReplace,
+				Tagging:          aws.String("versionType=minor"),
+			})
+			if srcWriteErr != nil {
+				log.Printf("fork copy source: %v", srcWriteErr)
+			}
+		}
+
+		if srcWriteErr == nil {
 			ver := db.TankVersion{
 				TankID:        tankID,
 				Version:       "v0.1",
@@ -1769,6 +1812,119 @@ func jsonResp(code int, body interface{}) events.APIGatewayV2HTTPResponse {
 // errResp returns a JSON error response with the given HTTP status.
 func errResp(code int, msg string) events.APIGatewayV2HTTPResponse {
 	return jsonResp(code, map[string]string{"error": msg})
+}
+
+// convertAISource transforms a full package main AI source file into the
+// body-only dot-import style expected by TankEditor. It strips the package
+// declaration, import block, //go:wasmimport / //go:noescape directives,
+// func main, func encode, and the WASM host-import stubs, then renames
+// func tick → func Tick and replaces the named "tankmaze." qualifier with
+// the empty string so all SDK identifiers are used via dot-import.
+func convertAISource(src string) string {
+	lines := strings.Split(src, "\n")
+	var out []string
+	skipDepth := 0
+	inImport := false
+	skipVarLine := false
+
+	funcsToRemove := []string{
+		"func main()",
+		"func encode(",
+		"func sensorsGet(",
+		"func configRegister(",
+		"func actionPut(",
+	}
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		if strings.HasPrefix(trimmed, "package ") {
+			continue
+		}
+
+		if trimmed == "import (" {
+			inImport = true
+			continue
+		}
+		if inImport {
+			if trimmed == ")" {
+				inImport = false
+			}
+			continue
+		}
+
+		if strings.HasPrefix(trimmed, "//go:") {
+			continue
+		}
+
+		if skipDepth > 0 {
+			for _, ch := range line {
+				if ch == '{' {
+					skipDepth++
+				} else if ch == '}' {
+					skipDepth--
+				}
+			}
+			continue
+		}
+
+		if strings.HasPrefix(trimmed, "var Config ") || strings.HasPrefix(trimmed, "var cfgJSON ") {
+			skipVarLine = true
+		}
+		if skipVarLine {
+			for _, ch := range line {
+				if ch == '{' {
+					skipDepth++
+				} else if ch == '}' {
+					skipDepth--
+				}
+			}
+			if skipDepth == 0 {
+				skipVarLine = false
+			}
+			continue
+		}
+
+		isRemovedFunc := false
+		for _, sig := range funcsToRemove {
+			if strings.HasPrefix(trimmed, sig) {
+				isRemovedFunc = true
+				break
+			}
+		}
+		if isRemovedFunc {
+			for _, ch := range line {
+				if ch == '{' {
+					skipDepth++
+				} else if ch == '}' {
+					skipDepth--
+				}
+			}
+			continue
+		}
+
+		line = strings.Replace(line, "func tick(", "func Tick(", 1)
+		line = strings.ReplaceAll(line, "tankmaze.", "")
+		out = append(out, line)
+	}
+
+	result := make([]string, 0, len(out))
+	blanks := 0
+	for _, l := range out {
+		if strings.TrimSpace(l) == "" {
+			blanks++
+			if blanks <= 2 {
+				result = append(result, l)
+			}
+		} else {
+			blanks = 0
+			result = append(result, l)
+		}
+	}
+	for len(result) > 0 && strings.TrimSpace(result[0]) == "" {
+		result = result[1:]
+	}
+	return strings.Join(result, "\n")
 }
 
 // newUUID generates a random UUID v4.

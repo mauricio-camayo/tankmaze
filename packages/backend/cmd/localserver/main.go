@@ -129,6 +129,8 @@ func (srv *server) route(w http.ResponseWriter, r *http.Request) {
 		srv.getAiTanks(w)
 	case method == "GET" && n == 2 && parts[0] == "tanks":
 		srv.getTank(w, r, parts[1])
+	case method == "DELETE" && n == 2 && parts[0] == "tanks":
+		srv.deleteTank(w, r, parts[1])
 	case method == "PATCH" && n == 2 && parts[0] == "tanks":
 		srv.updateTank(w, r, parts[1])
 	case method == "POST" && n == 3 && parts[0] == "tanks" && parts[2] == "versions":
@@ -260,31 +262,63 @@ func (srv *server) createTank(w http.ResponseWriter, r *http.Request) {
 	}
 	srv.store.putTank(tank)
 
-	// If forking: copy source + WASM and create initial version.
+	// If forking: copy (or convert) source, then compile into initial version.
 	if forkFrom != "" && forkVersion != "" {
 		srcVer, err := srv.store.getVersion(forkFrom, forkVersion)
 		if err == nil && srcVer.CompileStatus == "ready" {
-			newKey := fmt.Sprintf("%s/v0.1/tank.wasm", tankID)
 			newSrcKey := fmt.Sprintf("%s/v0.1/source.go", tankID)
-			if wasmBytes := srv.getWasm(srcVer.WasmS3Key); len(wasmBytes) > 0 {
-				srv.setWasm(newKey, wasmBytes)
+
+			// Determine the source to write.  AI tanks (userId == "__ai__" or
+			// tankId starts with "builtin-") carry full package main files that
+			// must be converted to body-only dot-import style before the user
+			// edits them.
+			srcTank, _ := srv.store.getTank(forkFrom)
+			var srcBytes []byte
+			if srcTank.UserID == aiUserID || strings.HasPrefix(forkFrom, "builtin-") {
+				if raw := srv.srcData[srcVer.SourceS3Key]; len(raw) > 0 {
+					srcBytes = []byte(convertAISource(string(raw)))
+				}
+			} else {
+				srv.mu.RLock()
+				srcBytes = srv.srcData[srcVer.SourceS3Key]
+				srv.mu.RUnlock()
 			}
-			if srcBytes := srv.srcData[srcVer.SourceS3Key]; len(srcBytes) > 0 {
+
+			if len(srcBytes) > 0 {
 				srv.mu.Lock()
 				srv.srcData[newSrcKey] = srcBytes
 				srv.mu.Unlock()
 			}
-			srv.store.putVersion(db.TankVersion{
+
+			ver := db.TankVersion{
 				TankID:        tankID,
 				Version:       "v0.1",
 				VersionType:   "minor",
 				Config:        srcVer.Config,
-				WasmS3Key:     newKey,
 				SourceS3Key:   newSrcKey,
-				WasmSHA256:    srcVer.WasmSHA256,
-				CompileStatus: "ready",
+				CompileStatus: "compiling",
 				CreatedAt:     now,
-			})
+			}
+			srv.store.putVersion(ver)
+
+			// Trigger an actual compile so status progresses to ready/failed.
+			go func() {
+				wasmBytes, sha256hex, compileErr := srv.compileWasm(string(srcBytes))
+				if compileErr != nil {
+					srv.store.updateVersionCompile(tankID, "v0.1", db.CompileUpdate{
+						Status:       "failed",
+						CompileError: compileErr.Error(),
+					})
+					return
+				}
+				wasmKey := fmt.Sprintf("%s/v0.1/tank.wasm", tankID)
+				srv.setWasm(wasmKey, wasmBytes)
+				srv.store.updateVersionCompile(tankID, "v0.1", db.CompileUpdate{
+					Status:     "ready",
+					WasmS3Key:  wasmKey,
+					WasmSHA256: sha256hex,
+				})
+			}()
 		}
 	}
 
@@ -335,6 +369,22 @@ func (srv *server) updateTank(w http.ResponseWriter, r *http.Request, tankID str
 	t.Name = body.Name
 	srv.store.putTank(t)
 	jsonOK(w, map[string]string{"name": body.Name})
+}
+
+func (srv *server) deleteTank(w http.ResponseWriter, _ *http.Request, tankID string) {
+	if _, err := srv.store.getTank(tankID); errors.Is(err, db.ErrNotFound) {
+		jsonErr(w, http.StatusNotFound, "tank not found")
+		return
+	}
+	versions := srv.store.listVersionsByTank(tankID)
+	for _, v := range versions {
+		if v.RegisteredForGameDay != "" {
+			jsonErr(w, http.StatusConflict, "tank is registered for a game day and cannot be deleted")
+			return
+		}
+	}
+	srv.store.deleteTank(tankID)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ── Version handlers ────────────────────────────────────────────────────────
@@ -1016,6 +1066,139 @@ func readJSON(r *http.Request, v any) error {
 		return nil // empty body is fine
 	}
 	return err
+}
+
+// convertAISource transforms a full package main AI source file into the
+// body-only dot-import style expected by TankEditor. It strips the package
+// declaration, import block, //go:wasmimport / //go:noescape directives,
+// func main, func encode, and the WASM host-import stubs, then renames
+// func tick → func Tick and replaces the named "tankmaze." qualifier with
+// the empty string so all SDK identifiers are used via dot-import.
+func convertAISource(src string) string {
+	lines := strings.Split(src, "\n")
+	var out []string
+	// skipUntilBrace tracks removal of a multi-line function or var body.
+	// depth counts open braces; we skip until we reach depth 0 after the opener.
+	skipDepth := 0
+	inImport := false
+	skipVarLine := false
+
+	// funcsToRemove are function signatures whose bodies we want to strip.
+	funcsToRemove := []string{
+		"func main()",
+		"func encode(",
+		"func sensorsGet(",
+		"func configRegister(",
+		"func actionPut(",
+	}
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Remove package declaration.
+		if strings.HasPrefix(trimmed, "package ") {
+			continue
+		}
+
+		// Remove import block.
+		if trimmed == "import (" {
+			inImport = true
+			continue
+		}
+		if inImport {
+			if trimmed == ")" {
+				inImport = false
+			}
+			continue
+		}
+
+		// Remove //go: directives (wasmimport, noescape, etc.).
+		if strings.HasPrefix(trimmed, "//go:") {
+			continue
+		}
+
+		// Skip body of a function/var we're removing.
+		if skipDepth > 0 {
+			for _, ch := range line {
+				if ch == '{' {
+					skipDepth++
+				} else if ch == '}' {
+					skipDepth--
+				}
+			}
+			continue
+		}
+
+		// Remove var Config = ... and var cfgJSON = ... (top-level; may be multi-line).
+		if strings.HasPrefix(trimmed, "var Config ") || strings.HasPrefix(trimmed, "var cfgJSON ") {
+			skipVarLine = true
+		}
+		if skipVarLine {
+			// Count braces to handle multi-line func literals.
+			for _, ch := range line {
+				if ch == '{' {
+					skipDepth++
+				} else if ch == '}' {
+					skipDepth--
+				}
+			}
+			if skipDepth == 0 {
+				skipVarLine = false
+			}
+			continue
+		}
+
+		// Remove named functions (main, encode, WASM stubs).
+		isRemovedFunc := false
+		for _, sig := range funcsToRemove {
+			if strings.HasPrefix(trimmed, sig) {
+				isRemovedFunc = true
+				break
+			}
+		}
+		if isRemovedFunc {
+			// Count opening brace on this line; may open on same line or next.
+			for _, ch := range line {
+				if ch == '{' {
+					skipDepth++
+				} else if ch == '}' {
+					skipDepth--
+				}
+			}
+			// If no brace on this line (e.g. bare function stub with no body), skip line only.
+			continue
+		}
+
+		// Rename func tick → func Tick.
+		line = strings.Replace(line, "func tick(", "func Tick(", 1)
+
+		// Remove named SDK qualifier.
+		line = strings.ReplaceAll(line, "tankmaze.", "")
+
+		out = append(out, line)
+	}
+
+	// Collapse runs of more than two consecutive blank lines.
+	result := make([]string, 0, len(out))
+	blanks := 0
+	for _, l := range out {
+		if strings.TrimSpace(l) == "" {
+			blanks++
+			if blanks <= 2 {
+				result = append(result, l)
+			}
+		} else {
+			blanks = 0
+			result = append(result, l)
+		}
+	}
+
+	// Trim leading blank lines.
+	for len(result) > 0 && strings.TrimSpace(result[0]) == "" {
+		result = result[1:]
+	}
+
+	return strings.Join(result, "\n")
 }
 
 func newUUID() string {

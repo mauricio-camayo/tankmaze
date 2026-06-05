@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import Layout, { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
-import { getTank, deleteTank, getRankings } from '../services/api';
+import { getTank, deleteTank, withdrawRegistration, getRankings } from '../services/api';
 import type { Tank, TankVersion } from '../types';
 import ForkDialog from '../components/ForkDialog';
 import { useAuthStore } from '../store/authStore';
@@ -163,6 +163,7 @@ export default function TankDetail() {
   const [showFork, setShowFork] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showDeregisterConfirm, setShowDeregisterConfirm] = useState(false);
 
   useEffect(() => {
     if (!tankId) return;
@@ -285,7 +286,11 @@ export default function TankDetail() {
                   } catch (e) {
                     setDeleting(false);
                     setConfirmDelete(false);
-                    alert(e instanceof Error ? e.message : 'Delete failed');
+                    if (e instanceof Error && e.message.startsWith('409')) {
+                      setShowDeregisterConfirm(true);
+                    } else {
+                      alert(e instanceof Error ? e.message : 'Delete failed');
+                    }
                   }
                 }}
                 disabled={deleting}
@@ -335,6 +340,56 @@ export default function TankDetail() {
           }}
         />
       )}
+
+      {showDeregisterConfirm && tank && tankId && (() => {
+        const registeredVersion = tank.versions.find(
+          (v) => v.registeredForGameDay != null && v.registeredForGameDay !== '',
+        );
+        return (
+          <div style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+          }}>
+            <div style={{ ...cardStyle, maxWidth: 420, width: '100%', padding: 28 }}>
+              <h3 style={{ margin: '0 0 12px', color: '#f87171', fontSize: 17 }}>Tank is registered</h3>
+              <p style={{ margin: '0 0 20px', color: '#94a3b8', fontSize: 14, lineHeight: 1.5 }}>
+                This tank is currently registered for a game day
+                {registeredVersion?.registeredForGameDay
+                  ? ` (${registeredVersion.registeredForGameDay})`
+                  : ''}.
+                To delete it, the registration must be withdrawn first.
+                Proceed with de-registering and deleting the tank?
+              </p>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setShowDeregisterConfirm(false)}
+                  style={ghostButtonStyle}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!registeredVersion) return;
+                    setDeleting(true);
+                    setShowDeregisterConfirm(false);
+                    try {
+                      await withdrawRegistration(tankId, registeredVersion.version);
+                      await deleteTank(tankId);
+                      navigate('/dashboard');
+                    } catch (e) {
+                      setDeleting(false);
+                      alert(e instanceof Error ? e.message : 'Delete failed');
+                    }
+                  }}
+                  style={{ ...ghostButtonStyle, borderColor: '#7f1d1d', color: '#f87171' }}
+                >
+                  De-register &amp; delete
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </Layout>
   );
 }
