@@ -59,10 +59,10 @@ export const promoteVersion = (tankId: string, version: string) =>
     `/tanks/${tankId}/versions/${encodeURIComponent(version)}/promote`,
     { method: 'POST' },
   );
-export const registerForGameDay = (tankId: string, version: string) =>
+export const registerForGameDay = (tankId: string, version: string, gameDayId: string) =>
   request<void>(
     `/tanks/${tankId}/versions/${encodeURIComponent(version)}/register`,
-    { method: 'POST' },
+    { method: 'POST', body: JSON.stringify({ gameDayId }) },
   );
 export const withdrawRegistration = (tankId: string, version: string) =>
   request<void>(

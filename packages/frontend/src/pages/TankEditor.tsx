@@ -11,12 +11,13 @@ import {
   promoteVersion,
   startMatch,
   listMaps,
+  listGameDays,
   registerForGameDay,
   withdrawRegistration,
   updateTank,
   type OpponentSpec,
 } from '../services/api';
-import type { Tank, TankVersion, TankConfig, GameMap } from '../types';
+import type { Tank, TankVersion, TankConfig, GameDay, GameMap } from '../types';
 import { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
 
 // ── helpers ─────────────────────────────────────────────────────────────────
@@ -306,6 +307,68 @@ function TestDialog({
   );
 }
 
+function GameDayPickerModal({
+  gameDays, loading, onSelect, onClose,
+}: {
+  gameDays: GameDay[];
+  loading: boolean;
+  onSelect: (gameDayId: string) => void;
+  onClose: () => void;
+}) {
+  const sorted = [...gameDays].sort((a, b) => {
+    const dateA = a.schedule.registrationClose;
+    const dateB = b.schedule.registrationClose;
+    return dateA < dateB ? -1 : dateA > dateB ? 1 : 0;
+  });
+
+  return (
+    <div style={overlay}>
+      <div style={{ ...cardStyle, width: 440, maxHeight: '80vh', overflowY: 'auto' }}>
+        <h3 style={{ margin: '0 0 16px', color: '#e2e8f0' }}>Select Game Day</h3>
+
+        {loading ? (
+          <p style={{ color: '#64748b', fontSize: 13, margin: '0 0 16px' }}>Loading game days…</p>
+        ) : sorted.length === 0 ? (
+          <p style={{ color: '#64748b', fontSize: 13, margin: '0 0 16px' }}>No game days programmed yet.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+            {sorted.map((gd) => {
+              const regClose = new Date(gd.schedule.registrationClose).toLocaleDateString(undefined, {
+                year: 'numeric', month: 'short', day: 'numeric',
+              });
+              const final = new Date(gd.schedule.final).toLocaleDateString(undefined, {
+                year: 'numeric', month: 'short', day: 'numeric',
+              });
+              return (
+                <button
+                  key={gd.gameDayId}
+                  onClick={() => onSelect(gd.gameDayId)}
+                  style={{
+                    background: '#1a1a2e', border: '1px solid #2d2d4e', borderRadius: 6,
+                    color: '#e2e8f0', padding: '10px 14px', textAlign: 'left', cursor: 'pointer',
+                    display: 'flex', flexDirection: 'column', gap: 4,
+                  }}
+                >
+                  <span style={{ fontSize: 14, fontWeight: 600 }}>
+                    {regClose} — {final}
+                  </span>
+                  <span style={{ fontSize: 12, color: '#64748b' }}>
+                    Registration closes {regClose} · Final {final}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={ghostButtonStyle}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const overlay: React.CSSProperties = {
   position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
   display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
@@ -333,6 +396,9 @@ export default function TankEditor() {
   const [pageError, setPageError] = useState<string | null>(null);
   const [promoting, setPromoting] = useState(false);
   const [registering, setRegistering] = useState(false);
+  const [showGameDayPicker, setShowGameDayPicker] = useState(false);
+  const [gameDays, setGameDays] = useState<GameDay[]>([]);
+  const [loadingGameDays, setLoadingGameDays] = useState(false);
 
   const pollCancelRef = useRef(false);
   // Prevents the config persistence effect from writing DEFAULT_CONFIG to
@@ -504,21 +570,42 @@ export default function TankEditor() {
     }
   }
 
-  async function handleRegister() {
+  async function openRegisterPicker() {
+    setShowGameDayPicker(true);
+    if (gameDays.length === 0) {
+      setLoadingGameDays(true);
+      listGameDays().then(setGameDays).catch(() => setGameDays([])).finally(() => setLoadingGameDays(false));
+    }
+  }
+
+  async function handleRegister(gameDayId: string) {
     if (!tankId) return;
     const latest = sortedByAge(versions)[0];
     if (!latest || !isMajor(latest.version)) return;
+    setShowGameDayPicker(false);
     setRegistering(true);
     try {
-      if (latest.registeredForGameDay) {
-        await withdrawRegistration(tankId, latest.version);
-      } else {
-        await registerForGameDay(tankId, latest.version);
-      }
+      await registerForGameDay(tankId, latest.version, gameDayId);
       const { versions: v } = await getTank(tankId);
       setVersions(v ?? []);
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : 'Registration failed');
+    } finally {
+      setRegistering(false);
+    }
+  }
+
+  async function handleWithdraw() {
+    if (!tankId) return;
+    const latest = sortedByAge(versions)[0];
+    if (!latest || !isMajor(latest.version) || !latest.registeredForGameDay) return;
+    setRegistering(true);
+    try {
+      await withdrawRegistration(tankId, latest.version);
+      const { versions: v } = await getTank(tankId);
+      setVersions(v ?? []);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Withdraw failed');
     } finally {
       setRegistering(false);
     }
@@ -593,9 +680,15 @@ export default function TankEditor() {
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {canRegister && (
-            <button onClick={handleRegister} disabled={registering} style={ghostButtonStyle}>
-              {registering ? '…' : isRegistered ? 'Withdraw Registration' : 'Register for Game Day'}
-            </button>
+            isRegistered ? (
+              <button onClick={handleWithdraw} disabled={registering} style={ghostButtonStyle}>
+                {registering ? '…' : 'Withdraw Registration'}
+              </button>
+            ) : (
+              <button onClick={openRegisterPicker} disabled={registering} style={ghostButtonStyle}>
+                {registering ? '…' : 'Register for Game Day'}
+              </button>
+            )
           )}
           {canTest && (
             <button onClick={openTestDialog} style={ghostButtonStyle}>
@@ -653,6 +746,16 @@ export default function TankEditor() {
           loadingMaps={loadingMaps}
           onTest={handleTest}
           onClose={() => setShowTestDialog(false)}
+        />
+      )}
+
+      {/* Game Day picker */}
+      {showGameDayPicker && (
+        <GameDayPickerModal
+          gameDays={gameDays}
+          loading={loadingGameDays}
+          onSelect={handleRegister}
+          onClose={() => setShowGameDayPicker(false)}
         />
       )}
     </Layout>
