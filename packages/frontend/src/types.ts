@@ -118,6 +118,7 @@ export interface GameDayGroup {
 
 export interface GameDay {
   gameDayId: string;
+  name?: string;
   schedule: {
     registrationClose: string;
     roundRobin: string;

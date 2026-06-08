@@ -143,7 +143,8 @@ func (s *Store) SetGameDayPlacementPoints(ctx context.Context, gameDayID string,
 // GameDayUpdate carries the mutable fields that PATCH /gamedays/{id} may change.
 // Only non-zero fields are applied; zero values leave the existing value unchanged.
 type GameDayUpdate struct {
-	RegistrationCloseAt string // ISO 8601; empty = no change
+	Name                string   // empty = no change
+	RegistrationCloseAt string   // ISO 8601; empty = no change
 	RoundRobinAt        string
 	EliminationAt       []string // nil = no change; non-nil replaces the whole slice
 	FinalAt             string
@@ -162,6 +163,9 @@ func (s *Store) UpdateGameDay(ctx context.Context, gameDayID string, u GameDayUp
 	}
 	if gd.Phases.RoundRobin.Status != "upcoming" {
 		return ErrGameDayStarted
+	}
+	if u.Name != "" {
+		gd.Name = u.Name
 	}
 	if u.RegistrationCloseAt != "" {
 		gd.Schedule.RegistrationClose = u.RegistrationCloseAt

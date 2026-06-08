@@ -112,6 +112,7 @@ type opponentSpec struct {
 }
 
 type createGameDayBody struct {
+	Name                string `json:"name"`
 	RegistrationCloseAt string `json:"registrationCloseAt"`
 	RoundRobinAt        string `json:"roundRobinAt"`
 	EliminationR1At     string `json:"eliminationR1At"`
@@ -120,6 +121,7 @@ type createGameDayBody struct {
 }
 
 type patchGameDayBody struct {
+	Name                string `json:"name,omitempty"`
 	RegistrationCloseAt string `json:"registrationCloseAt,omitempty"`
 	RoundRobinAt        string `json:"roundRobinAt,omitempty"`
 	EliminationR1At     string `json:"eliminationR1At,omitempty"`
@@ -1211,6 +1213,7 @@ func (h *handler) createGameDay(ctx context.Context, req events.APIGatewayV2HTTP
 	now := time.Now().Unix()
 	gd := db.GameDay{
 		GameDayID: gameDayID,
+		Name:      strings.TrimSpace(body.Name),
 		Schedule: db.GameDaySchedule{
 			RegistrationClose: body.RegistrationCloseAt,
 			RoundRobin:        body.RoundRobinAt,
@@ -1368,6 +1371,7 @@ func (h *handler) patchGameDay(ctx context.Context, req events.APIGatewayV2HTTPR
 	}
 
 	upd := db.GameDayUpdate{
+		Name:                strings.TrimSpace(body.Name),
 		RegistrationCloseAt: body.RegistrationCloseAt,
 		RoundRobinAt:        body.RoundRobinAt,
 		EliminationAt:       elimAt,
@@ -1746,12 +1750,17 @@ func (h *handler) adminListTanks(ctx context.Context, req events.APIGatewayV2HTT
 	if !isAdmin(req) {
 		return errResp(http.StatusForbidden, "forbidden"), nil
 	}
-	tanks, err := h.store.ScanTanksByScore(ctx)
+	cursor := req.QueryStringParameters["nextToken"]
+	tanks, nextCursor, err := h.store.ScanTanksPage(ctx, 50, cursor)
 	if err != nil {
 		log.Printf("admin list tanks: %v", err)
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
-	return jsonResp(http.StatusOK, map[string]interface{}{"tanks": tanks}), nil
+	resp := map[string]interface{}{"tanks": tanks}
+	if nextCursor != "" {
+		resp["nextToken"] = nextCursor
+	}
+	return jsonResp(http.StatusOK, resp), nil
 }
 
 func (h *handler) adminUpdateTank(ctx context.Context, req events.APIGatewayV2HTTPRequest, tankID string) (events.APIGatewayV2HTTPResponse, error) {

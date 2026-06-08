@@ -11,13 +11,18 @@ export default function AdminTanks() {
   const [editName, setEditName] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [nextToken, setNextToken] = useState<string | undefined>(undefined);
+  const [tokenStack, setTokenStack] = useState<string[]>([]);
 
-  useEffect(() => {
-    adminListTanks()
-      .then((r) => setTanks(r.tanks))
+  function loadPage(token?: string) {
+    setLoading(true);
+    adminListTanks(token)
+      .then((r) => { setTanks(r.tanks); setNextToken(r.nextToken); })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }
+
+  useEffect(() => { loadPage(); }, []);
 
   async function saveName(tankId: string) {
     if (!editName.trim()) return;
@@ -57,6 +62,7 @@ export default function AdminTanks() {
       {loading ? (
         <p style={{ color: '#64748b' }}>Loading…</p>
       ) : (
+        <>
         <div style={cardStyle}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
@@ -146,6 +152,33 @@ export default function AdminTanks() {
             </tbody>
           </table>
         </div>
+        {(tokenStack.length > 0 || nextToken) && (
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button
+              disabled={tokenStack.length === 0}
+              onClick={() => {
+                const stack = [...tokenStack];
+                const prev = stack.pop();
+                setTokenStack(stack);
+                loadPage(prev);
+              }}
+              style={{ ...ghostButtonStyle, fontSize: 12, padding: '4px 14px' }}
+            >
+              Prev
+            </button>
+            <button
+              disabled={!nextToken}
+              onClick={() => {
+                setTokenStack((s) => [...s, tanks[0]?.tankId ?? '']);
+                loadPage(nextToken);
+              }}
+              style={{ ...ghostButtonStyle, fontSize: 12, padding: '4px 14px' }}
+            >
+              Next
+            </button>
+          </div>
+        )}
+        </>
       )}
     </Layout>
   );

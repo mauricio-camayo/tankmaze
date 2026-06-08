@@ -53,6 +53,7 @@ function isoToLocalDatetime(iso: string): string {
 
 function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () => void; onCancel: () => void }) {
   const [fields, setFields] = useState({
+    name: gd.name ?? '',
     registrationClose: isoToLocalDatetime(gd.schedule.registrationClose),
     roundRobin: isoToLocalDatetime(gd.schedule.roundRobin),
     eliminationR1: isoToLocalDatetime(gd.schedule.elimination?.[0] ?? ''),
@@ -72,6 +73,7 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
     setErr(null);
     try {
       await patchGameDay(gd.gameDayId, {
+        ...(fields.name.trim() ? { name: fields.name.trim() } : {}),
         registrationCloseAt: new Date(fields.registrationClose).toISOString(),
         roundRobinAt: new Date(fields.roundRobin).toISOString(),
         eliminationR1At: new Date(fields.eliminationR1).toISOString(),
@@ -103,6 +105,16 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
         <button onClick={onCancel} style={ghostButtonStyle}>Cancel</button>
       </div>
       <form onSubmit={handleSubmit}>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Name</label>
+          <input
+            type="text"
+            value={fields.name}
+            onChange={(e) => set('name', e.target.value)}
+            placeholder="e.g. Season 1"
+            style={inputStyle}
+          />
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
           {([
             ['registrationClose', 'Registration closes'],
@@ -158,7 +170,7 @@ function GameDayRow({ gd, onDeleted, onRefresh }: { gd: GameDay; onDeleted: () =
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
             <StatusBadge status={status} />
             <span style={{ color: '#e2e8f0', fontSize: 15, fontWeight: 600 }}>
-              {new Date(gd.createdAt * 1000).toLocaleDateString(undefined, {
+              {gd.name ? `${gd.name} · ` : ''}{new Date(gd.createdAt * 1000).toLocaleDateString(undefined, {
                 weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
               })}
             </span>
@@ -239,6 +251,7 @@ function defaultSchedule() {
 
 function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
   const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
   const [fields, setFields] = useState(defaultSchedule);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -253,6 +266,7 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
     setErr(null);
     try {
       await createGameDay({
+        ...(name.trim() ? { name: name.trim() } : {}),
         registrationCloseAt: toISO(fields.registrationClose),
         roundRobinAt: toISO(fields.roundRobin),
         eliminationR1At: toISO(fields.eliminationR1),
@@ -260,6 +274,7 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
         finalAt: toISO(fields.final),
       });
       setOpen(false);
+      setName('');
       setFields(defaultSchedule());
       onCreated();
     } catch (e2: unknown) {
@@ -295,6 +310,16 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
         <button onClick={() => setOpen(false)} style={ghostButtonStyle}>Cancel</button>
       </div>
       <form onSubmit={handleSubmit}>
+        <div style={{ marginBottom: 16 }}>
+          <label style={labelStyle}>Name</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Season 1"
+            style={inputStyle}
+          />
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
           {([
             ['registrationClose', 'Registration closes'],

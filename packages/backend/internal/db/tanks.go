@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
 // DeleteTank removes a tank record by tankId.
@@ -145,6 +146,36 @@ func (s *Store) UpdateAuthorName(ctx context.Context, tankID, name string) error
 		ExpressionAttributeValues: expr.Values(),
 	})
 	return err
+}
+
+// ScanTanksPage returns up to limit tanks starting after the given cursor
+// (the tankId of the last item on the previous page). nextCursor is the tankId
+// of the last item returned, or empty when there are no more pages.
+// Tanks within the page are sorted by GlobalScore descending.
+func (s *Store) ScanTanksPage(ctx context.Context, limit int32, cursor string) (tanks []Tank, nextCursor string, err error) {
+	input := &dynamodb.ScanInput{
+		TableName: &s.tanksTable,
+		Limit:     aws.Int32(limit),
+	}
+	if cursor != "" {
+		input.ExclusiveStartKey = tankKey(cursor)
+	}
+
+	out, scanErr := s.db.Scan(ctx, input)
+	if scanErr != nil {
+		return nil, "", fmt.Errorf("scan tanks: %w", scanErr)
+	}
+	if unmarshalErr := attributevalue.UnmarshalListOfMaps(out.Items, &tanks); unmarshalErr != nil {
+		return nil, "", fmt.Errorf("unmarshal tanks: %w", unmarshalErr)
+	}
+	sort.Slice(tanks, func(i, j int) bool { return tanks[i].GlobalScore > tanks[j].GlobalScore })
+
+	if out.LastEvaluatedKey != nil {
+		if v, ok := out.LastEvaluatedKey["tankId"].(*types.AttributeValueMemberS); ok {
+			nextCursor = v.Value
+		}
+	}
+	return tanks, nextCursor, nil
 }
 
 // ScanTanksByScore returns all tanks sorted by GlobalScore descending. Used to

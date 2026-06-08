@@ -104,6 +104,7 @@ export const listGameDays = () => request<GameDay[]>('/gamedays');
 export const getGameDay = (gameDayId: string) =>
   request<GameDay>(`/gamedays/${gameDayId}`);
 export const createGameDay = (body: {
+  name?: string;
   registrationCloseAt: string;
   roundRobinAt: string;
   eliminationR1At: string;
@@ -115,6 +116,7 @@ export const deleteGameDay = (gameDayId: string) =>
 export const patchGameDay = (
   gameDayId: string,
   body: {
+    name?: string;
     registrationCloseAt?: string;
     roundRobinAt?: string;
     eliminationR1At?: string;
@@ -157,8 +159,10 @@ export const adminToggleUserRole = (sub: string) =>
 export const adminDeleteUser = (sub: string) =>
   request<void>(`/admin/users/${sub}`, { method: 'DELETE' });
 
-export const adminListTanks = () =>
-  request<{ tanks: Tank[] }>('/admin/tanks');
+export const adminListTanks = (nextToken?: string) =>
+  request<{ tanks: Tank[]; nextToken?: string }>(
+    `/admin/tanks${nextToken ? `?nextToken=${encodeURIComponent(nextToken)}` : ''}`,
+  );
 export const adminUpdateTank = (tankId: string, name: string) =>
   request<void>(`/admin/tanks/${tankId}`, { method: 'PATCH', body: JSON.stringify({ name }) });
 export const adminDeleteTank = (tankId: string) =>

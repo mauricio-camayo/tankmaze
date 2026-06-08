@@ -166,6 +166,7 @@ type Group struct {
 // GameDay is the item stored in tankmaze-gamedays.
 type GameDay struct {
 	GameDayID       string                   `dynamodbav:"gameDayId"                  json:"gameDayId"`
+	Name            string                   `dynamodbav:"name,omitempty"             json:"name,omitempty"`
 	Schedule        GameDaySchedule          `dynamodbav:"schedule"                   json:"schedule"`
 	Phases          GameDayPhases            `dynamodbav:"phases"                     json:"phases"`
 	RegisteredTanks []MatchTank              `dynamodbav:"registeredTanks,omitempty"  json:"registeredTanks,omitempty"`

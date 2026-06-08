@@ -194,7 +194,7 @@ export default function GameDayPage() {
     <Layout>
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ margin: '0 0 4px', color: '#e2e8f0', fontSize: 22, fontWeight: 700 }}>
-          Game Day
+          {gameDay.name ? `${gameDay.name}` : 'Game Day'}
         </h1>
         <div style={{ color: '#64748b', fontSize: 13 }}>
           {new Date(gameDay.createdAt * 1000).toLocaleDateString(undefined, {

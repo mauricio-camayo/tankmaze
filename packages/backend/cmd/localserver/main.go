@@ -188,7 +188,7 @@ func (srv *server) route(w http.ResponseWriter, r *http.Request) {
 	case method == "DELETE" && n == 3 && parts[0] == "admin" && parts[1] == "users":
 		srv.adminDeleteUser(w, r, parts[2])
 	case method == "GET" && rawPath == "admin/tanks":
-		srv.adminListTanks(w)
+		srv.adminListTanks(w, r)
 	case method == "PATCH" && n == 3 && parts[0] == "admin" && parts[1] == "tanks":
 		srv.adminUpdateTank(w, r, parts[2])
 	case method == "DELETE" && n == 3 && parts[0] == "admin" && parts[1] == "tanks":
@@ -767,6 +767,7 @@ func (srv *server) listGameDays(w http.ResponseWriter) {
 
 func (srv *server) createGameDay(w http.ResponseWriter, r *http.Request) {
 	var body struct {
+		Name                string `json:"name"`
 		RegistrationCloseAt string `json:"registrationCloseAt"`
 		RoundRobinAt        string `json:"roundRobinAt"`
 		EliminationR1At     string `json:"eliminationR1At"`
@@ -789,6 +790,7 @@ func (srv *server) createGameDay(w http.ResponseWriter, r *http.Request) {
 
 	gd := db.GameDay{
 		GameDayID: newUUID(),
+		Name:      strings.TrimSpace(body.Name),
 		Schedule: db.GameDaySchedule{
 			RegistrationClose: body.RegistrationCloseAt,
 			RoundRobin:        body.RoundRobinAt,
@@ -841,6 +843,7 @@ func (srv *server) patchGameDay(w http.ResponseWriter, r *http.Request, gameDayI
 		return
 	}
 	var body struct {
+		Name                string `json:"name,omitempty"`
 		RegistrationCloseAt string `json:"registrationCloseAt,omitempty"`
 		RoundRobinAt        string `json:"roundRobinAt,omitempty"`
 		EliminationR1At     string `json:"eliminationR1At,omitempty"`
@@ -850,6 +853,9 @@ func (srv *server) patchGameDay(w http.ResponseWriter, r *http.Request, gameDayI
 	if err := readJSON(r, &body); err != nil {
 		jsonErr(w, http.StatusBadRequest, "invalid request body")
 		return
+	}
+	if n := strings.TrimSpace(body.Name); n != "" {
+		gd.Name = n
 	}
 	if body.RegistrationCloseAt != "" {
 		gd.Schedule.RegistrationClose = body.RegistrationCloseAt
@@ -1004,9 +1010,33 @@ func (srv *server) adminDeleteUser(w http.ResponseWriter, r *http.Request, sub s
 	jsonOK(w, map[string]string{"status": "deleted"})
 }
 
-func (srv *server) adminListTanks(w http.ResponseWriter) {
-	tanks := srv.store.listAllTanks()
-	jsonOK(w, map[string]any{"tanks": tanks})
+func (srv *server) adminListTanks(w http.ResponseWriter, r *http.Request) {
+	const pageSize = 50
+	cursor := r.URL.Query().Get("nextToken")
+	all := srv.store.listAllTanks()
+
+	// Find start index after cursor.
+	start := 0
+	if cursor != "" {
+		for i, t := range all {
+			if t.TankID == cursor {
+				start = i + 1
+				break
+			}
+		}
+	}
+
+	end := start + pageSize
+	if end > len(all) {
+		end = len(all)
+	}
+	page := all[start:end]
+
+	resp := map[string]any{"tanks": page}
+	if end < len(all) {
+		resp["nextToken"] = all[end-1].TankID
+	}
+	jsonOK(w, resp)
 }
 
 func (srv *server) adminUpdateTank(w http.ResponseWriter, r *http.Request, tankID string) {
