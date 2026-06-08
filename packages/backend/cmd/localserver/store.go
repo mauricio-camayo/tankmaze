@@ -330,7 +330,10 @@ func (s *memStore) listAllTanks() []db.Tank {
 		result = append(result, t)
 	}
 	sort.Slice(result, func(i, j int) bool {
-		return result[i].GlobalScore > result[j].GlobalScore
+		if result[i].GlobalScore != result[j].GlobalScore {
+			return result[i].GlobalScore > result[j].GlobalScore
+		}
+		return result[i].TankID < result[j].TankID
 	})
 	return result
 }

@@ -14,10 +14,12 @@ export default function AdminUsers() {
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [nextToken, setNextToken] = useState<string | undefined>(undefined);
-  const [tokenStack, setTokenStack] = useState<string[]>([]);
+  const [currentToken, setCurrentToken] = useState<string | undefined>(undefined);
+  const [tokenStack, setTokenStack] = useState<Array<string | undefined>>([]);
 
   function loadPage(token?: string) {
     setLoading(true);
+    setCurrentToken(token);
     adminListUsers(token)
       .then((r) => { setUsers(r.users); setNextToken(r.nextToken); })
       .catch((e: Error) => setError(e.message))
@@ -168,7 +170,7 @@ export default function AdminUsers() {
             <button
               disabled={!nextToken}
               onClick={() => {
-                setTokenStack((s) => [...s, users[0]?.sub ?? '']);
+                setTokenStack((s) => [...s, currentToken]);
                 loadPage(nextToken);
               }}
               style={{ ...ghostButtonStyle, fontSize: 12, padding: '4px 14px' }}

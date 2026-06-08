@@ -12,10 +12,12 @@ export default function AdminTanks() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [nextToken, setNextToken] = useState<string | undefined>(undefined);
-  const [tokenStack, setTokenStack] = useState<string[]>([]);
+  const [currentToken, setCurrentToken] = useState<string | undefined>(undefined);
+  const [tokenStack, setTokenStack] = useState<Array<string | undefined>>([]);
 
   function loadPage(token?: string) {
     setLoading(true);
+    setCurrentToken(token);
     adminListTanks(token)
       .then((r) => { setTanks(r.tanks); setNextToken(r.nextToken); })
       .catch((e: Error) => setError(e.message))
@@ -169,7 +171,7 @@ export default function AdminTanks() {
             <button
               disabled={!nextToken}
               onClick={() => {
-                setTokenStack((s) => [...s, tanks[0]?.tankId ?? '']);
+                setTokenStack((s) => [...s, currentToken]);
                 loadPage(nextToken);
               }}
               style={{ ...ghostButtonStyle, fontSize: 12, padding: '4px 14px' }}
