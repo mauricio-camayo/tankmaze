@@ -377,7 +377,6 @@ func (h *handler) createTank(ctx context.Context, req events.APIGatewayV2HTTPReq
 
 	if srcVer != nil {
 		newSrcKey := fmt.Sprintf("%s/v0.1/source.go", tankID)
-		newWasmKey := fmt.Sprintf("%s/v0.1/tank.wasm", tankID)
 
 		var srcWriteErr error
 		if isAIFork {
@@ -430,13 +429,11 @@ func (h *handler) createTank(ctx context.Context, req events.APIGatewayV2HTTPReq
 				VersionType:   "minor",
 				Config:        srcVer.Config,
 				SourceS3Key:   newSrcKey,
-				CompileStatus: "pending",
+				CompileStatus: "no_source",
 				CreatedAt:     time.Now().Unix(),
 			}
 			if putErr := h.store.PutVersion(ctx, ver); putErr != nil {
 				log.Printf("fork put version: %v", putErr)
-			} else {
-				h.triggerBuild(ctx, tankID, "v0.1", newSrcKey, newWasmKey)
 			}
 		}
 	}
@@ -1256,9 +1253,10 @@ func (h *handler) createGameDay(ctx context.Context, req events.APIGatewayV2HTTP
 	for _, p := range phases {
 		payload, _ := json.Marshal(map[string]string{"gameDayId": gameDayID, "phase": p.phase})
 		_, err := h.schedulerSvc.CreateSchedule(ctx, &schedulersvc.CreateScheduleInput{
-			Name:               aws.String(p.name),
-			GroupName:          aws.String("tankmaze-gamedays"),
-			ScheduleExpression: aws.String(p.expr),
+			Name:                        aws.String(p.name),
+			GroupName:                   aws.String("tankmaze-gamedays"),
+			ScheduleExpression:          aws.String(p.expr),
+			ScheduleExpressionTimezone:  aws.String("UTC"),
 			FlexibleTimeWindow: &schedulertypes.FlexibleTimeWindow{
 				Mode: schedulertypes.FlexibleTimeWindowModeOff,
 			},
@@ -1815,11 +1813,11 @@ func errResp(code int, msg string) events.APIGatewayV2HTTPResponse {
 }
 
 // convertAISource transforms a full package main AI source file into the
-// body-only dot-import style expected by TankEditor. It strips the package
-// declaration, import block, //go:wasmimport / //go:noescape directives,
-// func main, func encode, and the WASM host-import stubs, then renames
-// func tick → func Tick and replaces the named "tankmaze." qualifier with
-// the empty string so all SDK identifiers are used via dot-import.
+// package tank dot-import style expected by compileWasm. It replaces
+// "package main" with "package tank", replaces the named import block with
+// a single dot-import of the SDK, strips //go:wasmimport / //go:noescape
+// directives, func main, func encode, and the WASM host-import stubs, then
+// renames func tick → func Tick.
 func convertAISource(src string) string {
 	lines := strings.Split(src, "\n")
 	var out []string
@@ -1838,10 +1836,15 @@ func convertAISource(src string) string {
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
+		// Replace package main with package tank.
 		if strings.HasPrefix(trimmed, "package ") {
+			if trimmed == "package main" {
+				out = append(out, "package tank")
+			}
 			continue
 		}
 
+		// Strip import block and emit dot-import instead.
 		if trimmed == "import (" {
 			inImport = true
 			continue
@@ -1849,6 +1852,7 @@ func convertAISource(src string) string {
 		if inImport {
 			if trimmed == ")" {
 				inImport = false
+				out = append(out, `import . "github.com/tankmaze/sdk"`)
 			}
 			continue
 		}
@@ -1905,6 +1909,21 @@ func convertAISource(src string) string {
 
 		line = strings.Replace(line, "func tick(", "func Tick(", 1)
 		line = strings.ReplaceAll(line, "tankmaze.", "")
+
+		// Strip any immediately-preceding comment line when opening a
+		// surviving var block, so stripPreamble's \n\nvar  token lands
+		// directly before "var (" instead of before the comment.
+		if strings.TrimSpace(line) == "var (" {
+			for len(out) > 0 {
+				prev := strings.TrimSpace(out[len(out)-1])
+				if strings.HasPrefix(prev, "//") {
+					out = out[:len(out)-1]
+				} else {
+					break
+				}
+			}
+		}
+
 		out = append(out, line)
 	}
 

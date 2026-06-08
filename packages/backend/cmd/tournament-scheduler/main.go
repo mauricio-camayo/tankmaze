@@ -113,8 +113,14 @@ func (h *handler) handleRegistrationClose(ctx context.Context, gd db.GameDay) er
 		return fmt.Errorf("scan registered versions: %w", err)
 	}
 	if len(versions) == 0 {
-		log.Printf("no tanks registered for game day %s", gd.GameDayID)
-		return nil
+		log.Printf("no tanks registered for game day %s — cancelling", gd.GameDayID)
+		gd.Phases.RoundRobin.Status = "cancelled"
+		gd.Phases.Final.Status = "cancelled"
+		for k, p := range gd.Phases.Elimination {
+			p.Status = "cancelled"
+			gd.Phases.Elimination[k] = p
+		}
+		return h.store.PutGameDay(ctx, gd)
 	}
 
 	// Fetch tank records for ranking data.

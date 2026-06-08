@@ -175,6 +175,21 @@ export default function GameDayPage() {
 
   const { phases, schedule } = gameDay;
 
+  // Detect silent skip: tournament was cancelled or all phases stuck at "upcoming"
+  // after registration already closed (e.g. no tanks registered).
+  const allPhasesCancelled =
+    phases.roundRobin.status === 'cancelled' && phases.final.status === 'cancelled';
+  const allPhasesUpcoming =
+    phases.roundRobin.status === 'upcoming' &&
+    phases.final.status === 'upcoming' &&
+    (!phases.elimination || Object.values(phases.elimination).every((p) => p.status === 'upcoming'));
+  const registrationClosed = Date.now() > new Date(schedule.registrationClose).getTime();
+  const silentlySkipped = allPhasesCancelled || (allPhasesUpcoming && registrationClosed);
+
+  // Detect completed tournament with no ranking data.
+  const finalComplete = phases.final.status === 'complete';
+  const noResults = finalComplete && standings.length === 0;
+
   return (
     <Layout>
       <div style={{ marginBottom: 24 }}>
@@ -217,6 +232,32 @@ export default function GameDayPage() {
           <PhaseRow label="Final" phase={phases.final} />
         </div>
       </div>
+
+      {/* Warning: registration closed but tournament never ran */}
+      {silentlySkipped && (
+        <div style={{
+          ...cardStyle, marginBottom: 20,
+          border: '1px solid rgba(251,191,36,0.4)',
+          background: 'rgba(251,191,36,0.06)',
+        }}>
+          <p style={{ margin: 0, color: '#fbbf24', fontSize: 13, lineHeight: 1.5 }}>
+            Registration closed with no registered tanks — tournament did not run.
+          </p>
+        </div>
+      )}
+
+      {/* Warning: final complete but no ranking data recorded */}
+      {noResults && (
+        <div style={{
+          ...cardStyle, marginBottom: 20,
+          border: '1px solid rgba(148,163,184,0.3)',
+          background: 'rgba(148,163,184,0.05)',
+        }}>
+          <p style={{ margin: 0, color: '#94a3b8', fontSize: 13, lineHeight: 1.5 }}>
+            Results not available — ranking data was not recorded for this tournament.
+          </p>
+        </div>
+      )}
 
       {/* Groups + standings side-by-side */}
       {(showGroups || standings.length > 0) && (

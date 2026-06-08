@@ -66,9 +66,16 @@ ${body}`;
 }
 
 // Strip the locked preamble from sources loaded from S3 or old localStorage values.
+// Searches for the earliest top-level declaration token so that package-level
+// var/const/type blocks that precede the first func are preserved.
 function stripPreamble(src: string): string {
-  const idx = src.indexOf('\n\nfunc ');
-  return idx >= 0 ? src.slice(idx + 2) : src;
+  const idx = Math.min(
+    ...['\n\nfunc ', '\n\nvar ', '\n\nconst ', '\n\ntype '].map(t => {
+      const i = src.indexOf(t);
+      return i >= 0 ? i : Infinity;
+    })
+  );
+  return isFinite(idx) ? src.slice(idx + 2) : src;
 }
 
 function isMajor(v: string) { return /^v\d+$/.test(v); }

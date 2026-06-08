@@ -91,7 +91,7 @@ export interface RankingEntry {
 }
 
 export interface GameDayPhaseStatus {
-  status: 'upcoming' | 'running' | 'complete';
+  status: 'upcoming' | 'running' | 'complete' | 'cancelled';
   startedAt: number | null;
   endedAt: number | null;
 }

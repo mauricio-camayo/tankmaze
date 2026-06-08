@@ -296,29 +296,10 @@ func (srv *server) createTank(w http.ResponseWriter, r *http.Request) {
 				VersionType:   "minor",
 				Config:        srcVer.Config,
 				SourceS3Key:   newSrcKey,
-				CompileStatus: "compiling",
+				CompileStatus: "no_source",
 				CreatedAt:     now,
 			}
 			srv.store.putVersion(ver)
-
-			// Trigger an actual compile so status progresses to ready/failed.
-			go func() {
-				wasmBytes, sha256hex, compileErr := srv.compileWasm(string(srcBytes))
-				if compileErr != nil {
-					srv.store.updateVersionCompile(tankID, "v0.1", db.CompileUpdate{
-						Status:       "failed",
-						CompileError: compileErr.Error(),
-					})
-					return
-				}
-				wasmKey := fmt.Sprintf("%s/v0.1/tank.wasm", tankID)
-				srv.setWasm(wasmKey, wasmBytes)
-				srv.store.updateVersionCompile(tankID, "v0.1", db.CompileUpdate{
-					Status:     "ready",
-					WasmS3Key:  wasmKey,
-					WasmSHA256: sha256hex,
-				})
-			}()
 		}
 	}
 
@@ -549,6 +530,15 @@ func (srv *server) registerVersion(w http.ResponseWriter, r *http.Request, tankI
 	}
 	if err := readJSON(r, &body); err != nil || body.GameDayID == "" {
 		jsonErr(w, http.StatusBadRequest, "gameDayId is required")
+		return
+	}
+	gd, err := srv.store.getGameDay(body.GameDayID)
+	if errors.Is(err, db.ErrNotFound) {
+		jsonErr(w, http.StatusNotFound, "game day not found")
+		return
+	}
+	if gd.Phases.RoundRobin.Status != "upcoming" {
+		jsonErr(w, http.StatusConflict, "game day registration is closed")
 		return
 	}
 	srv.store.updateVersionRegistration(tankID, version, body.GameDayID)
@@ -1069,11 +1059,11 @@ func readJSON(r *http.Request, v any) error {
 }
 
 // convertAISource transforms a full package main AI source file into the
-// body-only dot-import style expected by TankEditor. It strips the package
-// declaration, import block, //go:wasmimport / //go:noescape directives,
-// func main, func encode, and the WASM host-import stubs, then renames
-// func tick → func Tick and replaces the named "tankmaze." qualifier with
-// the empty string so all SDK identifiers are used via dot-import.
+// package tank dot-import style expected by compileWasm. It replaces
+// "package main" with "package tank", replaces the named import block with
+// a single dot-import of the SDK, strips //go:wasmimport / //go:noescape
+// directives, func main, func encode, and the WASM host-import stubs, then
+// renames func tick → func Tick.
 func convertAISource(src string) string {
 	lines := strings.Split(src, "\n")
 	var out []string
@@ -1095,12 +1085,15 @@ func convertAISource(src string) string {
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
-		// Remove package declaration.
+		// Replace package main with package tank.
 		if strings.HasPrefix(trimmed, "package ") {
+			if trimmed == "package main" {
+				out = append(out, "package tank")
+			}
 			continue
 		}
 
-		// Remove import block.
+		// Strip import block and emit dot-import instead.
 		if trimmed == "import (" {
 			inImport = true
 			continue
@@ -1108,6 +1101,7 @@ func convertAISource(src string) string {
 		if inImport {
 			if trimmed == ")" {
 				inImport = false
+				out = append(out, `import . "github.com/tankmaze/sdk"`)
 			}
 			continue
 		}
@@ -1174,6 +1168,23 @@ func convertAISource(src string) string {
 
 		// Remove named SDK qualifier.
 		line = strings.ReplaceAll(line, "tankmaze.", "")
+
+		// If this line opens a surviving var block (var (...)), strip any
+		// immediately-preceding comment line from out so that stripPreamble
+		// can find the \n\nvar  token.  Without this, a comment between the
+		// blank line and var ( prevents the double-newline from landing
+		// directly before "var ", causing stripPreamble to miss the block and
+		// fall through to func Tick, silently dropping the declarations.
+		if trimmed == "var (" {
+			for len(out) > 0 {
+				prev := strings.TrimSpace(out[len(out)-1])
+				if strings.HasPrefix(prev, "//") {
+					out = out[:len(out)-1]
+				} else {
+					break
+				}
+			}
+		}
 
 		out = append(out, line)
 	}

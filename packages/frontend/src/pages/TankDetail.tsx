@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import Layout, { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
-import { getTank, deleteTank, withdrawRegistration, getRankings } from '../services/api';
+import { getTank, deleteTank, withdrawRegistration, getRankings, listGameDays } from '../services/api';
 import type { Tank, TankVersion } from '../types';
 import ForkDialog from '../components/ForkDialog';
 import { useAuthStore } from '../store/authStore';
@@ -164,6 +164,7 @@ export default function TankDetail() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showDeregisterConfirm, setShowDeregisterConfirm] = useState(false);
+  const [gameDayLabel, setGameDayLabel] = useState<string | null>(null);
 
   useEffect(() => {
     if (!tankId) return;
@@ -288,6 +289,18 @@ export default function TankDetail() {
                     setConfirmDelete(false);
                     if (e instanceof Error && e.message.startsWith('409')) {
                       setShowDeregisterConfirm(true);
+                      const registeredGdId = tank?.versions.find(
+                        (v) => v.registeredForGameDay != null && v.registeredForGameDay !== '',
+                      )?.registeredForGameDay;
+                      if (registeredGdId) {
+                        listGameDays().then((days) => {
+                          const gd = days.find((d) => d.gameDayId === registeredGdId);
+                          if (gd) {
+                            const date = new Date(gd.schedule.registrationClose);
+                            setGameDayLabel(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
+                          }
+                        }).catch(() => { /* label stays null, UUID shown as fallback */ });
+                      }
                     } else {
                       alert(e instanceof Error ? e.message : 'Delete failed');
                     }
@@ -354,15 +367,17 @@ export default function TankDetail() {
               <h3 style={{ margin: '0 0 12px', color: '#f87171', fontSize: 17 }}>Tank is registered</h3>
               <p style={{ margin: '0 0 20px', color: '#94a3b8', fontSize: 14, lineHeight: 1.5 }}>
                 This tank is currently registered for a game day
-                {registeredVersion?.registeredForGameDay
-                  ? ` (${registeredVersion.registeredForGameDay})`
-                  : ''}.
+                {gameDayLabel
+                  ? ` (${gameDayLabel})`
+                  : registeredVersion?.registeredForGameDay
+                    ? ` (${registeredVersion.registeredForGameDay})`
+                    : ''}.
                 To delete it, the registration must be withdrawn first.
                 Proceed with de-registering and deleting the tank?
               </p>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button
-                  onClick={() => setShowDeregisterConfirm(false)}
+                  onClick={() => { setShowDeregisterConfirm(false); setGameDayLabel(null); }}
                   style={ghostButtonStyle}
                 >
                   Cancel
@@ -372,6 +387,7 @@ export default function TankDetail() {
                     if (!registeredVersion) return;
                     setDeleting(true);
                     setShowDeregisterConfirm(false);
+                    setGameDayLabel(null);
                     try {
                       await withdrawRegistration(tankId, registeredVersion.version);
                       await deleteTank(tankId);
