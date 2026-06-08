@@ -110,6 +110,9 @@ export const createGameDay = (body: {
   eliminationR1At: string;
   eliminationR2At?: string;
   finalAt: string;
+  autofill?: boolean;
+  forcedMapIds?: string[];
+  randomMaps?: boolean;
 }) => request<GameDay>('/gamedays', { method: 'POST', body: JSON.stringify(body) });
 export const deleteGameDay = (gameDayId: string) =>
   request<void>(`/gamedays/${gameDayId}`, { method: 'DELETE' });
@@ -122,8 +125,18 @@ export const patchGameDay = (
     eliminationR1At?: string;
     eliminationR2At?: string;
     finalAt?: string;
+    autofill?: boolean;
+    forcedMapIds?: string[];
+    randomMaps?: boolean;
   },
 ) => request<GameDay>(`/gamedays/${gameDayId}`, { method: 'PATCH', body: JSON.stringify(body) });
+export const addRosterEntry = (gameDayId: string, tankId: string, version: string) =>
+  request<void>(`/gamedays/${gameDayId}/roster`, {
+    method: 'POST',
+    body: JSON.stringify({ tankId, version }),
+  });
+export const removeRosterEntry = (gameDayId: string, tankId: string) =>
+  request<void>(`/gamedays/${gameDayId}/roster/${tankId}`, { method: 'DELETE' });
 
 // Maps (no auth required for GET)
 export const listMaps = () => request<GameMap[]>('/maps');

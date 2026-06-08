@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Layout, { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
-import { listGameDays, createGameDay, deleteGameDay, patchGameDay } from '../services/api';
+import { listGameDays, createGameDay, deleteGameDay, patchGameDay, listMaps } from '../services/api';
 import { useAuthStore } from '../store/authStore';
-import type { GameDay, GameDayPhaseStatus } from '../types';
+import type { GameDay, GameDayPhaseStatus, GameMap } from '../types';
 
 function phaseOverallStatus(gd: GameDay): 'upcoming' | 'active' | 'complete' {
   const { phases } = gd;
@@ -51,6 +51,30 @@ function isoToLocalDatetime(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function MapSelector({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const [maps, setMaps] = useState<GameMap[]>([]);
+  useEffect(() => { listMaps().then(setMaps).catch(() => {}); }, []);
+  if (maps.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 140, overflowY: 'auto' }}>
+      {maps.map((m) => (
+        <label key={m.mapId} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: '#e2e8f0', fontSize: 13 }}>
+          <input
+            type="checkbox"
+            checked={value.includes(m.mapId)}
+            onChange={(e) => {
+              if (e.target.checked) onChange([...value, m.mapId]);
+              else onChange(value.filter((id) => id !== m.mapId));
+            }}
+            style={{ accentColor: '#a78bfa' }}
+          />
+          {m.name}
+        </label>
+      ))}
+    </div>
+  );
+}
+
 function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () => void; onCancel: () => void }) {
   const [fields, setFields] = useState({
     name: gd.name ?? '',
@@ -60,6 +84,9 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
     eliminationR2: isoToLocalDatetime(gd.schedule.elimination?.[1] ?? ''),
     final: isoToLocalDatetime(gd.schedule.final),
   });
+  const [autofill, setAutofill] = useState(gd.autofill ?? false);
+  const [randomMaps, setRandomMaps] = useState(gd.randomMaps ?? false);
+  const [forcedMapIds, setForcedMapIds] = useState<string[]>(gd.forcedMapIds ?? []);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -79,6 +106,9 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
         eliminationR1At: new Date(fields.eliminationR1).toISOString(),
         ...(fields.eliminationR2 ? { eliminationR2At: new Date(fields.eliminationR2).toISOString() } : {}),
         finalAt: new Date(fields.final).toISOString(),
+        autofill,
+        randomMaps,
+        forcedMapIds,
       });
       onSaved();
     } catch (e2: unknown) {
@@ -96,6 +126,9 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
   const labelStyle: React.CSSProperties = {
     display: 'block', color: '#64748b', fontSize: 11,
     textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4,
+  };
+  const checkLabel: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: '#94a3b8', fontSize: 13,
   };
 
   return (
@@ -135,6 +168,22 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
             </div>
           ))}
         </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
+          <label style={checkLabel}>
+            <input type="checkbox" checked={autofill} onChange={(e) => setAutofill(e.target.checked)} style={{ accentColor: '#a78bfa' }} />
+            Auto-fill bracket with AI bots to nearest power-of-two (≥8)
+          </label>
+          <label style={checkLabel}>
+            <input type="checkbox" checked={randomMaps} onChange={(e) => setRandomMaps(e.target.checked)} style={{ accentColor: '#a78bfa' }} />
+            Random maze per match (ignore map selection below)
+          </label>
+        </div>
+        {!randomMaps && (
+          <div style={{ marginBottom: 14 }}>
+            <label style={labelStyle}>Forced maps (leave empty for random mazes)</label>
+            <MapSelector value={forcedMapIds} onChange={setForcedMapIds} />
+          </div>
+        )}
         {err && <div style={{ color: '#f87171', fontSize: 13, marginBottom: 10 }}>{err}</div>}
         <button type="submit" disabled={saving} style={primaryButtonStyle}>
           {saving ? 'Saving…' : 'Save'}
@@ -253,6 +302,9 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [fields, setFields] = useState(defaultSchedule);
+  const [autofill, setAutofill] = useState(false);
+  const [randomMaps, setRandomMaps] = useState(false);
+  const [forcedMapIds, setForcedMapIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -272,10 +324,16 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
         eliminationR1At: toISO(fields.eliminationR1),
         ...(fields.eliminationR2 ? { eliminationR2At: toISO(fields.eliminationR2) } : {}),
         finalAt: toISO(fields.final),
+        autofill,
+        randomMaps,
+        forcedMapIds,
       });
       setOpen(false);
       setName('');
       setFields(defaultSchedule());
+      setAutofill(false);
+      setRandomMaps(false);
+      setForcedMapIds([]);
       onCreated();
     } catch (e2: unknown) {
       setErr(e2 instanceof Error ? e2.message : 'Failed to create');
@@ -301,6 +359,10 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
   const labelStyle: React.CSSProperties = {
     display: 'block', color: '#64748b', fontSize: 11,
     textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4,
+  };
+
+  const checkLabel: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: '#94a3b8', fontSize: 13,
   };
 
   return (
@@ -340,6 +402,22 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
             </div>
           ))}
         </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+          <label style={checkLabel}>
+            <input type="checkbox" checked={autofill} onChange={(e) => setAutofill(e.target.checked)} style={{ accentColor: '#a78bfa' }} />
+            Auto-fill bracket with AI bots to nearest power-of-two (≥8)
+          </label>
+          <label style={checkLabel}>
+            <input type="checkbox" checked={randomMaps} onChange={(e) => setRandomMaps(e.target.checked)} style={{ accentColor: '#a78bfa' }} />
+            Random maze per match
+          </label>
+        </div>
+        {!randomMaps && (
+          <div style={{ marginBottom: 16 }}>
+            <label style={labelStyle}>Forced maps (leave empty for random mazes)</label>
+            <MapSelector value={forcedMapIds} onChange={setForcedMapIds} />
+          </div>
+        )}
         {err && <div style={{ color: '#f87171', fontSize: 13, marginBottom: 12 }}>{err}</div>}
         <button type="submit" disabled={saving} style={primaryButtonStyle}>
           {saving ? 'Creating…' : 'Create'}

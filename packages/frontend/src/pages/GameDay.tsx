@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import Layout, { cardStyle } from '../components/Layout';
-import { getGameDay } from '../services/api';
-import type { GameDay, BracketSlot, GameDayPhaseStatus, GameDayGroup } from '../types';
+import Layout, { cardStyle, ghostButtonStyle, primaryButtonStyle } from '../components/Layout';
+import { getGameDay, getTank, addRosterEntry, removeRosterEntry, listAiTanks } from '../services/api';
+import { useAuthStore } from '../store/authStore';
+import type { GameDay, BracketSlot, GameDayPhaseStatus, GameDayGroup, Tank, TankVersion } from '../types';
 
 const BRACKET_LABELS: Record<string, string> = {
   r1: 'Elimination R1',
@@ -144,11 +145,208 @@ function rankColor(rank: number): string {
   return '#475569';
 }
 
+function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
+  gameDayId: string;
+  roster: Array<{ tankId: string; version: string }>;
+  isAdmin: boolean;
+  onChanged: () => void;
+}) {
+  const [tankInfo, setTankInfo] = useState<Map<string, Tank & { versions: TankVersion[] }>>(new Map());
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [showPicker, setShowPicker] = useState(false);
+  const [aiTanks, setAiTanks] = useState<(Tank & { versions: TankVersion[] })[]>([]);
+  const [manualId, setManualId] = useState('');
+  const [manualVer, setManualVer] = useState('v0.1');
+
+  const rosterKey = roster.map((r) => r.tankId).join(',');
+  useEffect(() => {
+    if (roster.length === 0) return;
+    Promise.all(roster.map((r) => getTank(r.tankId).catch(() => null))).then((results) => {
+      const map = new Map<string, Tank & { versions: TankVersion[] }>();
+      results.forEach((t, i) => { if (t) map.set(roster[i].tankId, t); });
+      setTankInfo(map);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rosterKey]);
+
+  useEffect(() => {
+    if (showPicker && isAdmin) listAiTanks().then(setAiTanks).catch(() => {});
+  }, [showPicker, isAdmin]);
+
+  async function handleRemove(tankId: string) {
+    if (confirmRemove !== tankId) { setConfirmRemove(tankId); return; }
+    setBusy(tankId);
+    setErr(null);
+    try {
+      await removeRosterEntry(gameDayId, tankId);
+      setConfirmRemove(null);
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed');
+    } finally { setBusy(null); }
+  }
+
+  async function addAi(tankId: string, version: string) {
+    setBusy(tankId);
+    setErr(null);
+    try {
+      await addRosterEntry(gameDayId, tankId, version);
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed');
+    } finally { setBusy(null); }
+  }
+
+  async function addManual() {
+    if (!manualId.trim() || !manualVer.trim()) return;
+    setBusy('manual');
+    setErr(null);
+    try {
+      await addRosterEntry(gameDayId, manualId.trim(), manualVer.trim());
+      setManualId('');
+      setManualVer('v0.1');
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed');
+    } finally { setBusy(null); }
+  }
+
+  const inpStyle: React.CSSProperties = {
+    background: '#0f0f1a', border: '1px solid #2d2d4e', borderRadius: 4,
+    color: '#e2e8f0', padding: '4px 8px', fontSize: 12, width: '100%',
+  };
+
+  return (
+    <div style={{ ...cardStyle, marginBottom: 20 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <span style={{ color: '#64748b', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          Registered Tanks{roster.length > 0 ? ` — ${roster.length}` : ''}
+        </span>
+        {isAdmin && (
+          <button
+            onClick={() => setShowPicker((v) => !v)}
+            style={{ ...ghostButtonStyle, fontSize: 11, padding: '3px 10px', borderColor: '#a78bfa', color: '#a78bfa' }}
+          >
+            {showPicker ? 'Close' : '+ Add'}
+          </button>
+        )}
+      </div>
+
+      {err && <p style={{ color: '#f87171', fontSize: 12, margin: '0 0 10px' }}>{err}</p>}
+
+      {roster.length === 0 ? (
+        <p style={{ color: '#475569', fontSize: 13, margin: 0 }}>No tanks registered yet.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {roster.map(({ tankId, version }) => {
+            const info = tankInfo.get(tankId);
+            const name = info?.name ?? `…${tankId.slice(-8)}`;
+            const author = info?.authorName ?? null;
+            return (
+              <div key={tankId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #1a1a2e' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Link to={`/tanks/${tankId}`} style={{ color: '#e2e8f0', fontSize: 13, textDecoration: 'none', fontWeight: 500 }}>
+                    {name}
+                  </Link>
+                  {author && <span style={{ color: '#64748b', fontSize: 12 }}>by {author}</span>}
+                  <span style={{ color: '#475569', fontSize: 11 }}>@ {version}</span>
+                </div>
+                {isAdmin && (
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    {confirmRemove === tankId ? (
+                      <>
+                        <button
+                          onClick={() => handleRemove(tankId)}
+                          disabled={busy === tankId}
+                          style={{ ...ghostButtonStyle, fontSize: 11, padding: '2px 8px', color: '#f87171', borderColor: '#dc2626', background: 'rgba(220,38,38,0.08)' }}
+                        >
+                          Confirm remove
+                        </button>
+                        <button
+                          onClick={() => setConfirmRemove(null)}
+                          style={{ ...ghostButtonStyle, fontSize: 11, padding: '2px 8px' }}
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => handleRemove(tankId)}
+                        style={{ ...ghostButtonStyle, fontSize: 11, padding: '2px 8px', color: '#f87171', borderColor: '#7f1d1d' }}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {isAdmin && showPicker && (
+        <div style={{ borderTop: '1px solid #2d2d4e', marginTop: 14, paddingTop: 12 }}>
+          {aiTanks.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>AI Tanks</div>
+              {aiTanks.map((t) => {
+                const ver = t.versions[0]?.version ?? 'v0.1';
+                const alreadyAdded = roster.some((r) => r.tankId === t.tankId);
+                return (
+                  <div key={t.tankId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <span style={{ color: '#e2e8f0', fontSize: 13 }}>
+                      {t.name} <span style={{ color: '#475569' }}>@ {ver}</span>
+                    </span>
+                    <button
+                      onClick={() => addAi(t.tankId, ver)}
+                      disabled={busy === t.tankId || alreadyAdded}
+                      style={{ ...primaryButtonStyle, fontSize: 11, padding: '2px 10px', opacity: alreadyAdded ? 0.4 : 1 }}
+                    >
+                      {alreadyAdded ? 'Added' : busy === t.tankId ? '…' : 'Add'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <div style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Manual Entry</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: 6, alignItems: 'end' }}>
+            <div>
+              <div style={{ color: '#64748b', fontSize: 10, marginBottom: 2 }}>Tank ID</div>
+              <input value={manualId} onChange={(e) => setManualId(e.target.value)} placeholder="tank-uuid" style={inpStyle} />
+            </div>
+            <div>
+              <div style={{ color: '#64748b', fontSize: 10, marginBottom: 2 }}>Version</div>
+              <input value={manualVer} onChange={(e) => setManualVer(e.target.value)} placeholder="v0.1" style={inpStyle} />
+            </div>
+            <button
+              onClick={addManual}
+              disabled={busy === 'manual' || !manualId.trim()}
+              style={{ ...primaryButtonStyle, fontSize: 11, padding: '4px 12px' }}
+            >
+              Add
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function GameDayPage() {
   const { gameDayId } = useParams<{ gameDayId: string }>();
   const [gameDay, setGameDay] = useState<GameDay | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { user } = useAuthStore();
+
+  function reload() {
+    if (!gameDayId) return;
+    getGameDay(gameDayId).then(setGameDay).catch((e: Error) => setError(e.message));
+  }
 
   useEffect(() => {
     if (!gameDayId) return;
@@ -171,7 +369,7 @@ export default function GameDayPage() {
   const standings = Object.entries(gameDay.placementPoints ?? {}).sort(([, a], [, b]) => b - a);
   const showGroups = (gameDay.groups ?? []).length > 0;
   const showBracket = bracketRounds.length > 0;
-  const showRegistered = !showGroups && !showBracket && (gameDay.registeredTanks ?? []).length > 0;
+  const showRoster = gameDay.phases.roundRobin.status === 'upcoming';
 
   const { phases, schedule } = gameDay;
 
@@ -316,24 +514,14 @@ export default function GameDayPage() {
         </div>
       )}
 
-      {/* Pre-tournament: just show registered tanks */}
-      {showRegistered && (
-        <div style={cardStyle}>
-          <div style={{ color: '#64748b', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 14 }}>
-            Registered — {(gameDay.registeredTanks ?? []).length} tank{(gameDay.registeredTanks ?? []).length !== 1 ? 's' : ''}
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {(gameDay.registeredTanks ?? []).map(({ tankId, version }) => (
-              <Link key={tankId} to={`/tanks/${tankId}`} style={{
-                color: '#94a3b8', fontSize: 12, textDecoration: 'none',
-                padding: '4px 10px', borderRadius: 6,
-                background: '#0f0f1a', border: '1px solid #2d2d4e',
-              }}>
-                …{tankId.slice(-8)} <span style={{ color: '#475569' }}>@ {version}</span>
-              </Link>
-            ))}
-          </div>
-        </div>
+      {/* Registered tanks — visible to all users during upcoming phase */}
+      {showRoster && (
+        <RosterSection
+          gameDayId={gameDay.gameDayId}
+          roster={gameDay.registeredTanks ?? []}
+          isAdmin={user?.isAdmin ?? false}
+          onChanged={reload}
+        />
       )}
     </Layout>
   );

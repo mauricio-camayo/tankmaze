@@ -51,6 +51,10 @@ type handler struct {
 	lambdaSvc           *lambdasvc.Client
 	matchRunnerFunc     string
 	rankingUpdaterFunc  string
+	scoutTankID         string
+	scoutVersion        string
+	bruiserTankID       string
+	bruiserVersion      string
 }
 
 var h *handler
@@ -66,6 +70,10 @@ func main() {
 		lambdaSvc:          lambdasvc.NewFromConfig(cfg),
 		matchRunnerFunc:    os.Getenv("MATCH_RUNNER_FUNCTION"),
 		rankingUpdaterFunc: os.Getenv("RANKING_UPDATER_FUNCTION"),
+		scoutTankID:        os.Getenv("SCOUT_TANK_ID"),
+		scoutVersion:       os.Getenv("SCOUT_VERSION"),
+		bruiserTankID:      os.Getenv("BRUISER_TANK_ID"),
+		bruiserVersion:     os.Getenv("BRUISER_VERSION"),
 	}
 	lambda.Start(h.handle)
 }
@@ -112,7 +120,7 @@ func (h *handler) handleRegistrationClose(ctx context.Context, gd db.GameDay) er
 	if err != nil {
 		return fmt.Errorf("scan registered versions: %w", err)
 	}
-	if len(versions) == 0 {
+	if len(versions) == 0 && !gd.Autofill {
 		log.Printf("no tanks registered for game day %s — cancelling", gd.GameDayID)
 		gd.Phases.RoundRobin.Status = "cancelled"
 		gd.Phases.Final.Status = "cancelled"
@@ -164,6 +172,21 @@ func (h *handler) handleRegistrationClose(ctx context.Context, gd db.GameDay) er
 		tanks[i] = db.MatchTank{TankID: e.tank.TankID, Version: e.version.Version}
 	}
 
+	if gd.Autofill && h.scoutTankID != "" && h.bruiserTankID != "" {
+		target := nextPowerOf2(len(tanks))
+		if target < 8 {
+			target = 8
+		}
+		bots := []db.MatchTank{
+			{TankID: h.scoutTankID, Version: h.scoutVersion},
+			{TankID: h.bruiserTankID, Version: h.bruiserVersion},
+		}
+		for i := 0; len(tanks) < target; i++ {
+			tanks = append(tanks, bots[i%len(bots)])
+		}
+		log.Printf("autofill: padded to %d tanks for game day %s", len(tanks), gd.GameDayID)
+	}
+
 	gd.RegisteredTanks = tanks
 	return h.store.PutGameDay(ctx, gd)
 }
@@ -206,7 +229,7 @@ func (h *handler) handleRoundRobin(ctx context.Context, gd db.GameDay) error {
 
 	// Create and invoke all round-robin matches.
 	for _, grp := range groups {
-		if err := h.createGroupMatches(ctx, gd.GameDayID, grp.Tanks); err != nil {
+		if err := h.createGroupMatches(ctx, gd, grp.Tanks); err != nil {
 			return fmt.Errorf("create group matches: %w", err)
 		}
 	}
@@ -214,10 +237,10 @@ func (h *handler) handleRoundRobin(ctx context.Context, gd db.GameDay) error {
 }
 
 // createGroupMatches generates all pairings within a group and invokes match-runner.
-func (h *handler) createGroupMatches(ctx context.Context, gameDayID string, tanks []db.MatchTank) error {
+func (h *handler) createGroupMatches(ctx context.Context, gd db.GameDay, tanks []db.MatchTank) error {
 	for i := 0; i < len(tanks); i++ {
 		for j := i + 1; j < len(tanks); j++ {
-			matchID, err := h.createRankedMatch(ctx, gameDayID, tanks[i], tanks[j])
+			matchID, err := h.createRankedMatch(ctx, gd, tanks[i], tanks[j])
 			if err != nil {
 				return err
 			}
@@ -308,7 +331,7 @@ func (h *handler) handleEliminationR1(ctx context.Context, gd db.GameDay) error 
 		return fmt.Errorf("save r1 bracket: %w", err)
 	}
 
-	return h.createElimMatches(ctx, gd.GameDayID, "r1", slots)
+	return h.createElimMatches(ctx, gd, "r1", slots)
 }
 
 // ---- Phase: elimination_r{N} (N ≥ 2) ---------------------------------------
@@ -367,7 +390,7 @@ func (h *handler) handleElimination(ctx context.Context, gd db.GameDay, round in
 		return fmt.Errorf("save %s bracket: %w", curKey, err)
 	}
 
-	return h.createElimMatches(ctx, gd.GameDayID, curKey, nextSlots)
+	return h.createElimMatches(ctx, gd, curKey, nextSlots)
 }
 
 // ---- Phase: final -----------------------------------------------------------
@@ -454,7 +477,7 @@ func (h *handler) handleFinal(ctx context.Context, gd db.GameDay) error {
 		return err
 	}
 
-	matchID, err := h.createRankedMatch(ctx, gd.GameDayID,
+	matchID, err := h.createRankedMatch(ctx, gd,
 		db.MatchTank{TankID: a.TankID, Version: a.Version},
 		db.MatchTank{TankID: b.TankID, Version: b.Version})
 	if err != nil {
@@ -603,7 +626,7 @@ func updateSlotsFromMatches(slots []db.BracketSlot, matches []db.Match) ([]db.Br
 
 // createElimMatches creates match records and invokes match-runner for each
 // pair of real tanks in the given bracket round's slots.
-func (h *handler) createElimMatches(ctx context.Context, gameDayID, roundKey string, slots []db.BracketSlot) error {
+func (h *handler) createElimMatches(ctx context.Context, gd db.GameDay, roundKey string, slots []db.BracketSlot) error {
 	for i := 0; i+1 < len(slots); i += 2 {
 		a, b := slots[i], slots[i+1]
 		if a.TankID == "" || b.TankID == "" {
@@ -612,7 +635,7 @@ func (h *handler) createElimMatches(ctx context.Context, gameDayID, roundKey str
 		if a.Status != "playing" || b.Status != "playing" {
 			continue // already auto-resolved
 		}
-		matchID, err := h.createRankedMatch(ctx, gameDayID,
+		matchID, err := h.createRankedMatch(ctx, gd,
 			db.MatchTank{TankID: a.TankID, Version: a.Version},
 			db.MatchTank{TankID: b.TankID, Version: b.Version})
 		if err != nil {
@@ -852,17 +875,21 @@ func max1(x int) int {
 // ---- Match / invocation helpers ---------------------------------------------
 
 // createRankedMatch writes a ranked match record and returns the new matchId.
-func (h *handler) createRankedMatch(ctx context.Context, gameDayID string, a, b db.MatchTank) (string, error) {
+func (h *handler) createRankedMatch(ctx context.Context, gd db.GameDay, a, b db.MatchTank) (string, error) {
 	matchID := newUUID()
 	match := db.Match{
 		MatchID:   matchID,
 		MatchType: "ranked",
-		GameDayID: gameDayID,
+		GameDayID: gd.GameDayID,
 		Status:    "scheduled",
-		MazeSeed:  strconv.FormatInt(rand.Int63(), 10),
 		TankA:     a,
 		TankB:     b,
 		CreatedAt: time.Now().Unix(),
+	}
+	if len(gd.ForcedMapIDs) > 0 {
+		match.MapID = gd.ForcedMapIDs[rand.Intn(len(gd.ForcedMapIDs))]
+	} else {
+		match.MazeSeed = strconv.FormatInt(rand.Int63(), 10)
 	}
 	if err := h.store.PutMatch(ctx, match); err != nil {
 		return "", fmt.Errorf("put match: %w", err)

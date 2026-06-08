@@ -411,6 +411,39 @@ func (s *memStore) deleteGameDay(gameDayID string) {
 	delete(s.gamedays, gameDayID)
 }
 
+func (s *memStore) addRosterEntry(gameDayID, tankID, version string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	gd, ok := s.gamedays[gameDayID]
+	if !ok {
+		return
+	}
+	for _, t := range gd.RegisteredTanks {
+		if t.TankID == tankID {
+			return
+		}
+	}
+	gd.RegisteredTanks = append(gd.RegisteredTanks, db.MatchTank{TankID: tankID, Version: version})
+	s.gamedays[gameDayID] = gd
+}
+
+func (s *memStore) removeRosterEntry(gameDayID, tankID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	gd, ok := s.gamedays[gameDayID]
+	if !ok {
+		return
+	}
+	filtered := gd.RegisteredTanks[:0]
+	for _, t := range gd.RegisteredTanks {
+		if t.TankID != tankID {
+			filtered = append(filtered, t)
+		}
+	}
+	gd.RegisteredTanks = filtered
+	s.gamedays[gameDayID] = gd
+}
+
 func (s *memStore) deleteUser(sub string) (found bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

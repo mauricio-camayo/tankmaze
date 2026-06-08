@@ -135,6 +135,9 @@ export interface GameDay {
   bracket: Record<string, BracketSlot[]>;
   placementPoints: Record<string, number>;
   createdAt: number;
+  autofill?: boolean;
+  forcedMapIds?: string[];
+  randomMaps?: boolean;
 }
 
 export interface GameMap {

@@ -143,11 +143,14 @@ func (s *Store) SetGameDayPlacementPoints(ctx context.Context, gameDayID string,
 // GameDayUpdate carries the mutable fields that PATCH /gamedays/{id} may change.
 // Only non-zero fields are applied; zero values leave the existing value unchanged.
 type GameDayUpdate struct {
-	Name                string   // empty = no change
-	RegistrationCloseAt string   // ISO 8601; empty = no change
+	Name                string    // empty = no change
+	RegistrationCloseAt string    // ISO 8601; empty = no change
 	RoundRobinAt        string
-	EliminationAt       []string // nil = no change; non-nil replaces the whole slice
+	EliminationAt       []string  // nil = no change; non-nil replaces the whole slice
 	FinalAt             string
+	Autofill            *bool     // nil = no change
+	ForcedMapIDs        *[]string // nil = no change; non-nil (even empty) replaces
+	RandomMaps          *bool     // nil = no change
 }
 
 // ErrGameDayStarted is returned by UpdateGameDay when any phase has already
@@ -179,5 +182,47 @@ func (s *Store) UpdateGameDay(ctx context.Context, gameDayID string, u GameDayUp
 	if u.FinalAt != "" {
 		gd.Schedule.Final = u.FinalAt
 	}
+	if u.Autofill != nil {
+		gd.Autofill = *u.Autofill
+	}
+	if u.ForcedMapIDs != nil {
+		gd.ForcedMapIDs = *u.ForcedMapIDs
+	}
+	if u.RandomMaps != nil {
+		gd.RandomMaps = *u.RandomMaps
+	}
+	return s.PutGameDay(ctx, gd)
+}
+
+// AddRosterEntry appends a tank/version to the game day roster. A no-op if the
+// tank is already present. Returns ErrNotFound if the game day doesn't exist.
+func (s *Store) AddRosterEntry(ctx context.Context, gameDayID, tankID, version string) error {
+	gd, err := s.GetGameDay(ctx, gameDayID)
+	if err != nil {
+		return err
+	}
+	for _, t := range gd.RegisteredTanks {
+		if t.TankID == tankID {
+			return nil
+		}
+	}
+	gd.RegisteredTanks = append(gd.RegisteredTanks, MatchTank{TankID: tankID, Version: version})
+	return s.PutGameDay(ctx, gd)
+}
+
+// RemoveRosterEntry removes a tank from the game day roster.
+// Returns ErrNotFound if the game day doesn't exist.
+func (s *Store) RemoveRosterEntry(ctx context.Context, gameDayID, tankID string) error {
+	gd, err := s.GetGameDay(ctx, gameDayID)
+	if err != nil {
+		return err
+	}
+	filtered := gd.RegisteredTanks[:0]
+	for _, t := range gd.RegisteredTanks {
+		if t.TankID != tankID {
+			filtered = append(filtered, t)
+		}
+	}
+	gd.RegisteredTanks = filtered
 	return s.PutGameDay(ctx, gd)
 }

@@ -169,6 +169,10 @@ func (srv *server) route(w http.ResponseWriter, r *http.Request) {
 		srv.getGameDay(w, r, parts[1])
 	case method == "PATCH" && n == 2 && parts[0] == "gamedays":
 		srv.patchGameDay(w, r, parts[1])
+	case method == "POST" && n == 3 && parts[0] == "gamedays" && parts[2] == "roster":
+		srv.addRosterEntry(w, r, parts[1])
+	case method == "DELETE" && n == 4 && parts[0] == "gamedays" && parts[2] == "roster":
+		srv.removeRosterEntry(w, parts[1], parts[3])
 
 	// Maps
 	case method == "GET" && rawPath == "maps":
@@ -767,12 +771,15 @@ func (srv *server) listGameDays(w http.ResponseWriter) {
 
 func (srv *server) createGameDay(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Name                string `json:"name"`
-		RegistrationCloseAt string `json:"registrationCloseAt"`
-		RoundRobinAt        string `json:"roundRobinAt"`
-		EliminationR1At     string `json:"eliminationR1At"`
-		EliminationR2At     string `json:"eliminationR2At,omitempty"`
-		FinalAt             string `json:"finalAt"`
+		Name                string   `json:"name"`
+		RegistrationCloseAt string   `json:"registrationCloseAt"`
+		RoundRobinAt        string   `json:"roundRobinAt"`
+		EliminationR1At     string   `json:"eliminationR1At"`
+		EliminationR2At     string   `json:"eliminationR2At,omitempty"`
+		FinalAt             string   `json:"finalAt"`
+		Autofill            bool     `json:"autofill"`
+		ForcedMapIDs        []string `json:"forcedMapIds"`
+		RandomMaps          bool     `json:"randomMaps"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonErr(w, http.StatusBadRequest, "invalid request body")
@@ -801,7 +808,10 @@ func (srv *server) createGameDay(w http.ResponseWriter, r *http.Request) {
 			RoundRobin: db.PhaseStatus{Status: "upcoming"},
 			Final:      db.PhaseStatus{Status: "upcoming"},
 		},
-		CreatedAt: time.Now().Unix(),
+		CreatedAt:    time.Now().Unix(),
+		Autofill:     body.Autofill,
+		ForcedMapIDs: body.ForcedMapIDs,
+		RandomMaps:   body.RandomMaps,
 	}
 	srv.store.putGameDay(gd)
 	w.Header().Set("Content-Type", "application/json")
@@ -843,12 +853,15 @@ func (srv *server) patchGameDay(w http.ResponseWriter, r *http.Request, gameDayI
 		return
 	}
 	var body struct {
-		Name                string `json:"name,omitempty"`
-		RegistrationCloseAt string `json:"registrationCloseAt,omitempty"`
-		RoundRobinAt        string `json:"roundRobinAt,omitempty"`
-		EliminationR1At     string `json:"eliminationR1At,omitempty"`
-		EliminationR2At     string `json:"eliminationR2At,omitempty"`
-		FinalAt             string `json:"finalAt,omitempty"`
+		Name                string    `json:"name,omitempty"`
+		RegistrationCloseAt string    `json:"registrationCloseAt,omitempty"`
+		RoundRobinAt        string    `json:"roundRobinAt,omitempty"`
+		EliminationR1At     string    `json:"eliminationR1At,omitempty"`
+		EliminationR2At     string    `json:"eliminationR2At,omitempty"`
+		FinalAt             string    `json:"finalAt,omitempty"`
+		Autofill            *bool     `json:"autofill"`
+		ForcedMapIDs        *[]string `json:"forcedMapIds"`
+		RandomMaps          *bool     `json:"randomMaps"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonErr(w, http.StatusBadRequest, "invalid request body")
@@ -873,8 +886,53 @@ func (srv *server) patchGameDay(w http.ResponseWriter, r *http.Request, gameDayI
 	if body.FinalAt != "" {
 		gd.Schedule.Final = body.FinalAt
 	}
+	if body.Autofill != nil {
+		gd.Autofill = *body.Autofill
+	}
+	if body.ForcedMapIDs != nil {
+		gd.ForcedMapIDs = *body.ForcedMapIDs
+	}
+	if body.RandomMaps != nil {
+		gd.RandomMaps = *body.RandomMaps
+	}
 	srv.store.putGameDay(gd)
 	jsonOK(w, gd)
+}
+
+func (srv *server) addRosterEntry(w http.ResponseWriter, r *http.Request, gameDayID string) {
+	gd, err := srv.store.getGameDay(gameDayID)
+	if errors.Is(err, db.ErrNotFound) {
+		jsonErr(w, http.StatusNotFound, "game day not found")
+		return
+	}
+	if gd.Phases.RoundRobin.Status != "upcoming" {
+		jsonErr(w, http.StatusConflict, "game day has already started")
+		return
+	}
+	var body struct {
+		TankID  string `json:"tankId"`
+		Version string `json:"version"`
+	}
+	if err := readJSON(r, &body); err != nil || body.TankID == "" || body.Version == "" {
+		jsonErr(w, http.StatusBadRequest, "tankId and version are required")
+		return
+	}
+	srv.store.addRosterEntry(gameDayID, body.TankID, body.Version)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (srv *server) removeRosterEntry(w http.ResponseWriter, gameDayID, tankID string) {
+	gd, err := srv.store.getGameDay(gameDayID)
+	if errors.Is(err, db.ErrNotFound) {
+		jsonErr(w, http.StatusNotFound, "game day not found")
+		return
+	}
+	if gd.Phases.RoundRobin.Status != "upcoming" {
+		jsonErr(w, http.StatusConflict, "game day has already started")
+		return
+	}
+	srv.store.removeRosterEntry(gameDayID, tankID)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ── Map handlers ────────────────────────────────────────────────────────────

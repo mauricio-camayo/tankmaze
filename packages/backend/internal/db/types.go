@@ -174,6 +174,9 @@ type GameDay struct {
 	Bracket         map[string][]BracketSlot `dynamodbav:"bracket,omitempty"          json:"bracket,omitempty"`
 	PlacementPoints map[string]int           `dynamodbav:"placementPoints,omitempty"  json:"placementPoints,omitempty"`
 	CreatedAt       int64                    `dynamodbav:"createdAt"                  json:"createdAt"`
+	Autofill        bool                     `dynamodbav:"autofill,omitempty"         json:"autofill,omitempty"`
+	ForcedMapIDs    []string                 `dynamodbav:"forcedMapIds,omitempty"     json:"forcedMapIds,omitempty"`
+	RandomMaps      bool                     `dynamodbav:"randomMaps,omitempty"       json:"randomMaps,omitempty"`
 }
 
 // Ranking is the item stored in tankmaze-rankings.
