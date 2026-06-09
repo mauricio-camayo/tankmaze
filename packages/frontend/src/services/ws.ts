@@ -26,7 +26,7 @@ export class ObserverSocket {
   }
 
   setSpeed(multiplier: number | 'step') {
-    this.send({ action: 'REPLAY_SPEED', multiplier });
+    this.send({ action: 'REPLAY_SPEED', multiplier: String(multiplier) });
   }
 
   disconnect() {

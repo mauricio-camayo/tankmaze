@@ -43,20 +43,14 @@ import (
 // ---- Types: client → server messages ----------------------------------------
 
 type clientMsg struct {
-	Action  string          `json:"action"`
-	Payload json.RawMessage `json:"payload,omitempty"`
+	Action     string          `json:"action"`
+	Payload    json.RawMessage `json:"payload,omitempty"`
+	Tick       int             `json:"tick"`
+	Multiplier string          `json:"multiplier,omitempty"`
 }
 
 type observePayload struct {
 	MatchID string `json:"matchId"`
-}
-
-type replaySeekPayload struct {
-	Tick int `json:"tick"`
-}
-
-type replaySpeedPayload struct {
-	Multiplier string `json:"multiplier"`
 }
 
 // ---- Types: server → client envelope ----------------------------------------
@@ -305,9 +299,9 @@ func (h *handler) handleDefault(ctx context.Context, req events.APIGatewayWebsoc
 	case "OBSERVE":
 		return h.handleObserve(ctx, connID, msg.Payload)
 	case "REPLAY_SEEK":
-		return h.handleReplaySeek(ctx, connID, msg.Payload)
+		return h.handleReplaySeek(ctx, connID, msg)
 	case "REPLAY_SPEED":
-		return h.handleReplaySpeed(ctx, connID, msg.Payload)
+		return h.handleReplaySpeed(ctx, connID, msg)
 	default:
 		_ = h.sendErr(ctx, connID, "unknown_action", fmt.Sprintf("unknown action %q", msg.Action))
 		return resp(200), nil
@@ -376,15 +370,14 @@ func (h *handler) handleObserve(ctx context.Context, connID string, raw json.Raw
 
 // handleReplaySeek stores the requested seek position and acknowledges it.
 // The next OBSERVE will stream from this tick.
-func (h *handler) handleReplaySeek(ctx context.Context, connID string, raw json.RawMessage) (events.APIGatewayProxyResponse, error) {
+func (h *handler) handleReplaySeek(ctx context.Context, connID string, msg clientMsg) (events.APIGatewayProxyResponse, error) {
 	conn, err := h.store.GetConnection(ctx, connID)
 	if err != nil {
 		_ = h.sendErr(ctx, connID, "internal_error", "could not load connection")
 		return resp(200), nil
 	}
 
-	var p replaySeekPayload
-	if err := json.Unmarshal(raw, &p); err != nil || p.Tick < 0 {
+	if msg.Tick < 0 {
 		_ = h.sendErr(ctx, connID, "invalid_payload", "tick must be a non-negative integer")
 		return resp(200), nil
 	}
@@ -393,34 +386,33 @@ func (h *handler) handleReplaySeek(ctx context.Context, connID string, raw json.
 	if speed == "" {
 		speed = "1"
 	}
-	if err := h.store.UpdateConnectionReplay(ctx, connID, p.Tick, speed); err != nil {
+	if err := h.store.UpdateConnectionReplay(ctx, connID, msg.Tick, speed); err != nil {
 		log.Printf("replay-seek: update connection: %v", err)
 	}
 
-	_ = h.send(ctx, connID, wsEnvelope{Type: "REPLAY_SEEK", Payload: replayAckMsg{Tick: p.Tick}})
+	_ = h.send(ctx, connID, wsEnvelope{Type: "REPLAY_SEEK", Payload: replayAckMsg{Tick: msg.Tick}})
 	return resp(200), nil
 }
 
 // handleReplaySpeed stores the requested playback speed and acknowledges it.
 // The next OBSERVE will stream at this speed.
-func (h *handler) handleReplaySpeed(ctx context.Context, connID string, raw json.RawMessage) (events.APIGatewayProxyResponse, error) {
+func (h *handler) handleReplaySpeed(ctx context.Context, connID string, msg clientMsg) (events.APIGatewayProxyResponse, error) {
 	conn, err := h.store.GetConnection(ctx, connID)
 	if err != nil {
 		_ = h.sendErr(ctx, connID, "internal_error", "could not load connection")
 		return resp(200), nil
 	}
 
-	var p replaySpeedPayload
-	if err := json.Unmarshal(raw, &p); err != nil || !validSpeed(p.Multiplier) {
+	if !validSpeed(msg.Multiplier) {
 		_ = h.sendErr(ctx, connID, "invalid_payload", "multiplier must be one of: 0.25, 0.5, 1, 2, 4, 8, step")
 		return resp(200), nil
 	}
 
-	if err := h.store.UpdateConnectionReplay(ctx, connID, conn.ReplayTick, p.Multiplier); err != nil {
+	if err := h.store.UpdateConnectionReplay(ctx, connID, conn.ReplayTick, msg.Multiplier); err != nil {
 		log.Printf("replay-speed: update connection: %v", err)
 	}
 
-	_ = h.send(ctx, connID, wsEnvelope{Type: "REPLAY_SPEED", Payload: replayAckMsg{Speed: p.Multiplier}})
+	_ = h.send(ctx, connID, wsEnvelope{Type: "REPLAY_SPEED", Payload: replayAckMsg{Speed: msg.Multiplier}})
 	return resp(200), nil
 }
 
