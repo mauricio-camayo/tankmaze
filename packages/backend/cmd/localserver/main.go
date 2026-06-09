@@ -807,6 +807,10 @@ func (srv *server) createGameDay(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadRequest, "round robin must start before final")
 		return
 	}
+	if finalAt.Sub(rrAt) < 2*time.Hour {
+		jsonErr(w, http.StatusBadRequest, "at least 2 hours required between round robin and final")
+		return
+	}
 
 	elimR1At := finalAt.Add(-90 * time.Minute)
 	elimR2At := finalAt.Add(-60 * time.Minute)
