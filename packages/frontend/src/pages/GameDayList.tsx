@@ -5,8 +5,8 @@ import { listGameDays, createGameDay, deleteGameDay, patchGameDay, listMaps } fr
 import { useAuthStore } from '../store/authStore';
 import type { GameDay, GameDayPhaseStatus, GameMap } from '../types';
 
-function phaseOverallStatus(gd: GameDay): 'upcoming' | 'active' | 'complete' {
-  const { phases } = gd;
+function phaseOverallStatus(gd: GameDay): 'upcoming' | 'active' | 'complete' | 'past' {
+  const { phases, schedule } = gd;
   if (phases.final.status === 'complete') return 'complete';
   if (
     phases.roundRobin.status === 'running' ||
@@ -17,14 +17,16 @@ function phaseOverallStatus(gd: GameDay): 'upcoming' | 'active' | 'complete' {
     phases.roundRobin.status === 'complete' ||
     phases.final.status !== 'upcoming'
   ) return 'active';
+  if (new Date(schedule.final).getTime() < Date.now()) return 'past';
   return 'upcoming';
 }
 
-function StatusBadge({ status }: { status: 'upcoming' | 'active' | 'complete' }) {
+function StatusBadge({ status }: { status: 'upcoming' | 'active' | 'complete' | 'past' }) {
   const map: Record<string, [string, string]> = {
     upcoming: ['#fbbf24', 'rgba(251,191,36,0.1)'],
     active: ['#4ade80', 'rgba(74,222,128,0.1)'],
     complete: ['#475569', 'rgba(71,85,105,0.1)'],
+    past: ['#475569', 'rgba(71,85,105,0.1)'],
   };
   const [fg, bg] = map[status];
   return (
@@ -465,9 +467,14 @@ export default function GameDayList() {
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {gameDays.map((gd) => (
-          <GameDayRow key={gd.gameDayId} gd={gd} onDeleted={load} onRefresh={load} />
-        ))}
+        {[...gameDays]
+          .sort((a, b) => {
+            const order = { active: 0, upcoming: 1, past: 2, complete: 3 };
+            return order[phaseOverallStatus(a)] - order[phaseOverallStatus(b)];
+          })
+          .map((gd) => (
+            <GameDayRow key={gd.gameDayId} gd={gd} onDeleted={load} onRefresh={load} />
+          ))}
       </div>
     </Layout>
   );
