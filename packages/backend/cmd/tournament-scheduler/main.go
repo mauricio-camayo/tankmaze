@@ -114,30 +114,29 @@ func (h *handler) handle(ctx context.Context, evt schedulerEvent) error {
 // ---- Phase: registration_close ----------------------------------------------
 
 // handleRegistrationClose scans all versions registered for this game day,
-// sorts them by global rank, and stores the locked list in gameDay.RegisteredTanks.
+// merges any admin-added roster entries, sorts by global rank, and stores the
+// locked list in gameDay.RegisteredTanks.
 func (h *handler) handleRegistrationClose(ctx context.Context, gd db.GameDay) error {
 	versions, err := h.store.ScanVersionsByGameDay(ctx, gd.GameDayID)
 	if err != nil {
 		return fmt.Errorf("scan registered versions: %w", err)
 	}
-	if len(versions) == 0 && !gd.Autofill {
-		log.Printf("no tanks registered for game day %s — cancelling", gd.GameDayID)
-		gd.Phases.RoundRobin.Status = "cancelled"
-		gd.Phases.Final.Status = "cancelled"
-		for k, p := range gd.Phases.Elimination {
-			p.Status = "cancelled"
-			gd.Phases.Elimination[k] = p
-		}
-		return h.store.PutGameDay(ctx, gd)
-	}
 
-	// Fetch tank records for ranking data.
+	// Fetch tank records for ranking data. Start with self-registered versions
+	// from the tank-versions table, then merge admin-added roster entries that
+	// were written directly to gd.RegisteredTanks via AddRosterEntry.
 	type ranked struct {
 		tank    db.Tank
 		version db.TankVersion
 	}
-	entries := make([]ranked, 0, len(versions))
+	seen := make(map[string]struct{}, len(versions)+len(gd.RegisteredTanks))
+	entries := make([]ranked, 0, len(versions)+len(gd.RegisteredTanks))
+
 	for _, ver := range versions {
+		if _, dup := seen[ver.TankID]; dup {
+			continue
+		}
+		seen[ver.TankID] = struct{}{}
 		tank, err := h.store.GetTank(ctx, ver.TankID)
 		if err != nil {
 			log.Printf("get tank %s: %v — skipping", ver.TankID, err)
@@ -145,6 +144,25 @@ func (h *handler) handleRegistrationClose(ctx context.Context, gd db.GameDay) er
 		}
 		entries = append(entries, ranked{tank: tank, version: ver})
 	}
+
+	// Merge admin-added roster entries not already covered by the version scan.
+	for _, mt := range gd.RegisteredTanks {
+		if _, dup := seen[mt.TankID]; dup {
+			continue
+		}
+		seen[mt.TankID] = struct{}{}
+		tank, err := h.store.GetTank(ctx, mt.TankID)
+		if err != nil {
+			log.Printf("get admin-roster tank %s: %v — skipping", mt.TankID, err)
+			continue
+		}
+		// Synthesise a minimal TankVersion so the ranking sort has a WinRate field.
+		ver := db.TankVersion{TankID: mt.TankID, Version: mt.Version}
+		entries = append(entries, ranked{tank: tank, version: ver})
+	}
+
+	log.Printf("registration_close: game day %s — %d self-registered version(s), %d admin-roster entry(ies), %d merged total",
+		gd.GameDayID, len(versions), len(gd.RegisteredTanks), len(entries))
 
 	// Sort by global rank: globalScore desc, bestFinish asc (nil = worst),
 	// gameDaysCount desc, winRate desc, random for remaining ties.
@@ -185,6 +203,19 @@ func (h *handler) handleRegistrationClose(ctx context.Context, gd db.GameDay) er
 			tanks = append(tanks, bots[i%len(bots)])
 		}
 		log.Printf("autofill: padded to %d tanks for game day %s", len(tanks), gd.GameDayID)
+	}
+
+	// Cancel the tournament only after autofill — bots count toward the minimum.
+	if len(tanks) == 0 {
+		log.Printf("no tanks registered for game day %s (self-registered: %d, admin-roster: %d) — cancelling",
+			gd.GameDayID, len(versions), len(gd.RegisteredTanks))
+		gd.Phases.RoundRobin.Status = "cancelled"
+		gd.Phases.Final.Status = "cancelled"
+		for k, p := range gd.Phases.Elimination {
+			p.Status = "cancelled"
+			gd.Phases.Elimination[k] = p
+		}
+		return h.store.PutGameDay(ctx, gd)
 	}
 
 	gd.RegisteredTanks = tanks
