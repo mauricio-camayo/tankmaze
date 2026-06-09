@@ -34,6 +34,7 @@ export default function Watch() {
   const [matchOver, setMatchOver] = useState<{ winner: 'a' | 'b' | null; reason: string } | null>(null);
   const [wsError,   setWsError]   = useState<string | null>(null);
   const [sceneReady, setSceneReady] = useState(false);
+  const snapshotTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keep refs in sync with Zustand state
   useEffect(() => { ticksRef.current    = ticks;     }, [ticks]);
@@ -80,9 +81,20 @@ export default function Watch() {
     const socket = new ObserverSocket();
     socketRef.current = socket;
 
+    // Surface an error if no snapshot arrives within 15 seconds.
+    snapshotTimeoutRef.current = setTimeout(() => {
+      if (!useMatchStore.getState().snapshot) {
+        setWsError('No response from match server — the match may not be active or may have already ended.');
+      }
+    }, 15000);
+
     socket.connect(matchId, (event) => {
       switch (event.type) {
         case 'MATCH_SNAPSHOT':
+          if (snapshotTimeoutRef.current) {
+            clearTimeout(snapshotTimeoutRef.current);
+            snapshotTimeoutRef.current = null;
+          }
           setSnapshot(event.payload);
           // For active matches start playing; for ended matches pause at end
           if (event.payload.status === 'active') {
@@ -110,6 +122,10 @@ export default function Watch() {
     });
 
     return () => {
+      if (snapshotTimeoutRef.current) {
+        clearTimeout(snapshotTimeoutRef.current);
+        snapshotTimeoutRef.current = null;
+      }
       socket.disconnect();
       socketRef.current = null;
     };

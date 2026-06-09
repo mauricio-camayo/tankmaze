@@ -101,31 +101,57 @@ type logResult struct {
 }
 
 // ---- Observer broadcast types -----------------------------------------------
+//
+// All outbound messages use { "type": "<EVENT>", "payload": { ... } } to match
+// the frontend ws.ts dispatch convention.
 
-type tickUpdateMsg struct {
-	Event       string     `json:"event"`
-	Tick        int        `json:"tick"`
-	TankA       tankSnap   `json:"tankA"`
-	TankB       tankSnap   `json:"tankB"`
-	Projectiles []projSnap `json:"projectiles"`
+type wsEnvelope struct {
+	Type    string `json:"type"`
+	Payload any    `json:"payload"`
 }
 
-type tankSnap struct {
-	Position [2]int `json:"position"` // [row, col]
-	Facing   int    `json:"facing"`
-	HP       int    `json:"hp"`
+// tickPayload matches the frontend TickUpdate interface.
+type tickPayload struct {
+	Tick        int           `json:"tick"`
+	TankA       tankStateWS   `json:"tankA"`
+	TankB       tankStateWS   `json:"tankB"`
+	Projectiles []projWS      `json:"projectiles"`
 }
 
-type projSnap struct {
-	Position [2]int `json:"position"`
-	Facing   int    `json:"facing"`
-	Owner    int    `json:"owner"` // 0=A, 1=B
+// tankStateWS matches the frontend TankState interface.
+type tankStateWS struct {
+	TankID   string   `json:"tankId"`
+	Version  string   `json:"version"`
+	Position pointWS  `json:"position"`
+	Facing   string   `json:"facing"`
+	HP       int      `json:"hp"`
+	Config   configWS `json:"config"`
 }
 
-type matchOverMsg struct {
-	Event  string        `json:"event"`
-	Winner *string       `json:"winner"` // "a", "b", or null
-	Reason string        `json:"reason"`
+type pointWS struct {
+	X int `json:"x"` // col
+	Y int `json:"y"` // row
+}
+
+type configWS struct {
+	Name        string `json:"name"`
+	Speed       int    `json:"speed"`
+	SensorRange int    `json:"sensorRange"`
+	Damage      int    `json:"damage"`
+	Armor       int    `json:"armor"`
+	FireRate    int    `json:"fireRate"`
+}
+
+// projWS matches the frontend Projectile interface.
+type projWS struct {
+	Position    pointWS `json:"position"`
+	Direction   string  `json:"direction"`
+	OwnerTankID string  `json:"ownerTankId"`
+}
+
+type matchOverPayload struct {
+	Winner *string        `json:"winner"` // "a", "b", or null
+	Reason string         `json:"reason"`
 	Stats  matchOverStats `json:"stats"`
 }
 
@@ -137,6 +163,9 @@ type matchOverStats struct {
 	TicksElapsed int  `json:"ticksElapsed"`
 	Flawless     bool `json:"flawless"`
 }
+
+// cardinalStr maps Direction int (N=0,S=1,E=2,W=3) to letter.
+var cardinalStr = [4]string{0: "N", 1: "S", 2: "E", 3: "W"}
 
 // ---- Handler ----------------------------------------------------------------
 
@@ -297,7 +326,7 @@ func (h *handler) handle(ctx context.Context, evt matchEvent) error {
 			},
 		})
 
-		h.broadcast(ctx, matchID, state)
+		h.broadcast(ctx, match, verA, verB, state)
 
 		if elapsed := time.Since(tickStart); elapsed < tickBudget {
 			select {
@@ -423,34 +452,55 @@ func (h *handler) downloadWASM(ctx context.Context, s3Key, destPath string) erro
 }
 
 // broadcast sends a TICK_UPDATE event to all live observers for the match.
-func (h *handler) broadcast(ctx context.Context, matchID string, state engine.State) {
-	conns, err := h.store.ListConnectionsByMatch(ctx, matchID)
+func (h *handler) broadcast(ctx context.Context, match db.Match, verA, verB db.TankVersion, state engine.State) {
+	conns, err := h.store.ListConnectionsByMatch(ctx, match.MatchID)
 	if err != nil {
-		log.Printf("list connections for match %s: %v", matchID, err)
+		log.Printf("list connections for match %s: %v", match.MatchID, err)
 		return
 	}
 	if len(conns) == 0 {
 		return
 	}
 
-	projs := make([]projSnap, len(state.Projectiles))
+	projs := make([]projWS, len(state.Projectiles))
 	for i, p := range state.Projectiles {
-		projs[i] = projSnap{Position: p.Position, Facing: int(p.Facing), Owner: p.Owner}
+		ownerID := match.TankA.TankID
+		if p.Owner == 1 {
+			ownerID = match.TankB.TankID
+		}
+		projs[i] = projWS{
+			Position:    pointWS{X: p.Position[1], Y: p.Position[0]},
+			Direction:   cardinalStr[p.Facing],
+			OwnerTankID: ownerID,
+		}
 	}
-	msg := tickUpdateMsg{
-		Event: "TICK_UPDATE",
-		Tick:  state.Tick,
-		TankA: tankSnap{Position: state.Tanks[0].Position, Facing: int(state.Tanks[0].Facing), HP: state.Tanks[0].HP},
-		TankB: tankSnap{Position: state.Tanks[1].Position, Facing: int(state.Tanks[1].Facing), HP: state.Tanks[1].HP},
+	payload := tickPayload{
+		Tick: state.Tick,
+		TankA: tankStateWS{
+			TankID:   match.TankA.TankID,
+			Version:  match.TankA.Version,
+			Position: pointWS{X: state.Tanks[0].Position[1], Y: state.Tanks[0].Position[0]},
+			Facing:   cardinalStr[state.Tanks[0].Facing],
+			HP:       state.Tanks[0].HP,
+			Config:   versionToConfigWS(verA),
+		},
+		TankB: tankStateWS{
+			TankID:   match.TankB.TankID,
+			Version:  match.TankB.Version,
+			Position: pointWS{X: state.Tanks[1].Position[1], Y: state.Tanks[1].Position[0]},
+			Facing:   cardinalStr[state.Tanks[1].Facing],
+			HP:       state.Tanks[1].HP,
+			Config:   versionToConfigWS(verB),
+		},
 		Projectiles: projs,
 	}
-	data, err := json.Marshal(msg)
+	data, err := json.Marshal(wsEnvelope{Type: "TICK_UPDATE", Payload: payload})
 	if err != nil {
 		log.Printf("marshal TICK_UPDATE: %v", err)
 		return
 	}
 	for _, conn := range conns {
-		h.postToConnection(ctx, conn.ConnectionID, matchID, data)
+		h.postToConnection(ctx, conn.ConnectionID, match.MatchID, data)
 	}
 }
 
@@ -464,8 +514,7 @@ func (h *handler) broadcastMatchOver(ctx context.Context, matchID string, result
 	if len(conns) == 0 {
 		return
 	}
-	msg := matchOverMsg{
-		Event:  "MATCH_OVER",
+	payload := matchOverPayload{
 		Winner: winnerStr(result.Winner),
 		Reason: string(result.Reason),
 		Stats: matchOverStats{
@@ -477,13 +526,24 @@ func (h *handler) broadcastMatchOver(ctx context.Context, matchID string, result
 			Flawless:     result.Flawless,
 		},
 	}
-	data, err := json.Marshal(msg)
+	data, err := json.Marshal(wsEnvelope{Type: "MATCH_OVER", Payload: payload})
 	if err != nil {
 		log.Printf("marshal MATCH_OVER: %v", err)
 		return
 	}
 	for _, conn := range conns {
 		h.postToConnection(ctx, conn.ConnectionID, matchID, data)
+	}
+}
+
+// versionToConfigWS converts a db.TankVersion to the broadcast config shape.
+func versionToConfigWS(v db.TankVersion) configWS {
+	return configWS{
+		Speed:       v.Config.Speed,
+		SensorRange: v.Config.SensorRange,
+		Damage:      v.Config.Damage,
+		Armor:       v.Config.Armor,
+		FireRate:    v.Config.FireRate,
 	}
 }
 

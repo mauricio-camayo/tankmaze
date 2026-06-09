@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -36,6 +37,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
 	"github.com/tankmaze/backend/internal/db"
+	"github.com/tankmaze/backend/internal/maze"
 )
 
 // ---- Types: client → server messages ----------------------------------------
@@ -57,32 +59,67 @@ type replaySpeedPayload struct {
 	Multiplier string `json:"multiplier"`
 }
 
-// ---- Types: server → client messages ----------------------------------------
+// ---- Types: server → client envelope ----------------------------------------
+//
+// All outbound messages use { "type": "<EVENT>", "payload": { ... } } so the
+// frontend ws.ts can dispatch on msg.type in a single switch.
 
-type matchSnapshotMsg struct {
-	Event     string          `json:"event"`
-	MatchID   string          `json:"matchId"`
-	MatchType string          `json:"matchType"`
-	Status    string          `json:"status"`
-	TankA     db.MatchTank    `json:"tankA"`
-	TankB     db.MatchTank    `json:"tankB"`
-	MazeSeed  string          `json:"mazeSeed,omitempty"`
-	MapID     string          `json:"mapId,omitempty"`
-	Result    *db.MatchResult `json:"result,omitempty"`
+type wsEnvelope struct {
+	Type    string `json:"type"`
+	Payload any    `json:"payload"`
 }
 
-type tankSnap struct {
-	Position [2]int `json:"position"` // [row, col]
-	Facing   int    `json:"facing"`
-	HP       int    `json:"hp"`
+// ---- Types: server → client payloads ----------------------------------------
+
+// snapshotPayload matches the frontend MatchSnapshot interface.
+type snapshotPayload struct {
+	MatchID     string      `json:"matchId"`
+	Status      string      `json:"status"`
+	Maze        [][]bool    `json:"maze"`
+	TankA       tankStateWS `json:"tankA"`
+	TankB       tankStateWS `json:"tankB"`
+	Projectiles []projWS    `json:"projectiles"`
+	Tick        int         `json:"tick"`
+	TotalTicks  int         `json:"totalTicks,omitempty"`
 }
 
-type tickUpdateMsg struct {
-	Event       string     `json:"event"`
-	Tick        int        `json:"tick"`
-	TankA       tankSnap   `json:"tankA"`
-	TankB       tankSnap   `json:"tankB"`
-	Projectiles []struct{} `json:"projectiles"` // populated by match-runner; empty in replay
+// tankStateWS matches the frontend TankState interface.
+type tankStateWS struct {
+	TankID   string   `json:"tankId"`
+	Version  string   `json:"version"`
+	Position pointWS  `json:"position"`
+	Facing   string   `json:"facing"`
+	HP       int      `json:"hp"`
+	Config   configWS `json:"config"`
+}
+
+type pointWS struct {
+	X int `json:"x"` // col
+	Y int `json:"y"` // row
+}
+
+type configWS struct {
+	Name        string `json:"name"`
+	Speed       int    `json:"speed"`
+	SensorRange int    `json:"sensorRange"`
+	Damage      int    `json:"damage"`
+	Armor       int    `json:"armor"`
+	FireRate    int    `json:"fireRate"`
+}
+
+// projWS matches the frontend Projectile interface.
+type projWS struct {
+	Position    pointWS `json:"position"`
+	Direction   string  `json:"direction"`
+	OwnerTankID string  `json:"ownerTankId"`
+}
+
+// tickPayload matches the frontend TickUpdate interface.
+type tickPayload struct {
+	Tick        int       `json:"tick"`
+	TankA       tankStateWS `json:"tankA"`
+	TankB       tankStateWS `json:"tankB"`
+	Projectiles []projWS  `json:"projectiles"`
 }
 
 type matchOverStats struct {
@@ -94,34 +131,48 @@ type matchOverStats struct {
 	Flawless     bool `json:"flawless"`
 }
 
-type matchOverMsg struct {
-	Event  string         `json:"event"`
+type matchOverPayload struct {
 	Winner *string        `json:"winner"` // "a", "b", or null
 	Reason string         `json:"reason"`
 	Stats  matchOverStats `json:"stats"`
 }
 
 type replayAckMsg struct {
-	Event string `json:"event"`
 	Tick  int    `json:"tick,omitempty"`
 	Speed string `json:"speed,omitempty"`
 }
 
 type errMsg struct {
-	Event   string `json:"event"`
 	Code    string `json:"code"`
 	Message string `json:"message"`
 }
+
+// cardinalStr converts a 0-based int direction (N=0,S=1,E=2,W=3) to its letter.
+var cardinalStr = [4]string{0: "N", 1: "S", 2: "E", 3: "W"}
 
 // ---- Types: S3 tick log -----------------------------------------------------
 
 // tickLog is the gzip-compressed JSON written to S3 by match-runner.
 // Only the fields needed by the wss-handler are unmarshalled; the rest
-// (sensors detail, actions, log lines, etc.) are intentionally ignored.
+// (actions, log lines, etc.) are intentionally ignored.
 type tickLog struct {
-	MatchID string      `json:"matchId"`
-	Ticks   []tickEntry `json:"ticks"`
-	Result  *logResult  `json:"result"`
+	MatchID string       `json:"matchId"`
+	Maze    [][]bool     `json:"maze"`
+	Tanks   logTankPair  `json:"tanks"`
+	Ticks   []tickEntry  `json:"ticks"`
+	Result  *logResult   `json:"result"`
+}
+
+// logTankPair holds metadata for both tanks, written by match-runner at the top of the log.
+type logTankPair struct {
+	A logTankMeta `json:"a"`
+	B logTankMeta `json:"b"`
+}
+
+type logTankMeta struct {
+	TankID  string          `json:"tankId"`
+	Version string          `json:"version"`
+	Config  db.VersionConfig `json:"config"`
 }
 
 type tickEntry struct {
@@ -278,37 +329,48 @@ func (h *handler) handleObserve(ctx context.Context, connID string, raw json.Raw
 		return resp(200), nil
 	}
 
-	// Send MATCH_SNAPSHOT with whatever is known at this point.
-	snapshot := matchSnapshotMsg{
-		Event:     "MATCH_SNAPSHOT",
-		MatchID:   match.MatchID,
-		MatchType: match.MatchType,
-		Status:    match.Status,
-		TankA:     match.TankA,
-		TankB:     match.TankB,
-		MazeSeed:  match.MazeSeed,
-		MapID:     match.MapID,
-		Result:    match.Result,
-	}
-	if err := h.send(ctx, connID, snapshot); err != nil {
+	// For ended matches, load the tick log once — it contains the maze, tank
+	// metadata, all ticks, and the result. Build the snapshot from tick 0.
+	if match.Status == "ended" && match.TickLogS3Key != "" {
+		fromTick := conn.ReplayTick
+		speed := conn.ReplaySpeed
+		if speed == "" {
+			speed = "1"
+		}
+		if err := h.streamReplayWithSnapshot(ctx, connID, match.TickLogS3Key, fromTick, speed); err != nil {
+			log.Printf("observe: stream replay for match %s: %v", match.MatchID, err)
+		}
 		return resp(200), nil
 	}
 
-	// Stream replay only for completed matches that have a tick log.
-	if match.Status != "ended" || match.TickLogS3Key == "" {
+	// For active (or scheduled) matches, build a minimal snapshot from the
+	// match record + version configs so the frontend can render the maze.
+	// Tank positions will be corrected by the first incoming TICK_UPDATE.
+	verA, errA := h.store.GetVersion(ctx, match.TankA.TankID, match.TankA.Version)
+	verB, errB := h.store.GetVersion(ctx, match.TankB.TankID, match.TankB.Version)
+	if errA != nil || errB != nil {
+		_ = h.sendErr(ctx, connID, "internal_error", "could not load version records")
 		return resp(200), nil
 	}
 
-	fromTick := conn.ReplayTick
-	speed := conn.ReplaySpeed
-	if speed == "" {
-		speed = "1"
+	mazeGrid, mazeErr := h.loadMaze(ctx, match)
+	if mazeErr != nil {
+		mazeGrid = nil
 	}
 
-	if err := h.streamReplay(ctx, connID, match.TickLogS3Key, fromTick, speed); err != nil {
-		log.Printf("observe: stream replay for match %s: %v", match.MatchID, err)
-	}
+	tankNameA := match.TankA.TankID
+	tankNameB := match.TankB.TankID
 
+	snap := snapshotPayload{
+		MatchID:     match.MatchID,
+		Status:      match.Status,
+		Maze:        mazeGrid,
+		TankA:       makeTankStateWS(match.TankA.TankID, match.TankA.Version, pointWS{0, 0}, "N", 100, verA.Config, tankNameA),
+		TankB:       makeTankStateWS(match.TankB.TankID, match.TankB.Version, pointWS{0, 0}, "N", 100, verB.Config, tankNameB),
+		Projectiles: []projWS{},
+		Tick:        0,
+	}
+	_ = h.send(ctx, connID, wsEnvelope{Type: "MATCH_SNAPSHOT", Payload: snap})
 	return resp(200), nil
 }
 
@@ -335,7 +397,7 @@ func (h *handler) handleReplaySeek(ctx context.Context, connID string, raw json.
 		log.Printf("replay-seek: update connection: %v", err)
 	}
 
-	_ = h.send(ctx, connID, replayAckMsg{Event: "REPLAY_SEEK", Tick: p.Tick})
+	_ = h.send(ctx, connID, wsEnvelope{Type: "REPLAY_SEEK", Payload: replayAckMsg{Tick: p.Tick}})
 	return resp(200), nil
 }
 
@@ -358,16 +420,16 @@ func (h *handler) handleReplaySpeed(ctx context.Context, connID string, raw json
 		log.Printf("replay-speed: update connection: %v", err)
 	}
 
-	_ = h.send(ctx, connID, replayAckMsg{Event: "REPLAY_SPEED", Speed: p.Multiplier})
+	_ = h.send(ctx, connID, wsEnvelope{Type: "REPLAY_SPEED", Payload: replayAckMsg{Speed: p.Multiplier}})
 	return resp(200), nil
 }
 
 // ---- Replay streaming -------------------------------------------------------
 
-// streamReplay downloads the gzip tick log from S3 and sends TICK_UPDATE
-// events to the observer connection, sleeping between ticks according to speed.
-// A MATCH_OVER event is sent after the last tick.
-func (h *handler) streamReplay(ctx context.Context, connID, s3Key string, fromTick int, speed string) error {
+// streamReplayWithSnapshot downloads the gzip tick log from S3, sends a
+// MATCH_SNAPSHOT (with maze from the log), then streams TICK_UPDATE events
+// sleeping between ticks according to speed. Sends MATCH_OVER at the end.
+func (h *handler) streamReplayWithSnapshot(ctx context.Context, connID, s3Key string, fromTick int, speed string) error {
 	out, err := h.s3.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(h.matchLogsBucket),
 		Key:    aws.String(s3Key),
@@ -388,6 +450,42 @@ func (h *handler) streamReplay(ctx context.Context, connID, s3Key string, fromTi
 		return fmt.Errorf("decode tick log: %w", err)
 	}
 
+	// Build initial TankState from the first tick that is at or after fromTick.
+	// Falls back to tick 0 when seeking.
+	var initA, initB tankStateWS
+	for _, entry := range tl.Ticks {
+		dirA := cardinalFromInt(entry.A.Sensors.Facing)
+		dirB := cardinalFromInt(entry.B.Sensors.Facing)
+		initA = makeTankStateWS(
+			tl.Tanks.A.TankID, tl.Tanks.A.Version,
+			pointWS{X: entry.A.Sensors.Position.X, Y: entry.A.Sensors.Position.Y},
+			dirA, entry.A.Sensors.HP, tl.Tanks.A.Config, tl.Tanks.A.TankID,
+		)
+		initB = makeTankStateWS(
+			tl.Tanks.B.TankID, tl.Tanks.B.Version,
+			pointWS{X: entry.B.Sensors.Position.X, Y: entry.B.Sensors.Position.Y},
+			dirB, entry.B.Sensors.HP, tl.Tanks.B.Config, tl.Tanks.B.TankID,
+		)
+		if entry.Tick >= fromTick {
+			break
+		}
+	}
+
+	// tl.Maze uses engine convention (true=open); invert to frontend (true=wall).
+	snap := snapshotPayload{
+		MatchID:     tl.MatchID,
+		Status:      "ended",
+		Maze:        invertMaze(tl.Maze),
+		TankA:       initA,
+		TankB:       initB,
+		Projectiles: []projWS{},
+		Tick:        fromTick,
+		TotalTicks:  len(tl.Ticks),
+	}
+	if err := h.send(ctx, connID, wsEnvelope{Type: "MATCH_SNAPSHOT", Payload: snap}); err != nil {
+		return err
+	}
+
 	delay := replayDelay(speed)
 
 	for _, entry := range tl.Ticks {
@@ -401,29 +499,29 @@ func (h *handler) streamReplay(ctx context.Context, connID, s3Key string, fromTi
 			case <-time.After(delay):
 			}
 		}
-		msg := tickUpdateMsg{
-			Event: "TICK_UPDATE",
-			Tick:  entry.Tick,
-			TankA: tankSnap{
-				// Position is stored as Point{X:col, Y:row}; send as [row, col].
-				Position: [2]int{entry.A.Sensors.Position.Y, entry.A.Sensors.Position.X},
-				Facing:   entry.A.Sensors.Facing,
-				HP:       entry.A.Sensors.HP,
-			},
-			TankB: tankSnap{
-				Position: [2]int{entry.B.Sensors.Position.Y, entry.B.Sensors.Position.X},
-				Facing:   entry.B.Sensors.Facing,
-				HP:       entry.B.Sensors.HP,
-			},
+		tick := tickPayload{
+			Tick: entry.Tick,
+			TankA: makeTankStateWS(
+				tl.Tanks.A.TankID, tl.Tanks.A.Version,
+				pointWS{X: entry.A.Sensors.Position.X, Y: entry.A.Sensors.Position.Y},
+				cardinalFromInt(entry.A.Sensors.Facing), entry.A.Sensors.HP,
+				tl.Tanks.A.Config, tl.Tanks.A.TankID,
+			),
+			TankB: makeTankStateWS(
+				tl.Tanks.B.TankID, tl.Tanks.B.Version,
+				pointWS{X: entry.B.Sensors.Position.X, Y: entry.B.Sensors.Position.Y},
+				cardinalFromInt(entry.B.Sensors.Facing), entry.B.Sensors.HP,
+				tl.Tanks.B.Config, tl.Tanks.B.TankID,
+			),
+			Projectiles: []projWS{}, // projectile state not stored in tick log
 		}
-		if err := h.send(ctx, connID, msg); err != nil {
+		if err := h.send(ctx, connID, wsEnvelope{Type: "TICK_UPDATE", Payload: tick}); err != nil {
 			return err
 		}
 	}
 
 	if tl.Result != nil {
-		over := matchOverMsg{
-			Event:  "MATCH_OVER",
+		over := matchOverPayload{
 			Winner: tl.Result.Winner,
 			Reason: tl.Result.Reason,
 			Stats: matchOverStats{
@@ -435,7 +533,7 @@ func (h *handler) streamReplay(ctx context.Context, connID, s3Key string, fromTi
 				Flawless:     tl.Result.Flawless,
 			},
 		}
-		_ = h.send(ctx, connID, over)
+		_ = h.send(ctx, connID, wsEnvelope{Type: "MATCH_OVER", Payload: over})
 	}
 
 	return nil
@@ -465,7 +563,67 @@ func (h *handler) send(ctx context.Context, connID string, v any) error {
 }
 
 func (h *handler) sendErr(ctx context.Context, connID, code, message string) error {
-	return h.send(ctx, connID, errMsg{Event: "ERROR", Code: code, Message: message})
+	return h.send(ctx, connID, wsEnvelope{Type: "ERROR", Payload: errMsg{Code: code, Message: message}})
+}
+
+// makeTankStateWS builds a tankStateWS from individual fields.
+func makeTankStateWS(tankID, version string, pos pointWS, facing string, hp int, cfg db.VersionConfig, name string) tankStateWS {
+	return tankStateWS{
+		TankID:   tankID,
+		Version:  version,
+		Position: pos,
+		Facing:   facing,
+		HP:       hp,
+		Config: configWS{
+			Name:        name,
+			Speed:       cfg.Speed,
+			SensorRange: cfg.SensorRange,
+			Damage:      cfg.Damage,
+			Armor:       cfg.Armor,
+			FireRate:    cfg.FireRate,
+		},
+	}
+}
+
+// cardinalFromInt converts a Direction int (N=0,S=1,E=2,W=3) to its letter.
+func cardinalFromInt(d int) string {
+	if d >= 0 && d < len(cardinalStr) {
+		return cardinalStr[d]
+	}
+	return "N"
+}
+
+// invertMaze converts engine convention (true=open) to frontend convention (true=wall).
+func invertMaze(cells [][]bool) [][]bool {
+	out := make([][]bool, len(cells))
+	for r, row := range cells {
+		out[r] = make([]bool, len(row))
+		for c, open := range row {
+			out[r][c] = !open
+		}
+	}
+	return out
+}
+
+// loadMaze builds a MazeGrid from the match's MapID (static) or MazeSeed (generated).
+func (h *handler) loadMaze(ctx context.Context, match db.Match) ([][]bool, error) {
+	if match.MapID != "" {
+		m, err := h.store.GetMapByID(ctx, match.MapID)
+		if err != nil {
+			return nil, fmt.Errorf("get map %s: %w", match.MapID, err)
+		}
+		grid, err := maze.Load(m.Layout)
+		if err != nil {
+			return nil, err
+		}
+		return invertMaze(grid.Cells), nil
+	}
+	seed, err := strconv.ParseInt(match.MazeSeed, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parse maze seed %q: %w", match.MazeSeed, err)
+	}
+	grid := maze.Generate(seed, maze.SizeFromEnv())
+	return invertMaze(grid.Cells), nil
 }
 
 func resp(code int) events.APIGatewayProxyResponse {
