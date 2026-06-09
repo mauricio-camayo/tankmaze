@@ -219,7 +219,10 @@ export default function Dashboard() {
     listAiTanks().then((data) => setAiTanks(data ?? [])).catch(() => {});
     listGameDays()
       .then((days) => {
-        const active = (days ?? []).find((d) => d.phases.final.status !== 'complete');
+        const now = Date.now();
+        const active = (days ?? []).find(
+          (d) => d.phases.final.status !== 'complete' && new Date(d.schedule.final).getTime() > now
+        );
         setFeaturedGameDay(active ?? null);
       })
       .catch(() => {});
