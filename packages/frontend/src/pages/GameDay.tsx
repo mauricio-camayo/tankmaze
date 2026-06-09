@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import Layout, { cardStyle, ghostButtonStyle, primaryButtonStyle } from '../components/Layout';
-import { getGameDay, getTank, addRosterEntry, removeRosterEntry, listAiTanks } from '../services/api';
+import { getGameDay, getTank, addRosterEntry, removeRosterEntry, listAiTanks, adminListTanks } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import type { GameDay, BracketSlot, GameDayPhaseStatus, GameDayGroup, Tank, TankVersion } from '../types';
 
@@ -145,6 +145,16 @@ function rankColor(rank: number): string {
   return '#475569';
 }
 
+function latestMajorVersion(versions: TankVersion[]): string {
+  const majors = versions.filter((v) => v.versionType === 'major' && v.compileStatus === 'ready');
+  if (majors.length === 0) {
+    const anyReady = versions.find((v) => v.compileStatus === 'ready');
+    return anyReady?.version ?? versions[0]?.version ?? 'v1';
+  }
+  // Versions are returned newest-first from the API; pick the first ready major.
+  return majors[0].version;
+}
+
 function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
   gameDayId: string;
   roster: Array<{ tankId: string; version: string }>;
@@ -157,8 +167,15 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
   const [err, setErr] = useState<string | null>(null);
   const [showPicker, setShowPicker] = useState(false);
   const [aiTanks, setAiTanks] = useState<(Tank & { versions: TankVersion[] })[]>([]);
+  // Name-search state
+  const [allTanks, setAllTanks] = useState<Tank[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Tank[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
   const [manualId, setManualId] = useState('');
-  const [manualVer, setManualVer] = useState('v0.1');
+  const [manualVer, setManualVer] = useState('');
+  const [verLoading, setVerLoading] = useState(false);
+  const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const rosterKey = roster.map((r) => r.tankId).join(',');
   useEffect(() => {
@@ -172,8 +189,48 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
   }, [rosterKey]);
 
   useEffect(() => {
-    if (showPicker && isAdmin) listAiTanks().then(setAiTanks).catch(() => {});
+    if (!showPicker || !isAdmin) return;
+    listAiTanks().then(setAiTanks).catch(() => {});
+    // Load all tanks for name search (first 50; typical tournament sizes are well within this)
+    adminListTanks().then((res) => setAllTanks(res.tanks)).catch(() => {});
   }, [showPicker, isAdmin]);
+
+  function handleSearchChange(q: string) {
+    setSearchQuery(q);
+    if (searchRef.current) clearTimeout(searchRef.current);
+    if (q.length < 4) {
+      setSearchResults([]);
+      setShowDropdown(false);
+      return;
+    }
+    searchRef.current = setTimeout(() => {
+      const lower = q.toLowerCase();
+      const hits = allTanks
+        .filter((t) =>
+          t.name.toLowerCase().includes(lower) ||
+          (t.authorName ?? '').toLowerCase().includes(lower),
+        )
+        .slice(0, 5);
+      setSearchResults(hits);
+      setShowDropdown(true);
+    }, 200);
+  }
+
+  async function selectTank(tank: Tank) {
+    setSearchQuery(tank.name);
+    setManualId(tank.tankId);
+    setShowDropdown(false);
+    // Auto-fetch latest major version
+    setVerLoading(true);
+    try {
+      const full = await getTank(tank.tankId);
+      setManualVer(latestMajorVersion(full.versions));
+    } catch {
+      setManualVer('v1');
+    } finally {
+      setVerLoading(false);
+    }
+  }
 
   async function handleRemove(tankId: string) {
     if (confirmRemove !== tankId) { setConfirmRemove(tankId); return; }
@@ -205,8 +262,9 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
     setErr(null);
     try {
       await addRosterEntry(gameDayId, manualId.trim(), manualVer.trim());
+      setSearchQuery('');
       setManualId('');
-      setManualVer('v0.1');
+      setManualVer('');
       onChanged();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed');
@@ -312,22 +370,73 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
               })}
             </div>
           )}
-          <div style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Manual Entry</div>
+
+          <div style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Add by Name</div>
+          <div style={{ position: 'relative', marginBottom: 8 }}>
+            <input
+              value={searchQuery}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+              onFocus={() => searchQuery.length >= 4 && searchResults.length > 0 && setShowDropdown(true)}
+              placeholder="Type 4+ characters to search by tank or owner name…"
+              style={inpStyle}
+            />
+            {showDropdown && (
+              <div style={{
+                position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10,
+                background: '#1a1a2e', border: '1px solid #2d2d4e', borderRadius: 4,
+                boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+              }}>
+                {searchResults.length === 0 ? (
+                  <div style={{ padding: '6px 10px', color: '#475569', fontSize: 12 }}>No tanks found</div>
+                ) : (
+                  searchResults.map((t) => (
+                    <button
+                      key={t.tankId}
+                      onMouseDown={() => selectTank(t)}
+                      style={{
+                        display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '6px 10px', background: 'transparent', border: 'none',
+                        borderBottom: '1px solid #0f0f1a', cursor: 'pointer', textAlign: 'left',
+                      }}
+                    >
+                      <span style={{ color: '#e2e8f0', fontSize: 13 }}>{t.name}</span>
+                      {t.authorName && (
+                        <span style={{ color: '#64748b', fontSize: 11 }}>by {t.authorName}</span>
+                      )}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: 6, alignItems: 'end' }}>
             <div>
               <div style={{ color: '#64748b', fontSize: 10, marginBottom: 2 }}>Tank ID</div>
-              <input value={manualId} onChange={(e) => setManualId(e.target.value)} placeholder="tank-uuid" style={inpStyle} />
+              <input
+                value={manualId}
+                onChange={(e) => { setManualId(e.target.value); setSearchQuery(''); }}
+                placeholder="tank-uuid"
+                style={inpStyle}
+              />
             </div>
             <div>
               <div style={{ color: '#64748b', fontSize: 10, marginBottom: 2 }}>Version</div>
-              <input value={manualVer} onChange={(e) => setManualVer(e.target.value)} placeholder="v0.1" style={inpStyle} />
+              <input
+                value={verLoading ? '…' : manualVer}
+                onChange={(e) => setManualVer(e.target.value)}
+                placeholder="v1"
+                disabled={verLoading}
+                style={{ ...inpStyle, opacity: verLoading ? 0.6 : 1 }}
+              />
             </div>
             <button
               onClick={addManual}
-              disabled={busy === 'manual' || !manualId.trim()}
+              disabled={busy === 'manual' || !manualId.trim() || !manualVer.trim() || verLoading}
               style={{ ...primaryButtonStyle, fontSize: 11, padding: '4px 12px' }}
             >
-              Add
+              {busy === 'manual' ? '…' : 'Add'}
             </button>
           </div>
         </div>
