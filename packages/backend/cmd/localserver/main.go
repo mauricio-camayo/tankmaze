@@ -852,6 +852,10 @@ func (srv *server) patchGameDay(w http.ResponseWriter, r *http.Request, gameDayI
 		jsonErr(w, http.StatusConflict, "game day has already started")
 		return
 	}
+	if finalAt, parseErr := time.Parse(time.RFC3339, gd.Schedule.Final); parseErr == nil && finalAt.Before(time.Now()) {
+		jsonErr(w, http.StatusConflict, "game day has already concluded")
+		return
+	}
 	var body struct {
 		Name                string    `json:"name,omitempty"`
 		RegistrationCloseAt string    `json:"registrationCloseAt,omitempty"`

@@ -245,7 +245,7 @@ function GameDayRow({ gd, onDeleted, onRefresh }: { gd: GameDay; onDeleted: () =
           >
             View
           </Link>
-          {user?.isAdmin && status === 'upcoming' && (
+          {user?.isAdmin && status === 'upcoming' && new Date(gd.schedule.final) > new Date() && (
             <>
               <button
                 onClick={() => { setEditing((v) => !v); setConfirmDelete(false); }}

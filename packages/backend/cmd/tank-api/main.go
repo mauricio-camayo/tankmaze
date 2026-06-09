@@ -1353,6 +1353,17 @@ func (h *handler) patchGameDay(ctx context.Context, req events.APIGatewayV2HTTPR
 		return errResp(http.StatusForbidden, "admin access required"), nil
 	}
 
+	existing, err := h.store.GetGameDay(ctx, gameDayID)
+	if errors.Is(err, db.ErrNotFound) {
+		return errResp(http.StatusNotFound, "game day not found"), nil
+	} else if err != nil {
+		log.Printf("patch gameday %s: %v", gameDayID, err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	if finalAt, parseErr := time.Parse(time.RFC3339, existing.Schedule.Final); parseErr == nil && finalAt.Before(time.Now()) {
+		return errResp(http.StatusConflict, "game day has already concluded"), nil
+	}
+
 	var body patchGameDayBody
 	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
 		return errResp(http.StatusBadRequest, "invalid request body"), nil
