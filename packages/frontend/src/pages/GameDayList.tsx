@@ -82,8 +82,6 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
     name: gd.name ?? '',
     registrationClose: isoToLocalDatetime(gd.schedule.registrationClose),
     roundRobin: isoToLocalDatetime(gd.schedule.roundRobin),
-    eliminationR1: isoToLocalDatetime(gd.schedule.elimination?.[0] ?? ''),
-    eliminationR2: isoToLocalDatetime(gd.schedule.elimination?.[1] ?? ''),
     final: isoToLocalDatetime(gd.schedule.final),
   });
   const [autofill, setAutofill] = useState(gd.autofill ?? false);
@@ -98,6 +96,14 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (new Date(fields.registrationClose) >= new Date(fields.roundRobin)) {
+      setErr('Registration must close before round robin starts');
+      return;
+    }
+    if (new Date(fields.roundRobin) >= new Date(fields.final)) {
+      setErr('Round robin must start before the final');
+      return;
+    }
     setSaving(true);
     setErr(null);
     try {
@@ -105,8 +111,6 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
         ...(fields.name.trim() ? { name: fields.name.trim() } : {}),
         registrationCloseAt: new Date(fields.registrationClose).toISOString(),
         roundRobinAt: new Date(fields.roundRobin).toISOString(),
-        eliminationR1At: new Date(fields.eliminationR1).toISOString(),
-        ...(fields.eliminationR2 ? { eliminationR2At: new Date(fields.eliminationR2).toISOString() } : {}),
         finalAt: new Date(fields.final).toISOString(),
         autofill,
         randomMaps,
@@ -154,8 +158,6 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
           {([
             ['registrationClose', 'Registration closes'],
             ['roundRobin', 'Round Robin starts'],
-            ['eliminationR1', 'Elimination R1 starts'],
-            ['eliminationR2', 'Elimination R2 starts (optional)'],
             ['final', 'Final starts'],
           ] as [string, string][]).map(([key, label]) => (
             <div key={key}>
@@ -164,7 +166,7 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
                 type="datetime-local"
                 value={fields[key as keyof typeof fields]}
                 onChange={(e) => set(key, e.target.value)}
-                required={key !== 'eliminationR2'}
+                required
                 style={inputStyle}
               />
             </div>
@@ -294,8 +296,6 @@ function defaultSchedule() {
   return {
     registrationClose: localDatetimeValue(addHours(1)),
     roundRobin: localDatetimeValue(addHours(2)),
-    eliminationR1: localDatetimeValue(addHours(4)),
-    eliminationR2: '',
     final: localDatetimeValue(addHours(6)),
   };
 }
@@ -316,6 +316,14 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (new Date(fields.registrationClose) >= new Date(fields.roundRobin)) {
+      setErr('Registration must close before round robin starts');
+      return;
+    }
+    if (new Date(fields.roundRobin) >= new Date(fields.final)) {
+      setErr('Round robin must start before the final');
+      return;
+    }
     setSaving(true);
     setErr(null);
     try {
@@ -323,8 +331,6 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
         ...(name.trim() ? { name: name.trim() } : {}),
         registrationCloseAt: toISO(fields.registrationClose),
         roundRobinAt: toISO(fields.roundRobin),
-        eliminationR1At: toISO(fields.eliminationR1),
-        ...(fields.eliminationR2 ? { eliminationR2At: toISO(fields.eliminationR2) } : {}),
         finalAt: toISO(fields.final),
         autofill,
         randomMaps,
@@ -388,8 +394,6 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
           {([
             ['registrationClose', 'Registration closes'],
             ['roundRobin', 'Round Robin starts'],
-            ['eliminationR1', 'Elimination R1 starts'],
-            ['eliminationR2', 'Elimination R2 starts (optional)'],
             ['final', 'Final starts'],
           ] as [string, string][]).map(([key, label]) => (
             <div key={key}>
@@ -398,7 +402,7 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
                 type="datetime-local"
                 value={fields[key as keyof typeof fields]}
                 onChange={(e) => set(key, e.target.value)}
-                required={key !== 'eliminationR2'}
+                required
                 style={inputStyle}
               />
             </div>

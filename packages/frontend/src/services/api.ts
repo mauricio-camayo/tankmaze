@@ -107,8 +107,6 @@ export const createGameDay = (body: {
   name?: string;
   registrationCloseAt: string;
   roundRobinAt: string;
-  eliminationR1At: string;
-  eliminationR2At?: string;
   finalAt: string;
   autofill?: boolean;
   forcedMapIds?: string[];
@@ -122,8 +120,6 @@ export const patchGameDay = (
     name?: string;
     registrationCloseAt?: string;
     roundRobinAt?: string;
-    eliminationR1At?: string;
-    eliminationR2At?: string;
     finalAt?: string;
     autofill?: boolean;
     forcedMapIds?: string[];

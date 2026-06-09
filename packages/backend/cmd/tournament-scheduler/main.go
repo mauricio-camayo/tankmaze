@@ -316,6 +316,22 @@ func (h *handler) handleEliminationR1(ctx context.Context, gd db.GameDay) error 
 	// Globally re-rank qualifiers.
 	globalRerank(qualifiers, gd.Groups, matches)
 
+	// Store derived elimination schedule times based on actual qualifier count.
+	if finalAt, parseErr := time.Parse(time.RFC3339, gd.Schedule.Final); parseErr == nil {
+		numRounds := 0
+		for q := nextPowerOf2(len(qualifiers)); q > 2; q >>= 1 {
+			numRounds++
+		}
+		if numRounds == 0 {
+			numRounds = 1
+		}
+		elim := make([]string, numRounds)
+		for i := 0; i < numRounds; i++ {
+			elim[i] = finalAt.Add(-time.Duration(numRounds-i) * 30 * time.Minute).UTC().Format(time.RFC3339)
+		}
+		gd.Schedule.Elimination = elim
+	}
+
 	// Seed the bracket.
 	n := len(qualifiers)
 	if n == 0 {

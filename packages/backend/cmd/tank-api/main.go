@@ -115,8 +115,6 @@ type createGameDayBody struct {
 	Name                string   `json:"name"`
 	RegistrationCloseAt string   `json:"registrationCloseAt"`
 	RoundRobinAt        string   `json:"roundRobinAt"`
-	EliminationR1At     string   `json:"eliminationR1At"`
-	EliminationR2At     string   `json:"eliminationR2At,omitempty"`
 	FinalAt             string   `json:"finalAt"`
 	Autofill            bool     `json:"autofill"`
 	ForcedMapIDs        []string `json:"forcedMapIds"`
@@ -127,8 +125,6 @@ type patchGameDayBody struct {
 	Name                string    `json:"name,omitempty"`
 	RegistrationCloseAt string    `json:"registrationCloseAt,omitempty"`
 	RoundRobinAt        string    `json:"roundRobinAt,omitempty"`
-	EliminationR1At     string    `json:"eliminationR1At,omitempty"`
-	EliminationR2At     string    `json:"eliminationR2At,omitempty"`
 	FinalAt             string    `json:"finalAt,omitempty"`
 	Autofill            *bool     `json:"autofill"`
 	ForcedMapIDs        *[]string `json:"forcedMapIds"`
@@ -1200,24 +1196,24 @@ func (h *handler) createGameDay(ctx context.Context, req events.APIGatewayV2HTTP
 	if !ok {
 		return errResp(http.StatusBadRequest, "roundRobinAt must be ISO 8601"), nil
 	}
-	elimR1At, ok := parseAt(body.EliminationR1At, "eliminationR1At")
-	if !ok {
-		return errResp(http.StatusBadRequest, "eliminationR1At must be ISO 8601"), nil
-	}
 	finalAt, ok := parseAt(body.FinalAt, "finalAt")
 	if !ok {
 		return errResp(http.StatusBadRequest, "finalAt must be ISO 8601"), nil
 	}
 
-	elimination := []string{body.EliminationR1At}
-	var elimR2At time.Time
-	if body.EliminationR2At != "" {
-		elimR2At, ok = parseAt(body.EliminationR2At, "eliminationR2At")
-		if !ok {
-			return errResp(http.StatusBadRequest, "eliminationR2At must be ISO 8601"), nil
-		}
-		elimination = append(elimination, body.EliminationR2At)
+	if !regClose.Before(rrAt) {
+		return errResp(http.StatusBadRequest, "registration must close before round robin"), nil
 	}
+	if !rrAt.Before(finalAt) {
+		return errResp(http.StatusBadRequest, "round robin must start before final"), nil
+	}
+	if finalAt.Sub(rrAt) < 2*time.Hour {
+		return errResp(http.StatusBadRequest, "at least 2 hours required between round robin and final"), nil
+	}
+
+	elimR1At := finalAt.Add(-90 * time.Minute)
+	elimR2At := finalAt.Add(-60 * time.Minute)
+	elimination := []string{elimR1At.UTC().Format(time.RFC3339), elimR2At.UTC().Format(time.RFC3339)}
 
 	gameDayID := newUUID()
 	now := time.Now().Unix()
@@ -1256,14 +1252,8 @@ func (h *handler) createGameDay(ctx context.Context, req events.APIGatewayV2HTTP
 		{gameDayID + "-reg-close", "registration_close", atExpr(regClose)},
 		{gameDayID + "-rr", "round_robin", atExpr(rrAt)},
 		{gameDayID + "-elim-r1", "elimination_r1", atExpr(elimR1At)},
+		{gameDayID + "-elim-r2", "elimination_r2", atExpr(elimR2At)},
 		{gameDayID + "-final", "final", atExpr(finalAt)},
-	}
-	if body.EliminationR2At != "" {
-		phases = append(phases, struct {
-			name  string
-			phase string
-			expr  string
-		}{gameDayID + "-elim-r2", "elimination_r2", atExpr(elimR2At)})
 	}
 
 	for _, p := range phases {
@@ -1380,17 +1370,33 @@ func (h *handler) patchGameDay(ctx context.Context, req events.APIGatewayV2HTTPR
 		return t.UTC(), true
 	}
 
-	for _, f := range []string{body.RegistrationCloseAt, body.RoundRobinAt, body.EliminationR1At, body.EliminationR2At, body.FinalAt} {
+	for _, f := range []string{body.RegistrationCloseAt, body.RoundRobinAt, body.FinalAt} {
 		if _, ok := parseAt(f); !ok {
 			return errResp(http.StatusBadRequest, "timestamps must be ISO 8601"), nil
 		}
 	}
 
-	var elimAt []string
-	if body.EliminationR1At != "" {
-		elimAt = []string{body.EliminationR1At}
-		if body.EliminationR2At != "" {
-			elimAt = append(elimAt, body.EliminationR2At)
+	// Validate ordering on the merged schedule.
+	mergedRegClose := existing.Schedule.RegistrationClose
+	mergedRRAt := existing.Schedule.RoundRobin
+	mergedFinalAt := existing.Schedule.Final
+	if body.RegistrationCloseAt != "" {
+		mergedRegClose = body.RegistrationCloseAt
+	}
+	if body.RoundRobinAt != "" {
+		mergedRRAt = body.RoundRobinAt
+	}
+	if body.FinalAt != "" {
+		mergedFinalAt = body.FinalAt
+	}
+	if rc, ok1 := parseAt(mergedRegClose); ok1 {
+		if rr, ok2 := parseAt(mergedRRAt); ok2 && !rc.Before(rr) {
+			return errResp(http.StatusBadRequest, "registration must close before round robin"), nil
+		}
+	}
+	if rr, ok1 := parseAt(mergedRRAt); ok1 {
+		if fn, ok2 := parseAt(mergedFinalAt); ok2 && !rr.Before(fn) {
+			return errResp(http.StatusBadRequest, "round robin must start before final"), nil
 		}
 	}
 
@@ -1398,7 +1404,6 @@ func (h *handler) patchGameDay(ctx context.Context, req events.APIGatewayV2HTTPR
 		Name:                strings.TrimSpace(body.Name),
 		RegistrationCloseAt: body.RegistrationCloseAt,
 		RoundRobinAt:        body.RoundRobinAt,
-		EliminationAt:       elimAt,
 		FinalAt:             body.FinalAt,
 		Autofill:            body.Autofill,
 		ForcedMapIDs:        body.ForcedMapIDs,

@@ -774,8 +774,6 @@ func (srv *server) createGameDay(w http.ResponseWriter, r *http.Request) {
 		Name                string   `json:"name"`
 		RegistrationCloseAt string   `json:"registrationCloseAt"`
 		RoundRobinAt        string   `json:"roundRobinAt"`
-		EliminationR1At     string   `json:"eliminationR1At"`
-		EliminationR2At     string   `json:"eliminationR2At,omitempty"`
 		FinalAt             string   `json:"finalAt"`
 		Autofill            bool     `json:"autofill"`
 		ForcedMapIDs        []string `json:"forcedMapIds"`
@@ -785,15 +783,34 @@ func (srv *server) createGameDay(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if body.RegistrationCloseAt == "" || body.RoundRobinAt == "" || body.EliminationR1At == "" || body.FinalAt == "" {
-		jsonErr(w, http.StatusBadRequest, "registrationCloseAt, roundRobinAt, eliminationR1At, finalAt are required")
+	if body.RegistrationCloseAt == "" || body.RoundRobinAt == "" || body.FinalAt == "" {
+		jsonErr(w, http.StatusBadRequest, "registrationCloseAt, roundRobinAt, finalAt are required")
 		return
 	}
 
-	elimination := []string{body.EliminationR1At}
-	if body.EliminationR2At != "" {
-		elimination = append(elimination, body.EliminationR2At)
+	parseISO := func(s string) (time.Time, bool) {
+		t, err := time.Parse(time.RFC3339, s)
+		return t, err == nil
 	}
+	regClose, ok1 := parseISO(body.RegistrationCloseAt)
+	rrAt, ok2 := parseISO(body.RoundRobinAt)
+	finalAt, ok3 := parseISO(body.FinalAt)
+	if !ok1 || !ok2 || !ok3 {
+		jsonErr(w, http.StatusBadRequest, "timestamps must be ISO 8601")
+		return
+	}
+	if !regClose.Before(rrAt) {
+		jsonErr(w, http.StatusBadRequest, "registration must close before round robin")
+		return
+	}
+	if !rrAt.Before(finalAt) {
+		jsonErr(w, http.StatusBadRequest, "round robin must start before final")
+		return
+	}
+
+	elimR1At := finalAt.Add(-90 * time.Minute)
+	elimR2At := finalAt.Add(-60 * time.Minute)
+	elimination := []string{elimR1At.UTC().Format(time.RFC3339), elimR2At.UTC().Format(time.RFC3339)}
 
 	gd := db.GameDay{
 		GameDayID: newUUID(),
@@ -860,8 +877,6 @@ func (srv *server) patchGameDay(w http.ResponseWriter, r *http.Request, gameDayI
 		Name                string    `json:"name,omitempty"`
 		RegistrationCloseAt string    `json:"registrationCloseAt,omitempty"`
 		RoundRobinAt        string    `json:"roundRobinAt,omitempty"`
-		EliminationR1At     string    `json:"eliminationR1At,omitempty"`
-		EliminationR2At     string    `json:"eliminationR2At,omitempty"`
 		FinalAt             string    `json:"finalAt,omitempty"`
 		Autofill            *bool     `json:"autofill"`
 		ForcedMapIDs        *[]string `json:"forcedMapIds"`
@@ -871,6 +886,37 @@ func (srv *server) patchGameDay(w http.ResponseWriter, r *http.Request, gameDayI
 		jsonErr(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+
+	// Validate ordering on the merged schedule.
+	parseISO := func(s string) (time.Time, bool) {
+		t, err := time.Parse(time.RFC3339, s)
+		return t, err == nil
+	}
+	mergedRegClose := gd.Schedule.RegistrationClose
+	mergedRRAt := gd.Schedule.RoundRobin
+	mergedFinalAt := gd.Schedule.Final
+	if body.RegistrationCloseAt != "" {
+		mergedRegClose = body.RegistrationCloseAt
+	}
+	if body.RoundRobinAt != "" {
+		mergedRRAt = body.RoundRobinAt
+	}
+	if body.FinalAt != "" {
+		mergedFinalAt = body.FinalAt
+	}
+	if rc, ok1 := parseISO(mergedRegClose); ok1 {
+		if rr, ok2 := parseISO(mergedRRAt); ok2 && !rc.Before(rr) {
+			jsonErr(w, http.StatusBadRequest, "registration must close before round robin")
+			return
+		}
+	}
+	if rr, ok1 := parseISO(mergedRRAt); ok1 {
+		if fn, ok2 := parseISO(mergedFinalAt); ok2 && !rr.Before(fn) {
+			jsonErr(w, http.StatusBadRequest, "round robin must start before final")
+			return
+		}
+	}
+
 	if n := strings.TrimSpace(body.Name); n != "" {
 		gd.Name = n
 	}
@@ -879,13 +925,6 @@ func (srv *server) patchGameDay(w http.ResponseWriter, r *http.Request, gameDayI
 	}
 	if body.RoundRobinAt != "" {
 		gd.Schedule.RoundRobin = body.RoundRobinAt
-	}
-	if body.EliminationR1At != "" {
-		elim := []string{body.EliminationR1At}
-		if body.EliminationR2At != "" {
-			elim = append(elim, body.EliminationR2At)
-		}
-		gd.Schedule.Elimination = elim
 	}
 	if body.FinalAt != "" {
 		gd.Schedule.Final = body.FinalAt
