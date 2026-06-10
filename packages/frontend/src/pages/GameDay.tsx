@@ -145,13 +145,18 @@ function rankColor(rank: number): string {
   return '#475569';
 }
 
+function isUsable(v: TankVersion): boolean {
+  // Public API strips compileStatus to ''; treat '' as usable (published version).
+  return v.compileStatus === 'ready' || v.compileStatus === '';
+}
+
 function latestMajorVersion(versions: TankVersion[]): string {
-  const majors = versions.filter((v) => v.versionType === 'major' && v.compileStatus === 'ready');
+  const majors = versions.filter((v) => v.versionType === 'major' && isUsable(v));
   if (majors.length === 0) {
-    const anyReady = versions.find((v) => v.compileStatus === 'ready');
-    return anyReady?.version ?? versions[0]?.version ?? 'v1';
+    const anyUsable = versions.find(isUsable);
+    return anyUsable?.version ?? versions[0]?.version ?? 'v1';
   }
-  // Versions are returned newest-first from the API; pick the first ready major.
+  // Versions are returned newest-first from the API; pick the first usable major.
   return majors[0].version;
 }
 

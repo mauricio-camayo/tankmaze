@@ -38,7 +38,7 @@ export interface TankVersion {
   wasmS3Key: string | null;
   sourceS3Key: string;
   wasmSha256: string | null;
-  compileStatus: 'pending' | 'compiling' | 'ready' | 'failed';
+  compileStatus: 'pending' | 'compiling' | 'ready' | 'failed' | '';
   compileError: string | null;
   registeredForGameDay: string | null;
   createdAt: number;
