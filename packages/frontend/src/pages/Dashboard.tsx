@@ -203,7 +203,8 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [tanks, setTanks] = useState<Tank[]>([]);
   const [aiTanks, setAiTanks] = useState<AiTank[]>([]);
-  const [featuredGameDay, setFeaturedGameDay] = useState<GameDay | null>(null);
+  const [runningGameDay, setRunningGameDay] = useState<GameDay | null>(null);
+  const [upcomingGameDay, setUpcomingGameDay] = useState<GameDay | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -220,10 +221,15 @@ export default function Dashboard() {
     listGameDays()
       .then((days) => {
         const now = Date.now();
-        const active = (days ?? []).find(
+        const future = (days ?? []).filter(
           (d) => d.phases.final.status !== 'complete' && new Date(d.schedule.final).getTime() > now
         );
-        setFeaturedGameDay(active ?? null);
+        const isRunning = (d: GameDay) =>
+          d.phases.roundRobin.status === 'running' ||
+          d.phases.final.status === 'running' ||
+          Object.values(d.phases.elimination ?? {}).some((p) => p.status === 'running');
+        setRunningGameDay(future.find(isRunning) ?? null);
+        setUpcomingGameDay(future.find((d) => !isRunning(d)) ?? null);
       })
       .catch(() => {});
   }, []);
@@ -234,7 +240,8 @@ export default function Dashboard() {
 
   return (
     <Layout>
-      {featuredGameDay && <GameDayCard gd={featuredGameDay} />}
+      {runningGameDay && <GameDayCard gd={runningGameDay} />}
+      {upcomingGameDay && <GameDayCard gd={upcomingGameDay} />}
       {aiTanks.length > 0 && (
         <div style={{ marginBottom: 36 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
