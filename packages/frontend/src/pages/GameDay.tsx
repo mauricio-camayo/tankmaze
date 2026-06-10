@@ -518,7 +518,7 @@ export default function GameDayPage() {
           {gameDay.name ? `${gameDay.name}` : 'Game Day'}
         </h1>
         <div style={{ color: '#64748b', fontSize: 13 }}>
-          {new Date(gameDay.createdAt * 1000).toLocaleDateString(undefined, {
+          {new Date(schedule.roundRobin).toLocaleDateString(undefined, {
             weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
           })}
         </div>

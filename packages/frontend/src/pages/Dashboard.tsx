@@ -135,7 +135,7 @@ function GameDayCard({ gd }: { gd: GameDay }) {
               {isFinal ? 'complete' : isActive ? 'active' : 'upcoming'}
             </span>
             <span style={{ color: '#e2e8f0', fontSize: 15, fontWeight: 600 }}>
-              {gd.name ? `${gd.name}` : 'Game Day'} — {new Date(gd.createdAt * 1000).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+              {gd.name ? `${gd.name}` : 'Game Day'} — {new Date(gd.schedule.roundRobin).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
             </span>
           </div>
           {!isFinal && (

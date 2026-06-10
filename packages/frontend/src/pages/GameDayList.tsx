@@ -227,7 +227,7 @@ function GameDayRow({ gd, onDeleted, onRefresh }: { gd: GameDay; onDeleted: () =
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
             <StatusBadge status={status} />
             <span style={{ color: '#e2e8f0', fontSize: 15, fontWeight: 600 }}>
-              {gd.name ? `${gd.name} · ` : ''}{new Date(gd.createdAt * 1000).toLocaleDateString(undefined, {
+              {gd.name ? `${gd.name} · ` : ''}{new Date(gd.schedule.roundRobin).toLocaleDateString(undefined, {
                 weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
               })}
             </span>
