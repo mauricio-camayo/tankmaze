@@ -505,7 +505,8 @@ export default function GameDayPage() {
     phases.final.status === 'upcoming' &&
     (!phases.elimination || Object.values(phases.elimination).every((p) => p.status === 'upcoming'));
   const registrationClosed = Date.now() > new Date(schedule.registrationClose).getTime();
-  const silentlySkipped = allPhasesCancelled || (allPhasesUpcoming && registrationClosed);
+  const noRegisteredTanks = (gameDay.registeredTanks ?? []).length === 0;
+  const silentlySkipped = allPhasesCancelled || (allPhasesUpcoming && registrationClosed && noRegisteredTanks);
 
   // Detect completed tournament with no ranking data.
   const finalComplete = phases.final.status === 'complete';
