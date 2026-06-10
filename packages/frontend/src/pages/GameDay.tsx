@@ -550,7 +550,15 @@ export default function GameDayPage() {
               </div>
             );
           })}
-          <PhaseRow label="Final" phase={phases.final} />
+          <PhaseRow
+            label="Final"
+            phase={
+              (phases.roundRobin.status === 'running' ||
+                Object.values(phases.elimination ?? {}).some((p) => p.status === 'running'))
+                ? { ...phases.final, status: 'upcoming' }
+                : phases.final
+            }
+          />
         </div>
       </div>
 
