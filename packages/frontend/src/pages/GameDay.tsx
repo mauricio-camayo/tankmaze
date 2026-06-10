@@ -225,13 +225,22 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
     setSearchQuery(tank.name);
     setManualId(tank.tankId);
     setShowDropdown(false);
+    setErr(null);
     // Auto-fetch latest major version
     setVerLoading(true);
+    setManualVer('');
     try {
       const full = await getTank(tank.tankId);
-      setManualVer(latestMajorVersion(full.versions));
-    } catch {
-      setManualVer('v1');
+      const majors = full.versions.filter((v) => v.versionType === 'major' && isUsable(v));
+      if (majors.length === 0) {
+        setErr(`No promoted version found for ${tank.name} — promote a version before adding to roster.`);
+        setManualVer('');
+      } else {
+        setManualVer(latestMajorVersion(full.versions));
+      }
+    } catch (e) {
+      setErr(`Could not fetch version for ${tank.name}: ${e instanceof Error ? e.message : 'unknown error'}`);
+      setManualVer('');
     } finally {
       setVerLoading(false);
     }

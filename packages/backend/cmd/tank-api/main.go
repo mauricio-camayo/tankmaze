@@ -471,7 +471,7 @@ func (h *handler) getTank(ctx context.Context, req events.APIGatewayV2HTTPReques
 		Versions []db.TankVersion `json:"versions"`
 	}
 
-	if tank.UserID != uid {
+	if tank.UserID != uid && !isAdmin(req) {
 		// Public view: only the latest major version, build artifacts and compile
 		// metadata stripped.
 		var latestMaj *db.TankVersion
