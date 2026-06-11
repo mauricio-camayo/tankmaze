@@ -590,19 +590,28 @@ export default function GameDayPage() {
             </span>
           </div>
           <PhaseRow label="Round Robin" phase={phases.roundRobin} />
-          {(schedule.elimination ?? []).map((ts, i) => {
-            const ps = phases.elimination?.[`r${i + 1}`];
-            return ps ? (
-              <PhaseRow key={i} label={`Elimination R${i + 1}`} phase={ps} />
-            ) : (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ color: '#94a3b8', fontSize: 14 }}>Elimination R{i + 1}</span>
-                <span style={{ color: '#475569', fontSize: 12 }}>
-                  {new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
-            );
-          })}
+          {phases.roundRobin.status !== 'complete' ? (
+            // Bracket not yet built — tank count unknown; skip pre-computed placeholder slots.
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ color: '#64748b', fontSize: 13, fontStyle: 'italic' }}>
+                Elimination rounds (TBD — based on tank count)
+              </span>
+            </div>
+          ) : (
+            (schedule.elimination ?? []).map((ts, i) => {
+              const ps = phases.elimination?.[`r${i + 1}`];
+              return ps ? (
+                <PhaseRow key={i} label={`Elimination R${i + 1}`} phase={ps} />
+              ) : (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8', fontSize: 14 }}>Elimination R{i + 1}</span>
+                  <span style={{ color: '#475569', fontSize: 12 }}>
+                    {new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+              );
+            })
+          )}
           <PhaseRow
             label="Final"
             phase={
