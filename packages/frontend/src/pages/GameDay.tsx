@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import Layout, { cardStyle, ghostButtonStyle, primaryButtonStyle } from '../components/Layout';
-import { getGameDay, getTank, addRosterEntry, removeRosterEntry, listAiTanks, adminListTanks } from '../services/api';
+import { getGameDay, getTank, addRosterEntry, removeRosterEntry, listAiTanks, adminListTanks, listMaps } from '../services/api';
 import { useAuthStore } from '../store/authStore';
-import type { GameDay, BracketSlot, GameDayPhaseStatus, GameDayGroup, Tank, TankVersion } from '../types';
+import type { GameDay, BracketSlot, GameDayPhaseStatus, GameDayGroup, Tank, TankVersion, GameMap } from '../types';
 
 const BRACKET_LABELS: Record<string, string> = {
   r1: 'Elimination R1',
@@ -500,9 +500,11 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
 
 export default function GameDayPage() {
   const { gameDayId } = useParams<{ gameDayId: string }>();
+  const navigate = useNavigate();
   const [gameDay, setGameDay] = useState<GameDay | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [maps, setMaps] = useState<GameMap[]>([]);
   const { user } = useAuthStore();
 
   function reload() {
@@ -516,6 +518,7 @@ export default function GameDayPage() {
       .then(setGameDay)
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
+    listMaps().then(setMaps).catch(() => {});
   }, [gameDayId]);
 
   if (loading) return <Layout><div style={{ color: '#64748b', padding: '40px 0' }}>Loading…</div></Layout>;
@@ -566,18 +569,64 @@ export default function GameDayPage() {
   const finalComplete = phases.final.status === 'complete';
   const noResults = finalComplete && standings.length === 0;
 
+  const isAdmin = user?.isAdmin ?? false;
+
+  // Build a map name lookup for the admin panel.
+  const mapNameMap = new Map<string, string>(maps.map((m) => [m.mapId, m.name]));
+
   return (
     <Layout>
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ margin: '0 0 4px', color: '#e2e8f0', fontSize: 22, fontWeight: 700 }}>
-          {gameDay.name ? `${gameDay.name}` : 'Game Day'}
-        </h1>
-        <div style={{ color: '#64748b', fontSize: 13 }}>
-          {new Date(schedule.roundRobin).toLocaleDateString(undefined, {
-            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-          })}
+      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <h1 style={{ margin: '0 0 4px', color: '#e2e8f0', fontSize: 22, fontWeight: 700 }}>
+            {gameDay.name ? `${gameDay.name}` : 'Game Day'}
+          </h1>
+          <div style={{ color: '#64748b', fontSize: 13 }}>
+            {new Date(schedule.roundRobin).toLocaleDateString(undefined, {
+              weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+            })}
+          </div>
         </div>
+        {isAdmin && phases.roundRobin.status === 'upcoming' && (
+          <button
+            onClick={() => navigate('/gamedays')}
+            style={{ ...ghostButtonStyle, fontSize: 13 }}
+          >
+            Edit
+          </button>
+        )}
       </div>
+
+      {/* Admin-only config panel */}
+      {isAdmin && (
+        <div style={{
+          ...cardStyle, marginBottom: 20,
+          border: '1px solid rgba(167,139,250,0.3)',
+          background: 'rgba(167,139,250,0.04)',
+        }}>
+          <div style={{ color: '#a78bfa', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
+            Admin Info
+          </div>
+          <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', fontSize: 13 }}>
+            <div>
+              <span style={{ color: '#64748b' }}>Auto-fill bracket: </span>
+              <span style={{ color: gameDay.autofill ? '#4ade80' : '#f87171', fontWeight: 600 }}>
+                {gameDay.autofill ? 'ON' : 'OFF'}
+              </span>
+            </div>
+            <div>
+              <span style={{ color: '#64748b' }}>Maps: </span>
+              <span style={{ color: '#e2e8f0' }}>
+                {gameDay.randomMaps
+                  ? 'Random maze per match'
+                  : (gameDay.forcedMapIds ?? []).length > 0
+                    ? (gameDay.forcedMapIds ?? []).map((id) => mapNameMap.get(id) ?? id).join(', ')
+                    : 'Random maze per match'}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Phase timeline */}
       <div style={{ ...cardStyle, marginBottom: 20 }}>
@@ -714,7 +763,7 @@ export default function GameDayPage() {
         <RosterSection
           gameDayId={gameDay.gameDayId}
           roster={gameDay.registeredTanks ?? []}
-          isAdmin={user?.isAdmin ?? false}
+          isAdmin={isAdmin}
           onChanged={reload}
         />
       )}

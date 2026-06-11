@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import Layout, { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
-import { getTank, deleteTank, withdrawRegistration, getRankings, listGameDays } from '../services/api';
-import type { Tank, TankVersion } from '../types';
+import { getTank, deleteTank, withdrawRegistration, getRankings, listGameDays, registerForGameDay, startMatch, listMaps, type OpponentSpec } from '../services/api';
+import type { Tank, TankVersion, GameDay, GameMap } from '../types';
 import ForkDialog from '../components/ForkDialog';
 import { useAuthStore } from '../store/authStore';
 
@@ -60,6 +60,140 @@ function StatPips({ value }: { value: number }) {
           background: i < value ? '#7c6af7' : '#2d2d4e',
         }} />
       ))}
+    </div>
+  );
+}
+
+type TestOpponent = 'scout' | 'bruiser' | 'ranger';
+
+const overlay: React.CSSProperties = {
+  position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+  display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
+};
+
+function GameDayPickerModal({
+  gameDays, loading, onSelect, onClose,
+}: {
+  gameDays: GameDay[];
+  loading: boolean;
+  onSelect: (gameDayId: string) => void;
+  onClose: () => void;
+}) {
+  const now = new Date();
+  const sorted = [...gameDays].sort((a, b) => {
+    return a.schedule.registrationClose < b.schedule.registrationClose ? -1 : 1;
+  });
+  return (
+    <div style={overlay}>
+      <div style={{ ...cardStyle, width: 440, maxHeight: '80vh', overflowY: 'auto' }}>
+        <h3 style={{ margin: '0 0 16px', color: '#e2e8f0' }}>Select Game Day</h3>
+        {loading ? (
+          <p style={{ color: '#64748b', fontSize: 13, margin: '0 0 16px' }}>Loading game days…</p>
+        ) : sorted.length === 0 ? (
+          <p style={{ color: '#64748b', fontSize: 13, margin: '0 0 16px' }}>No game days programmed yet.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+            {sorted.map((gd) => {
+              const isExpired = new Date(gd.schedule.final) < now;
+              const regClose = new Date(gd.schedule.registrationClose).toLocaleDateString(undefined, {
+                year: 'numeric', month: 'short', day: 'numeric',
+              });
+              const final = new Date(gd.schedule.final).toLocaleDateString(undefined, {
+                year: 'numeric', month: 'short', day: 'numeric',
+              });
+              return (
+                <button
+                  key={gd.gameDayId}
+                  onClick={isExpired ? undefined : () => onSelect(gd.gameDayId)}
+                  disabled={isExpired}
+                  style={{
+                    background: '#1a1a2e', border: '1px solid #2d2d4e', borderRadius: 6,
+                    color: isExpired ? '#4a5568' : '#e2e8f0',
+                    padding: '10px 14px', textAlign: 'left',
+                    cursor: isExpired ? 'default' : 'pointer',
+                    display: 'flex', flexDirection: 'column', gap: 4,
+                    opacity: isExpired ? 0.6 : 1,
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600 }}>
+                    {gd.name ?? final}
+                    {isExpired && (
+                      <span style={{ fontSize: 11, fontWeight: 400, color: '#64748b', background: '#2d2d4e', borderRadius: 4, padding: '1px 6px' }}>
+                        Completed
+                      </span>
+                    )}
+                  </span>
+                  <span style={{ fontSize: 12, color: '#64748b' }}>
+                    Registration closes {regClose} · Final {final}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={ghostButtonStyle}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TestDialog({
+  maps, loadingMaps, onTest, onClose,
+}: {
+  maps: GameMap[];
+  loadingMaps: boolean;
+  onTest: (opponent: TestOpponent, mapId: string | null) => void;
+  onClose: () => void;
+}) {
+  const [opponent, setOpponent] = useState<TestOpponent>('scout');
+  const [mapId, setMapId] = useState<string | null>(() => localStorage.getItem('tankmaze:lastMapId') ?? null);
+
+  function selectMap(id: string | null) {
+    setMapId(id);
+    if (id === null) localStorage.removeItem('tankmaze:lastMapId');
+    else localStorage.setItem('tankmaze:lastMapId', id);
+  }
+
+  return (
+    <div style={overlay}>
+      <div style={{ ...cardStyle, width: 420, maxHeight: '80vh', overflowY: 'auto' }}>
+        <h3 style={{ margin: '0 0 16px', color: '#e2e8f0' }}>Test vs AI</h3>
+        <div style={{ marginBottom: 16 }}>
+          <p style={{ margin: '0 0 8px', fontSize: 13, color: '#94a3b8' }}>Opponent</p>
+          {(['scout', 'bruiser', 'ranger'] as TestOpponent[]).map((op) => (
+            <label key={op} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, cursor: 'pointer' }}>
+              <input type="radio" name="td-opponent" value={op} checked={opponent === op} onChange={() => setOpponent(op)} />
+              <span style={{ color: '#e2e8f0', textTransform: 'capitalize', fontSize: 14 }}>{op}</span>
+            </label>
+          ))}
+        </div>
+        <div style={{ marginBottom: 20 }}>
+          <p style={{ margin: '0 0 8px', fontSize: 13, color: '#94a3b8' }}>Map</p>
+          {loadingMaps ? (
+            <span style={{ color: '#64748b', fontSize: 13 }}>Loading maps…</span>
+          ) : (
+            <>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, cursor: 'pointer' }}>
+                <input type="radio" name="td-map" value="" checked={mapId === null} onChange={() => selectMap(null)} />
+                <span style={{ color: '#e2e8f0', fontSize: 14 }}>Random (default)</span>
+              </label>
+              {maps.map((m) => (
+                <label key={m.mapId} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, cursor: 'pointer' }}>
+                  <input type="radio" name="td-map" value={m.mapId} checked={mapId === m.mapId} onChange={() => selectMap(m.mapId)} />
+                  <span style={{ color: '#e2e8f0', fontSize: 14 }}>{m.name}</span>
+                  <span style={{ color: '#64748b', fontSize: 12 }}>{m.description}</span>
+                </label>
+              ))}
+            </>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={ghostButtonStyle}>Cancel</button>
+          <button onClick={() => onTest(opponent, mapId)} style={primaryButtonStyle}>Launch Match</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -165,6 +299,16 @@ export default function TankDetail() {
   const [deleting, setDeleting] = useState(false);
   const [showDeregisterConfirm, setShowDeregisterConfirm] = useState(false);
   const [gameDayLabel, setGameDayLabel] = useState<string | null>(null);
+  // Register for Game Day
+  const [showGameDayPicker, setShowGameDayPicker] = useState(false);
+  const [gameDays, setGameDays] = useState<GameDay[]>([]);
+  const [loadingGameDays, setLoadingGameDays] = useState(false);
+  const [registering, setRegistering] = useState(false);
+  const [registerError, setRegisterError] = useState<string | null>(null);
+  // Test vs AI
+  const [showTestDialog, setShowTestDialog] = useState(false);
+  const [maps, setMaps] = useState<GameMap[]>([]);
+  const [loadingMaps, setLoadingMaps] = useState(false);
 
   useEffect(() => {
     if (!tankId) return;
@@ -179,6 +323,65 @@ export default function TankDetail() {
       })
       .catch(() => { /* rank unavailable — leave null */ });
   }, [tankId]);
+
+  async function openRegisterPicker() {
+    setShowGameDayPicker(true);
+    if (gameDays.length === 0) {
+      setLoadingGameDays(true);
+      listGameDays().then(setGameDays).catch(() => setGameDays([])).finally(() => setLoadingGameDays(false));
+    }
+  }
+
+  async function handleRegister(gameDayId: string) {
+    if (!tankId || !latestReadyMajorForActions) return;
+    setShowGameDayPicker(false);
+    setRegistering(true);
+    setRegisterError(null);
+    try {
+      await registerForGameDay(tankId, latestReadyMajorForActions.version, gameDayId);
+      const updated = await getTank(tankId);
+      setTank(updated);
+    } catch (e) {
+      setRegisterError(e instanceof Error ? e.message : 'Registration failed');
+    } finally {
+      setRegistering(false);
+    }
+  }
+
+  async function handleWithdraw() {
+    if (!tankId || !latestReadyMajorForActions?.registeredForGameDay) return;
+    setRegistering(true);
+    setRegisterError(null);
+    try {
+      await withdrawRegistration(tankId, latestReadyMajorForActions.version);
+      const updated = await getTank(tankId);
+      setTank(updated);
+    } catch (e) {
+      setRegisterError(e instanceof Error ? e.message : 'Withdraw failed');
+    } finally {
+      setRegistering(false);
+    }
+  }
+
+  async function openTestDialog() {
+    setShowTestDialog(true);
+    if (maps.length === 0) {
+      setLoadingMaps(true);
+      listMaps().then(setMaps).finally(() => setLoadingMaps(false));
+    }
+  }
+
+  async function handleTest(opponent: TestOpponent, mapId: string | null) {
+    if (!tankId || !latestReadyMajorForActions) return;
+    try {
+      const spec: OpponentSpec = { type: 'ai', name: opponent };
+      const match = await startMatch(tankId, latestReadyMajorForActions.version, spec, mapId ?? undefined);
+      navigate(`/watch?matchId=${match.matchId}`);
+    } catch (e) {
+      setRegisterError(e instanceof Error ? e.message : 'Failed to start match');
+      setShowTestDialog(false);
+    }
+  }
 
   if (loading) {
     return <Layout><div style={{ color: '#64748b', padding: '40px 0' }}>Loading…</div></Layout>;
@@ -203,6 +406,11 @@ export default function TankDetail() {
     });
 
   const latestReadyMajor = majors.find((v) => v.compileStatus === 'ready');
+  // For owner actions: a ready major version (compileStatus 'ready' or '' for public view).
+  const latestReadyMajorForActions = majors.find((v) => v.compileStatus === 'ready' || v.compileStatus === '');
+  const canRegister = isOwner && !!latestReadyMajorForActions;
+  const isRegistered = canRegister && !!latestReadyMajorForActions?.registeredForGameDay;
+  const canTest = isOwner && !!latestReadyMajorForActions;
 
   return (
     <Layout>
@@ -266,7 +474,23 @@ export default function TankDetail() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, flexShrink: 0, marginLeft: 16, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, flexShrink: 0, marginLeft: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+          {canTest && (
+            <button onClick={openTestDialog} style={ghostButtonStyle}>
+              Test vs AI
+            </button>
+          )}
+          {canRegister && (
+            isRegistered ? (
+              <button onClick={handleWithdraw} disabled={registering} style={ghostButtonStyle}>
+                {registering ? '…' : 'Withdraw Registration'}
+              </button>
+            ) : (
+              <button onClick={openRegisterPicker} disabled={registering} style={ghostButtonStyle}>
+                {registering ? '…' : 'Register for Game Day'}
+              </button>
+            )
+          )}
           {latestReadyMajor && !tank.scoreTransferredTo && (
             <button onClick={() => setShowFork(true)} style={ghostButtonStyle}>Fork</button>
           )}
@@ -342,6 +566,10 @@ export default function TankDetail() {
         ))
       )}
 
+      {registerError && (
+        <p style={{ color: '#f87171', fontSize: 13, margin: '0 0 12px' }}>{registerError}</p>
+      )}
+
       {showFork && tank && tankId && latestReadyMajor && (
         <ForkDialog
           tank={tank}
@@ -351,6 +579,24 @@ export default function TankDetail() {
             setShowFork(false);
             navigate(`/tanks/${newTankId}`);
           }}
+        />
+      )}
+
+      {showGameDayPicker && (
+        <GameDayPickerModal
+          gameDays={gameDays}
+          loading={loadingGameDays}
+          onSelect={handleRegister}
+          onClose={() => setShowGameDayPicker(false)}
+        />
+      )}
+
+      {showTestDialog && (
+        <TestDialog
+          maps={maps}
+          loadingMaps={loadingMaps}
+          onTest={(opponent, mapId) => { handleTest(opponent, mapId); setShowTestDialog(false); }}
+          onClose={() => setShowTestDialog(false)}
         />
       )}
 
