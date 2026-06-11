@@ -290,8 +290,10 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
       setErr('Version must be a major version (e.g. v1) — minor versions like v1.2 are not allowed.');
       return;
     }
-    // AI tanks (builtin-*) may appear more than once for bracket padding.
-    if (!manualId.trim().startsWith('builtin-') && roster.some((r) => r.tankId === manualId.trim())) {
+    // AI tanks (builtin-* in production, __*__ in localserver) may appear
+    // more than once for bracket padding — skip the duplicate guard for them.
+    const isAI = manualId.trim().startsWith('builtin-') || /^__\w+__$/.test(manualId.trim());
+    if (!isAI && roster.some((r) => r.tankId === manualId.trim())) {
       setErr('Tank is already registered for this game day.');
       return;
     }

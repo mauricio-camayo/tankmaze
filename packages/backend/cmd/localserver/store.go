@@ -412,6 +412,13 @@ func (s *memStore) deleteGameDay(gameDayID string) {
 	delete(s.gamedays, gameDayID)
 }
 
+// isAITankID reports whether tankID belongs to a built-in AI tank.
+// Production tanks use the "builtin-" prefix; localserver uses "__scout__" / "__bruiser__".
+func isAITankID(tankID string) bool {
+	return strings.HasPrefix(tankID, "builtin-") ||
+		tankID == "__scout__" || tankID == "__bruiser__"
+}
+
 func (s *memStore) addRosterEntry(gameDayID, tankID, version, tankName string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -419,8 +426,9 @@ func (s *memStore) addRosterEntry(gameDayID, tankID, version, tankName string) {
 	if !ok {
 		return
 	}
-	// AI tanks (builtin-*) may be added more than once; user tanks are deduplicated.
-	if !strings.HasPrefix(tankID, "builtin-") {
+	// AI tanks (builtin-* in production, __scout__/__bruiser__ in localserver)
+	// may be added more than once; user tanks are deduplicated.
+	if !isAITankID(tankID) {
 		for _, t := range gd.RegisteredTanks {
 			if t.TankID == tankID {
 				return

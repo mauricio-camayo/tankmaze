@@ -968,9 +968,10 @@ func (srv *server) addRosterEntry(w http.ResponseWriter, r *http.Request, gameDa
 		jsonErr(w, http.StatusUnprocessableEntity, "version must be a major version (e.g. v1)")
 		return
 	}
-	// AI tanks (builtin-*) may be added more than once so the bracket can be
-	// padded with multiple instances of the same bot.
-	if !strings.HasPrefix(body.TankID, "builtin-") {
+	// AI tanks (builtin-* in production, __scout__/__bruiser__ in localserver)
+	// may be added more than once so the bracket can be padded with multiple
+	// instances of the same bot.
+	if !isAITankID(body.TankID) {
 		for _, t := range gd.RegisteredTanks {
 			if t.TankID == body.TankID {
 				jsonErr(w, http.StatusConflict, "tank is already registered for this game day")
