@@ -54,6 +54,7 @@ function SlotCell({ slot }: { slot: BracketSlot }) {
     won: '#4ade80', lost: '#475569', both_lose: '#f87171', playing: '#fbbf24', bye: '#2d2d4e',
   };
   const color = statusColor[slot.status] ?? '#94a3b8';
+  const displayName = slot.tankId ? (slot.tankName ?? slot.tankId) : null;
 
   return (
     <div style={{
@@ -64,7 +65,7 @@ function SlotCell({ slot }: { slot: BracketSlot }) {
     }}>
       {slot.tankId ? (
         <Link to={`/tanks/${slot.tankId}`} style={{ color, textDecoration: 'none' }}>
-          …{slot.tankId.slice(-8)}
+          {displayName}
           {slot.version && <span style={{ color: '#475569', marginLeft: 6 }}>@ {slot.version}</span>}
         </Link>
       ) : (
@@ -104,6 +105,11 @@ function BracketRound({ name, slots }: { name: string; slots: BracketSlot[] }) {
 }
 
 function GroupCard({ group, gi, placementPoints }: { group: GameDayGroup; gi: number; placementPoints: Record<string, number> }) {
+  // Build a name map from standings (populated after round-robin) or tanks list.
+  const nameMap = new Map<string, string>();
+  group.tanks.forEach(({ tankId, tankName }) => { if (tankName) nameMap.set(tankId, tankName); });
+  group.standings?.forEach(({ tankId, tankName }) => { if (tankName) nameMap.set(tankId, tankName); });
+
   return (
     <div>
       <div style={{ color: '#475569', fontSize: 11, marginBottom: 6 }}>
@@ -116,7 +122,7 @@ function GroupCard({ group, gi, placementPoints }: { group: GameDayGroup; gi: nu
             padding: '4px 8px', borderRadius: 4, background: '#0f0f1a',
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           }}>
-            <span>…{tankId.slice(-8)}</span>
+            <span>{nameMap.get(tankId) ?? tankId}</span>
             {placementPoints[tankId] !== undefined && (
               <span style={{ color: '#a78bfa', fontSize: 12, fontWeight: 600 }}>
                 +{placementPoints[tankId]} pts
@@ -128,7 +134,7 @@ function GroupCard({ group, gi, placementPoints }: { group: GameDayGroup; gi: nu
           <div style={{ marginTop: 6, fontSize: 11, color: '#475569' }}>
             {group.standings.map((s) => (
               <div key={s.tankId} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 8px' }}>
-                <span>…{s.tankId.slice(-8)}</span>
+                <span>{nameMap.get(s.tankId) ?? s.tankId}</span>
                 <span>{s.wins}W / {s.losses}L</span>
               </div>
             ))}
@@ -520,6 +526,19 @@ export default function GameDayPage() {
       return order.indexOf(a) - order.indexOf(b);
     });
 
+  // Build a tank-name lookup from group membership (populated at registration_close).
+  const tankNameMap = new Map<string, string>();
+  (gameDay.registeredTanks ?? []).forEach(({ tankId, tankName }) => {
+    if (tankName) tankNameMap.set(tankId, tankName);
+  });
+  (gameDay.groups ?? []).forEach((g) => {
+    g.tanks.forEach(({ tankId, tankName }) => { if (tankName) tankNameMap.set(tankId, tankName); });
+    g.standings?.forEach(({ tankId, tankName }) => { if (tankName) tankNameMap.set(tankId, tankName); });
+  });
+  Object.values(gameDay.bracket ?? {}).forEach((slots) => {
+    slots.forEach(({ tankId, tankName }) => { if (tankId && tankName) tankNameMap.set(tankId, tankName); });
+  });
+
   const standings = Object.entries(gameDay.placementPoints ?? {}).sort(([, a], [, b]) => b - a);
   const showGroups = (gameDay.groups ?? []).length > 0;
   const showBracket = bracketRounds.length > 0;
@@ -653,7 +672,7 @@ export default function GameDayPage() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ color: rankColor(i + 1), fontSize: 13, fontWeight: 700, width: 20 }}>{i + 1}</span>
                       <Link to={`/tanks/${tankId}`} style={{ color: '#94a3b8', fontSize: 13, textDecoration: 'none' }}>
-                        …{tankId.slice(-8)}
+                        {tankNameMap.get(tankId) ?? tankId}
                       </Link>
                     </div>
                     <span style={{ color: '#a78bfa', fontWeight: 600, fontSize: 13 }}>+{pts} pts</span>

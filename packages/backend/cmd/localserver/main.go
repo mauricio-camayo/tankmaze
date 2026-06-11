@@ -964,7 +964,21 @@ func (srv *server) addRosterEntry(w http.ResponseWriter, r *http.Request, gameDa
 		jsonErr(w, http.StatusBadRequest, "tankId and version are required")
 		return
 	}
-	srv.store.addRosterEntry(gameDayID, body.TankID, body.Version)
+	if _, _, isMajor, ok := parseVersion(body.Version); !ok || !isMajor {
+		jsonErr(w, http.StatusUnprocessableEntity, "version must be a major version (e.g. v1)")
+		return
+	}
+	for _, t := range gd.RegisteredTanks {
+		if t.TankID == body.TankID {
+			jsonErr(w, http.StatusConflict, "tank is already registered for this game day")
+			return
+		}
+	}
+	tankName := ""
+	if t, err := srv.store.getTank(body.TankID); err == nil {
+		tankName = t.Name
+	}
+	srv.store.addRosterEntry(gameDayID, body.TankID, body.Version, tankName)
 	w.WriteHeader(http.StatusNoContent)
 }
 

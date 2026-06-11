@@ -411,7 +411,7 @@ func (s *memStore) deleteGameDay(gameDayID string) {
 	delete(s.gamedays, gameDayID)
 }
 
-func (s *memStore) addRosterEntry(gameDayID, tankID, version string) {
+func (s *memStore) addRosterEntry(gameDayID, tankID, version, tankName string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	gd, ok := s.gamedays[gameDayID]
@@ -423,7 +423,7 @@ func (s *memStore) addRosterEntry(gameDayID, tankID, version string) {
 			return
 		}
 	}
-	gd.RegisteredTanks = append(gd.RegisteredTanks, db.MatchTank{TankID: tankID, Version: version})
+	gd.RegisteredTanks = append(gd.RegisteredTanks, db.MatchTank{TankID: tankID, Version: version, TankName: tankName})
 	s.gamedays[gameDayID] = gd
 }
 

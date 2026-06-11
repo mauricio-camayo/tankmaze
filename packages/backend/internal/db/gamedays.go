@@ -196,7 +196,7 @@ func (s *Store) UpdateGameDay(ctx context.Context, gameDayID string, u GameDayUp
 
 // AddRosterEntry appends a tank/version to the game day roster. A no-op if the
 // tank is already present. Returns ErrNotFound if the game day doesn't exist.
-func (s *Store) AddRosterEntry(ctx context.Context, gameDayID, tankID, version string) error {
+func (s *Store) AddRosterEntry(ctx context.Context, gameDayID, tankID, version, tankName string) error {
 	gd, err := s.GetGameDay(ctx, gameDayID)
 	if err != nil {
 		return err
@@ -206,7 +206,7 @@ func (s *Store) AddRosterEntry(ctx context.Context, gameDayID, tankID, version s
 			return nil
 		}
 	}
-	gd.RegisteredTanks = append(gd.RegisteredTanks, MatchTank{TankID: tankID, Version: version})
+	gd.RegisteredTanks = append(gd.RegisteredTanks, MatchTank{TankID: tankID, Version: version, TankName: tankName})
 	return s.PutGameDay(ctx, gd)
 }
 

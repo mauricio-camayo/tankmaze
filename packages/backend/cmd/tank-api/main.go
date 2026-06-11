@@ -1447,7 +1447,19 @@ func (h *handler) addRosterEntry(ctx context.Context, req events.APIGatewayV2HTT
 	if err := json.Unmarshal([]byte(req.Body), &body); err != nil || body.TankID == "" || body.Version == "" {
 		return errResp(http.StatusBadRequest, "tankId and version are required"), nil
 	}
-	if err := h.store.AddRosterEntry(ctx, gameDayID, body.TankID, body.Version); err != nil {
+	if _, _, isMajor, ok := parseVersion(body.Version); !ok || !isMajor {
+		return errResp(http.StatusUnprocessableEntity, "version must be a major version (e.g. v1)"), nil
+	}
+	for _, t := range gd.RegisteredTanks {
+		if t.TankID == body.TankID {
+			return errResp(http.StatusConflict, "tank is already registered for this game day"), nil
+		}
+	}
+	tankName := ""
+	if t, err := h.store.GetTank(ctx, body.TankID); err == nil {
+		tankName = t.Name
+	}
+	if err := h.store.AddRosterEntry(ctx, gameDayID, body.TankID, body.Version, tankName); err != nil {
 		log.Printf("add roster entry gameday=%s tank=%s: %v", gameDayID, body.TankID, err)
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}

@@ -187,7 +187,7 @@ func (h *handler) handleRegistrationClose(ctx context.Context, gd db.GameDay) er
 
 	tanks := make([]db.MatchTank, len(entries))
 	for i, e := range entries {
-		tanks[i] = db.MatchTank{TankID: e.tank.TankID, Version: e.version.Version}
+		tanks[i] = db.MatchTank{TankID: e.tank.TankID, Version: e.version.Version, TankName: e.tank.Name}
 	}
 
 	if gd.Autofill && h.scoutTankID != "" && h.bruiserTankID != "" {
@@ -195,9 +195,16 @@ func (h *handler) handleRegistrationClose(ctx context.Context, gd db.GameDay) er
 		if target < 8 {
 			target = 8
 		}
+		scoutName, bruiserName := "Scout", "Bruiser"
+		if t, err := h.store.GetTank(ctx, h.scoutTankID); err == nil {
+			scoutName = t.Name
+		}
+		if t, err := h.store.GetTank(ctx, h.bruiserTankID); err == nil {
+			bruiserName = t.Name
+		}
 		bots := []db.MatchTank{
-			{TankID: h.scoutTankID, Version: h.scoutVersion},
-			{TankID: h.bruiserTankID, Version: h.bruiserVersion},
+			{TankID: h.scoutTankID, Version: h.scoutVersion, TankName: scoutName},
+			{TankID: h.bruiserTankID, Version: h.bruiserVersion, TankName: bruiserName},
 		}
 		for i := 0; len(tanks) < target; i++ {
 			tanks = append(tanks, bots[i%len(bots)])
@@ -242,7 +249,7 @@ func (h *handler) handleRoundRobin(ctx context.Context, gd db.GameDay) error {
 	for i, tanks := range grouped {
 		standings := make([]db.GroupStanding, len(tanks))
 		for j, t := range tanks {
-			standings[j] = db.GroupStanding{TankID: t.TankID, Version: t.Version}
+			standings[j] = db.GroupStanding{TankID: t.TankID, Version: t.Version, TankName: t.TankName}
 		}
 		groups[i] = db.Group{
 			GroupID:   newUUID(),
@@ -344,9 +351,10 @@ func (h *handler) handleEliminationR1(ctx context.Context, gd db.GameDay) error 
 	for pos, seed := range order {
 		if seed <= n {
 			slots[pos] = db.BracketSlot{
-				TankID:  qualifiers[seed-1].TankID,
-				Version: qualifiers[seed-1].Version,
-				Status:  "playing",
+				TankID:   qualifiers[seed-1].TankID,
+				Version:  qualifiers[seed-1].Version,
+				Status:   "playing",
+				TankName: qualifiers[seed-1].TankName,
 			}
 		} else {
 			slots[pos] = db.BracketSlot{Status: "bye"}
@@ -580,7 +588,7 @@ func winnerSlot(a, b db.BracketSlot) db.BracketSlot {
 	aReal := a.TankID != ""
 	bReal := b.TankID != ""
 	adv := func(s db.BracketSlot) db.BracketSlot {
-		return db.BracketSlot{TankID: s.TankID, Version: s.Version, Status: "playing"}
+		return db.BracketSlot{TankID: s.TankID, Version: s.Version, Status: "playing", TankName: s.TankName}
 	}
 	switch {
 	case !aReal && !bReal:
@@ -771,11 +779,12 @@ func computeGroupStandings(tanks []db.MatchTank, matches []db.Match) []db.GroupS
 	for i, t := range tanks {
 		s := sm[t.TankID]
 		standings[i] = db.GroupStanding{
-			TankID:  t.TankID,
-			Version: t.Version,
-			Wins:    s.wins,
-			Losses:  s.losses,
-			Points:  s.points,
+			TankID:   t.TankID,
+			Version:  t.Version,
+			TankName: t.TankName,
+			Wins:     s.wins,
+			Losses:   s.losses,
+			Points:   s.points,
 		}
 	}
 	return standings
@@ -831,7 +840,7 @@ func qualifyTanks(groups []db.Group, matches []db.Match, totalTanks int) []db.Ma
 			advN = (n * 2) / 3
 		}
 		for _, a := range aug[:advN] {
-			qualified = append(qualified, db.MatchTank{TankID: a.TankID, Version: a.Version})
+			qualified = append(qualified, db.MatchTank{TankID: a.TankID, Version: a.Version, TankName: a.TankName})
 		}
 	}
 	return qualified

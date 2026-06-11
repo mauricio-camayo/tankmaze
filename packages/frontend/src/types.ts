@@ -99,12 +99,14 @@ export interface GameDayPhaseStatus {
 export interface BracketSlot {
   tankId: string | null;
   version: string | null;
+  tankName?: string;
   status: 'playing' | 'won' | 'lost' | 'both_lose' | 'bye';
 }
 
 export interface GroupStanding {
   tankId: string;
   version: string;
+  tankName?: string;
   wins: number;
   losses: number;
   points: number;
@@ -112,7 +114,7 @@ export interface GroupStanding {
 
 export interface GameDayGroup {
   groupId: string;
-  tanks: Array<{ tankId: string; version: string }>;
+  tanks: Array<{ tankId: string; version: string; tankName?: string }>;
   standings?: GroupStanding[];
 }
 
@@ -130,7 +132,7 @@ export interface GameDay {
     elimination?: Record<string, GameDayPhaseStatus>;
     final: GameDayPhaseStatus;
   };
-  registeredTanks?: Array<{ tankId: string; version: string }>;
+  registeredTanks?: Array<{ tankId: string; version: string; tankName?: string }>;
   groups?: GameDayGroup[];
   bracket: Record<string, BracketSlot[]>;
   placementPoints: Record<string, number>;

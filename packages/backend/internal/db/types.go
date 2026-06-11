@@ -76,8 +76,9 @@ type VersionStats struct {
 
 // MatchTank identifies the tank and version in one side of a match.
 type MatchTank struct {
-	TankID  string `dynamodbav:"tankId"  json:"tankId"`
-	Version string `dynamodbav:"version" json:"version"`
+	TankID   string `dynamodbav:"tankId"             json:"tankId"`
+	Version  string `dynamodbav:"version"            json:"version"`
+	TankName string `dynamodbav:"tankName,omitempty" json:"tankName,omitempty"`
 }
 
 // MatchResult is the outcome map written when a match ends.
@@ -142,18 +143,20 @@ type GameDaySchedule struct {
 
 // BracketSlot is one tank's slot in the elimination bracket.
 type BracketSlot struct {
-	TankID  string `dynamodbav:"tankId"  json:"tankId"`
-	Version string `dynamodbav:"version" json:"version"`
-	Status  string `dynamodbav:"status"  json:"status"`
+	TankID   string `dynamodbav:"tankId"             json:"tankId"`
+	Version  string `dynamodbav:"version"            json:"version"`
+	Status   string `dynamodbav:"status"             json:"status"`
+	TankName string `dynamodbav:"tankName,omitempty" json:"tankName,omitempty"`
 }
 
 // GroupStanding is one tank's record within a round-robin group.
 type GroupStanding struct {
-	TankID  string `dynamodbav:"tankId"  json:"tankId"`
-	Version string `dynamodbav:"version" json:"version"`
-	Wins    int    `dynamodbav:"wins"    json:"wins"`
-	Losses  int    `dynamodbav:"losses"  json:"losses"`
-	Points  int    `dynamodbav:"points"  json:"points"`
+	TankID   string `dynamodbav:"tankId"             json:"tankId"`
+	Version  string `dynamodbav:"version"            json:"version"`
+	TankName string `dynamodbav:"tankName,omitempty" json:"tankName,omitempty"`
+	Wins     int    `dynamodbav:"wins"               json:"wins"`
+	Losses   int    `dynamodbav:"losses"             json:"losses"`
+	Points   int    `dynamodbav:"points"             json:"points"`
 }
 
 // Group is one round-robin group within a Game Day.
