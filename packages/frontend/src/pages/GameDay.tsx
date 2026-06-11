@@ -17,6 +17,7 @@ function PhaseBadge({ status }: { status: GameDayPhaseStatus['status'] }) {
     upcoming: ['#fbbf24', 'rgba(251,191,36,0.1)'],
     running: ['#4ade80', 'rgba(74,222,128,0.1)'],
     complete: ['#475569', 'rgba(71,85,105,0.1)'],
+    cancelled: ['#f87171', 'rgba(248,113,113,0.1)'],
   };
   const [fg, bg] = styles[status] ?? ['#94a3b8', 'transparent'];
   return (
@@ -536,7 +537,9 @@ export default function GameDayPage() {
     (!phases.elimination || Object.values(phases.elimination).every((p) => p.status === 'upcoming'));
   const registrationClosed = Date.now() > new Date(schedule.registrationClose).getTime();
   const noRegisteredTanks = (gameDay.registeredTanks ?? []).length === 0;
-  const silentlySkipped = allPhasesCancelled || (allPhasesUpcoming && registrationClosed && noRegisteredTanks);
+  // Only show the "no tanks" banner when the roster was genuinely empty — not just because
+  // the scheduler cancelled after an earlier run with real participants.
+  const silentlySkipped = (allPhasesCancelled && noRegisteredTanks) || (allPhasesUpcoming && registrationClosed && noRegisteredTanks);
 
   // Detect completed tournament with no ranking data.
   const finalComplete = phases.final.status === 'complete';
