@@ -237,7 +237,7 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
         setErr(`No promoted version found for ${label} — promote a version before adding to roster.`);
       } else {
         setMajorVersions(majors);
-        setManualVer(majors[0]); // majors[0] is the latest (API returns newest-first)
+        setManualVer(majors[majors.length - 1]); // last entry is the highest major version
       }
     } catch (e) {
       setErr(`Could not fetch versions: ${e instanceof Error ? e.message : 'unknown error'}`);
@@ -462,7 +462,7 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
                   onChange={(e) => setManualVer(e.target.value)}
                   style={{ ...inpStyle, cursor: 'pointer' }}
                 >
-                  {majorVersions.map((v) => (
+                  {[...majorVersions].reverse().map((v) => (
                     <option key={v} value={v}>{v}</option>
                   ))}
                 </select>
