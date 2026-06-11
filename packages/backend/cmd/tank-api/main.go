@@ -1450,9 +1450,13 @@ func (h *handler) addRosterEntry(ctx context.Context, req events.APIGatewayV2HTT
 	if _, _, isMajor, ok := parseVersion(body.Version); !ok || !isMajor {
 		return errResp(http.StatusUnprocessableEntity, "version must be a major version (e.g. v1)"), nil
 	}
-	for _, t := range gd.RegisteredTanks {
-		if t.TankID == body.TankID {
-			return errResp(http.StatusConflict, "tank is already registered for this game day"), nil
+	// AI tanks (builtin-*) may be added more than once so the bracket can be
+	// padded with multiple instances of the same bot.
+	if !strings.HasPrefix(body.TankID, "builtin-") {
+		for _, t := range gd.RegisteredTanks {
+			if t.TankID == body.TankID {
+				return errResp(http.StatusConflict, "tank is already registered for this game day"), nil
+			}
 		}
 	}
 	tankName := ""

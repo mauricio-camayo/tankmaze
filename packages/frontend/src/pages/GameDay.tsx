@@ -290,7 +290,8 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
       setErr('Version must be a major version (e.g. v1) — minor versions like v1.2 are not allowed.');
       return;
     }
-    if (roster.some((r) => r.tankId === manualId.trim())) {
+    // AI tanks (builtin-*) may appear more than once for bracket padding.
+    if (!manualId.trim().startsWith('builtin-') && roster.some((r) => r.tankId === manualId.trim())) {
       setErr('Tank is already registered for this game day.');
       return;
     }
@@ -335,12 +336,12 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
         <p style={{ color: '#475569', fontSize: 13, margin: 0 }}>No tanks registered yet.</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {roster.map(({ tankId, version }) => {
+          {roster.map(({ tankId, version }, idx) => {
             const info = tankInfo.get(tankId);
             const name = info?.name ?? `…${tankId.slice(-8)}`;
             const author = info?.authorName ?? null;
             return (
-              <div key={tankId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #1a1a2e' }}>
+              <div key={`${tankId}-${idx}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #1a1a2e' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <Link to={`/tanks/${tankId}`} style={{ color: '#e2e8f0', fontSize: 13, textDecoration: 'none', fontWeight: 500 }}>
                     {name}
@@ -389,7 +390,6 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
               <div style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>AI Tanks</div>
               {aiTanks.map((t) => {
                 const ver = t.versions[0]?.version ?? 'v0.1';
-                const alreadyAdded = roster.some((r) => r.tankId === t.tankId);
                 return (
                   <div key={t.tankId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                     <span style={{ color: '#e2e8f0', fontSize: 13 }}>
@@ -397,10 +397,10 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
                     </span>
                     <button
                       onClick={() => addAi(t.tankId, ver)}
-                      disabled={busy === t.tankId || alreadyAdded}
-                      style={{ ...primaryButtonStyle, fontSize: 11, padding: '2px 10px', opacity: alreadyAdded ? 0.4 : 1 }}
+                      disabled={busy === t.tankId}
+                      style={{ ...primaryButtonStyle, fontSize: 11, padding: '2px 10px' }}
                     >
-                      {alreadyAdded ? 'Added' : busy === t.tankId ? '…' : 'Add'}
+                      {busy === t.tankId ? '…' : 'Add'}
                     </button>
                   </div>
                 );

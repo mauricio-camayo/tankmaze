@@ -2,6 +2,7 @@ package main
 
 import (
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/tankmaze/backend/internal/db"
@@ -418,9 +419,12 @@ func (s *memStore) addRosterEntry(gameDayID, tankID, version, tankName string) {
 	if !ok {
 		return
 	}
-	for _, t := range gd.RegisteredTanks {
-		if t.TankID == tankID {
-			return
+	// AI tanks (builtin-*) may be added more than once; user tanks are deduplicated.
+	if !strings.HasPrefix(tankID, "builtin-") {
+		for _, t := range gd.RegisteredTanks {
+			if t.TankID == tankID {
+				return
+			}
 		}
 	}
 	gd.RegisteredTanks = append(gd.RegisteredTanks, db.MatchTank{TankID: tankID, Version: version, TankName: tankName})

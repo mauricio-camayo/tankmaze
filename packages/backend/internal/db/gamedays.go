@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -194,16 +195,22 @@ func (s *Store) UpdateGameDay(ctx context.Context, gameDayID string, u GameDayUp
 	return s.PutGameDay(ctx, gd)
 }
 
-// AddRosterEntry appends a tank/version to the game day roster. A no-op if the
-// tank is already present. Returns ErrNotFound if the game day doesn't exist.
+// AddRosterEntry appends a tank/version to the game day roster. For user tanks
+// it is a no-op if the tank is already present. AI tanks (tankID starting with
+// "builtin-") may appear more than once so that auto-fill can pad a bracket
+// with multiple instances of the same bot. Returns ErrNotFound if the game day
+// doesn't exist.
 func (s *Store) AddRosterEntry(ctx context.Context, gameDayID, tankID, version, tankName string) error {
+	isAI := strings.HasPrefix(tankID, "builtin-")
 	gd, err := s.GetGameDay(ctx, gameDayID)
 	if err != nil {
 		return err
 	}
-	for _, t := range gd.RegisteredTanks {
-		if t.TankID == tankID {
-			return nil
+	if !isAI {
+		for _, t := range gd.RegisteredTanks {
+			if t.TankID == tankID {
+				return nil
+			}
 		}
 	}
 	gd.RegisteredTanks = append(gd.RegisteredTanks, MatchTank{TankID: tankID, Version: version, TankName: tankName})
