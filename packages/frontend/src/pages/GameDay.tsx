@@ -179,6 +179,7 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
   const [showDropdown, setShowDropdown] = useState(false);
   const [manualId, setManualId] = useState('');
   const [manualVer, setManualVer] = useState('');
+  const [majorVersions, setMajorVersions] = useState<string[]>([]);
   const [verLoading, setVerLoading] = useState(false);
   const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -221,29 +222,35 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
     }, 200);
   }
 
+  async function fetchVersionsFor(tankId: string, displayName?: string) {
+    setVerLoading(true);
+    setManualVer('');
+    setMajorVersions([]);
+    setErr(null);
+    try {
+      const full = await getTank(tankId);
+      const majors = full.versions
+        .filter((v) => v.versionType === 'major' && isUsable(v))
+        .map((v) => v.version);
+      if (majors.length === 0) {
+        const label = displayName ?? tankId;
+        setErr(`No promoted version found for ${label} — promote a version before adding to roster.`);
+      } else {
+        setMajorVersions(majors);
+        setManualVer(majors[0]); // majors[0] is the latest (API returns newest-first)
+      }
+    } catch (e) {
+      setErr(`Could not fetch versions: ${e instanceof Error ? e.message : 'unknown error'}`);
+    } finally {
+      setVerLoading(false);
+    }
+  }
+
   async function selectTank(tank: Tank) {
     setSearchQuery(tank.name);
     setManualId(tank.tankId);
     setShowDropdown(false);
-    setErr(null);
-    // Auto-fetch latest major version
-    setVerLoading(true);
-    setManualVer('');
-    try {
-      const full = await getTank(tank.tankId);
-      const majors = full.versions.filter((v) => v.versionType === 'major' && isUsable(v));
-      if (majors.length === 0) {
-        setErr(`No promoted version found for ${tank.name} — promote a version before adding to roster.`);
-        setManualVer('');
-      } else {
-        setManualVer(latestMajorVersion(full.versions));
-      }
-    } catch (e) {
-      setErr(`Could not fetch version for ${tank.name}: ${e instanceof Error ? e.message : 'unknown error'}`);
-      setManualVer('');
-    } finally {
-      setVerLoading(false);
-    }
+    await fetchVersionsFor(tank.tankId, tank.name);
   }
 
   async function handleRemove(tankId: string) {
@@ -272,6 +279,14 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
 
   async function addManual() {
     if (!manualId.trim() || !manualVer.trim()) return;
+    if (!/^v\d+$/.test(manualVer.trim())) {
+      setErr('Version must be a major version (e.g. v1) — minor versions like v1.2 are not allowed.');
+      return;
+    }
+    if (roster.some((r) => r.tankId === manualId.trim())) {
+      setErr('Tank is already registered for this game day.');
+      return;
+    }
     setBusy('manual');
     setErr(null);
     try {
@@ -279,6 +294,7 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
       setSearchQuery('');
       setManualId('');
       setManualVer('');
+      setMajorVersions([]);
       onChanged();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed');
@@ -430,24 +446,38 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
               <div style={{ color: '#64748b', fontSize: 10, marginBottom: 2 }}>Tank ID</div>
               <input
                 value={manualId}
-                onChange={(e) => { setManualId(e.target.value); setSearchQuery(''); }}
+                onChange={(e) => { setManualId(e.target.value); setSearchQuery(''); setMajorVersions([]); setManualVer(''); }}
+                onBlur={(e) => { const id = e.target.value.trim(); if (id && majorVersions.length === 0) fetchVersionsFor(id); }}
                 placeholder="tank-uuid"
                 style={inpStyle}
               />
             </div>
             <div>
               <div style={{ color: '#64748b', fontSize: 10, marginBottom: 2 }}>Version</div>
-              <input
-                value={verLoading ? '…' : manualVer}
-                onChange={(e) => setManualVer(e.target.value)}
-                placeholder="v1"
-                disabled={verLoading}
-                style={{ ...inpStyle, opacity: verLoading ? 0.6 : 1 }}
-              />
+              {verLoading ? (
+                <div style={{ ...inpStyle, color: '#475569' }}>…</div>
+              ) : majorVersions.length > 0 ? (
+                <select
+                  value={manualVer}
+                  onChange={(e) => setManualVer(e.target.value)}
+                  style={{ ...inpStyle, cursor: 'pointer' }}
+                >
+                  {majorVersions.map((v) => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  value={manualVer}
+                  disabled
+                  placeholder="select a tank first"
+                  style={{ ...inpStyle, opacity: 0.4, cursor: 'not-allowed' }}
+                />
+              )}
             </div>
             <button
               onClick={addManual}
-              disabled={busy === 'manual' || !manualId.trim() || !manualVer.trim() || verLoading}
+              disabled={busy === 'manual' || !manualId.trim() || !manualVer.trim() || verLoading || majorVersions.length === 0}
               style={{ ...primaryButtonStyle, fontSize: 11, padding: '4px 12px' }}
             >
               {busy === 'manual' ? '…' : 'Add'}
