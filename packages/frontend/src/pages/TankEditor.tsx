@@ -83,8 +83,11 @@ function stripPreamble(src: string): string {
       return src.slice(closeIdx + closeMarker.length);
     }
   }
-  // Fallback: no Config block found — strip only the package/import header by
-  // finding the earliest top-level declaration token.
+  // Fallback: no Config block found — if the source already starts with a
+  // top-level declaration it's a body-only string (e.g. from localStorage);
+  // return it as-is so leading var/const/type declarations are never dropped.
+  if (/^(var |const |type |func )/.test(src)) return src;
+  // Otherwise strip the package/import header by finding the earliest token.
   const idx = Math.min(
     ...['\n\nfunc ', '\n\nvar ', '\n\nconst ', '\n\ntype '].map(t => {
       const i = src.indexOf(t);
