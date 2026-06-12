@@ -66,9 +66,25 @@ ${body}`;
 }
 
 // Strip the locked preamble from sources loaded from S3 or old localStorage values.
-// Searches for the earliest top-level declaration token so that package-level
-// var/const/type blocks that precede the first func are preserved.
+// When the source contains the full preamble (package tank + import + var Config
+// block), skip past the closing "}\n\n" of the var Config block so the Config
+// declaration is not leaked into the editable body. For preamble-free bodies that
+// start with user-declared var/const/type blocks (e.g. Scout's var block), those
+// declarations are preserved because we never reach the fallback path.
 function stripPreamble(src: string): string {
+  // Fast path: full preamble produced by buildSource always contains this marker.
+  const configMarker = '\n\nvar Config = TankConfig{';
+  const configStart = src.indexOf(configMarker);
+  if (configStart >= 0) {
+    // Find the standalone closing brace (at start of line) followed by \n\n.
+    const closeMarker = '\n}\n\n';
+    const closeIdx = src.indexOf(closeMarker, configStart);
+    if (closeIdx >= 0) {
+      return src.slice(closeIdx + closeMarker.length);
+    }
+  }
+  // Fallback: no Config block found — strip only the package/import header by
+  // finding the earliest top-level declaration token.
   const idx = Math.min(
     ...['\n\nfunc ', '\n\nvar ', '\n\nconst ', '\n\ntype '].map(t => {
       const i = src.indexOf(t);
