@@ -104,43 +104,94 @@ function BracketRound({ name, slots }: { name: string; slots: BracketSlot[] }) {
   );
 }
 
-function GroupCard({ group, gi, placementPoints }: { group: GameDayGroup; gi: number; placementPoints: Record<string, number> }) {
-  // Build a name map from standings (populated after round-robin) or tanks list.
+function RRStandingsTable({ group, gi, placementPoints }: {
+  group: GameDayGroup; gi: number; placementPoints: Record<string, number>;
+}) {
   const nameMap = new Map<string, string>();
   group.tanks.forEach(({ tankId, tankName }) => { if (tankName) nameMap.set(tankId, tankName); });
   group.standings?.forEach(({ tankId, tankName }) => { if (tankName) nameMap.set(tankId, tankName); });
 
+  const label = `Group ${String.fromCharCode(65 + gi)}`;
+  const groupLabel = (
+    <div style={{ color: '#475569', fontSize: 11, marginBottom: 8 }}>{label}</div>
+  );
+
+  const hasStandings = (group.standings ?? []).length > 0;
+
+  if (!hasStandings) {
+    return (
+      <div>
+        {groupLabel}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {group.tanks.map(({ tankId }) => (
+            <Link key={tankId} to={`/tanks/${tankId}`} style={{
+              color: '#94a3b8', fontSize: 13, textDecoration: 'none',
+              padding: '4px 8px', borderRadius: 4, background: '#0f0f1a',
+            }}>
+              {nameMap.get(tankId) ?? tankId}
+            </Link>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const rows = [...group.standings!].sort((a, b) => b.points - a.points || b.wins - a.wins);
+
+  const thStyle: React.CSSProperties = {
+    color: '#64748b', fontSize: 10, fontWeight: 600, textTransform: 'uppercase',
+    letterSpacing: '0.05em', padding: '0 8px 8px', borderBottom: '1px solid #2d2d4e',
+  };
+  const tdStyle: React.CSSProperties = {
+    padding: '6px 8px', borderBottom: '1px solid #1a1a2e', verticalAlign: 'middle',
+  };
+
   return (
     <div>
-      <div style={{ color: '#475569', fontSize: 11, marginBottom: 6 }}>
-        Group {String.fromCharCode(65 + gi)}
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {group.tanks.map(({ tankId }) => (
-          <Link key={tankId} to={`/tanks/${tankId}`} style={{
-            color: '#94a3b8', fontSize: 13, textDecoration: 'none',
-            padding: '4px 8px', borderRadius: 4, background: '#0f0f1a',
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          }}>
-            <span>{nameMap.get(tankId) ?? tankId}</span>
-            {placementPoints[tankId] !== undefined && (
-              <span style={{ color: '#a78bfa', fontSize: 12, fontWeight: 600 }}>
-                +{placementPoints[tankId]} pts
-              </span>
-            )}
-          </Link>
-        ))}
-        {group.standings && group.standings.length > 0 && (
-          <div style={{ marginTop: 6, fontSize: 11, color: '#475569' }}>
-            {group.standings.map((s) => (
-              <div key={s.tankId} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 8px' }}>
-                <span>{nameMap.get(s.tankId) ?? s.tankId}</span>
-                <span>{s.wins}W / {s.losses}L</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      {groupLabel}
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr>
+            <th style={{ ...thStyle, textAlign: 'center', width: 28 }}>#</th>
+            <th style={{ ...thStyle, textAlign: 'left' }}>Tank</th>
+            <th style={{ ...thStyle, textAlign: 'center', width: 40 }}>Pts</th>
+            <th style={{ ...thStyle, textAlign: 'center', width: 32 }}>W</th>
+            <th style={{ ...thStyle, textAlign: 'center', width: 32 }}>L</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((s, i) => {
+            const name = nameMap.get(s.tankId) ?? s.tankId;
+            const placement = placementPoints[s.tankId];
+            return (
+              <tr key={s.tankId}>
+                <td style={{ ...tdStyle, textAlign: 'center' }}>
+                  <span style={{ color: rankColor(i + 1), fontWeight: 700, fontSize: 13 }}>{i + 1}</span>
+                </td>
+                <td style={tdStyle}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Link to={`/tanks/${s.tankId}`} style={{ color: '#e2e8f0', fontSize: 13, textDecoration: 'none' }}>
+                      {name}
+                    </Link>
+                    {placement !== undefined && (
+                      <span style={{ color: '#a78bfa', fontSize: 11, fontWeight: 600 }}>+{placement}</span>
+                    )}
+                  </div>
+                </td>
+                <td style={{ ...tdStyle, textAlign: 'center', color: '#a78bfa', fontWeight: 700, fontSize: 14 }}>
+                  {s.points}
+                </td>
+                <td style={{ ...tdStyle, textAlign: 'center', color: '#4ade80', fontSize: 13 }}>
+                  {s.wins}
+                </td>
+                <td style={{ ...tdStyle, textAlign: 'center', color: '#f87171', fontSize: 13 }}>
+                  {s.losses}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -521,6 +572,16 @@ export default function GameDayPage() {
     listMaps().then(setMaps).catch(() => {});
   }, [gameDayId]);
 
+  // Poll every 10 s while round-robin is running so the standings table updates live.
+  const rrStatus = gameDay?.phases.roundRobin.status;
+  useEffect(() => {
+    if (!gameDayId || rrStatus !== 'running') return;
+    const id = setInterval(() => {
+      getGameDay(gameDayId).then(setGameDay).catch(() => {});
+    }, 10000);
+    return () => clearInterval(id);
+  }, [gameDayId, rrStatus]);
+
   if (loading) return <Layout><div style={{ color: '#64748b', padding: '40px 0' }}>Loading…</div></Layout>;
   if (error || !gameDay) return <Layout><div style={{ color: '#f87171' }}>{error ?? 'Game day not found'}</div></Layout>;
 
@@ -715,7 +776,7 @@ export default function GameDayPage() {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 {(gameDay.groups ?? []).map((group, gi) => (
-                  <GroupCard key={group.groupId} group={group} gi={gi} placementPoints={gameDay.placementPoints ?? {}} />
+                  <RRStandingsTable key={group.groupId} group={group} gi={gi} placementPoints={gameDay.placementPoints ?? {}} />
                 ))}
               </div>
             </div>

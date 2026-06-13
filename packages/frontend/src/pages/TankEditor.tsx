@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import { useNavigate, useParams, Link, useBlocker } from 'react-router-dom';
 import Editor from '@monaco-editor/react';
 import Layout from '../components/Layout';
 import {
@@ -406,6 +406,32 @@ function GameDayPickerModal({
   );
 }
 
+function UnsavedChangesDialog({
+  onSaveAndLeave, onDiscard, onStay,
+}: {
+  onSaveAndLeave: () => void;
+  onDiscard: () => void;
+  onStay: () => void;
+}) {
+  return (
+    <div style={overlay}>
+      <div style={{ ...cardStyle, width: 380 }}>
+        <h3 style={{ margin: '0 0 8px', color: '#e2e8f0' }}>Unsaved changes</h3>
+        <p style={{ margin: '0 0 20px', fontSize: 14, color: '#94a3b8' }}>
+          You have unsaved changes. Do you want to save before leaving?
+        </p>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button onClick={onStay} style={ghostButtonStyle}>Keep editing</button>
+          <button onClick={onDiscard} style={{ ...ghostButtonStyle, color: '#f87171', borderColor: '#7f1d1d' }}>
+            Discard
+          </button>
+          <button onClick={onSaveAndLeave} style={primaryButtonStyle}>Save & Leave</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const overlay: React.CSSProperties = {
   position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
   display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
@@ -441,12 +467,20 @@ export default function TankEditor() {
   // Prevents the config persistence effect from writing DEFAULT_CONFIG to
   // localStorage before getTank resolves and loads the real config.
   const configLoadedRef = useRef(false);
+  // Tracks the source/config as of the last successful save (or initial load),
+  // so we can detect unsaved changes for the navigation guard.
+  const savedStateRef = useRef<{ source: string; config: TankConfig } | null>(null);
+  // Captures what was submitted so the polling loop can update savedStateRef on success.
+  const submittedStateRef = useRef<{ source: string; config: TankConfig } | null>(null);
 
   // Load tank on mount — skip for the 'new' route (tank not created yet)
   useEffect(() => {
     configLoadedRef.current = false;
+    savedStateRef.current = null;
     if (!tankId || tankId === 'new') {
-      setSource(defaultSource());
+      const initSource = defaultSource();
+      setSource(initSource);
+      savedStateRef.current = { source: initSource, config: DEFAULT_CONFIG };
       configLoadedRef.current = true;
       setPageLoading(false);
       return;
@@ -460,9 +494,10 @@ export default function TankEditor() {
 
         // Source: localStorage → own version → fork origin → default.
         // Always strip preamble — old localStorage/S3 values may include it.
+        let srcToSet: string;
         const savedSrc = localStorage.getItem(`tankmaze-src-${tankId}`);
         if (savedSrc) {
-          setSource(stripPreamble(savedSrc));
+          srcToSet = stripPreamble(savedSrc);
         } else {
           const attempts: Array<[string, string]> = [];
           if (latestVer?.sourceS3Key) attempts.push([tankId, latestVer.version]);
@@ -470,35 +505,40 @@ export default function TankEditor() {
             attempts.push([t.forkedFromTankId, t.forkedFromVersion]);
           }
           let loaded = false;
+          srcToSet = defaultSource();
           for (const [tid, ver] of attempts) {
             try {
               const { source: fetched } = await getVersionSource(tid, ver);
-              setSource(stripPreamble(fetched));
+              srcToSet = stripPreamble(fetched);
               loaded = true;
               break;
             } catch { /* try next */ }
           }
-          if (!loaded) setSource(defaultSource());
+          if (!loaded) srcToSet = defaultSource();
         }
+        setSource(srcToSet);
 
         // Config: prefer localStorage, then seed from API (tank name + version stats).
         // Always override name from the API — localStorage name can be stale or empty.
+        let cfgToSet: TankConfig;
         const savedCfg = localStorage.getItem(`tankmaze-cfg-${tankId}`);
         if (savedCfg) {
           const parsed = JSON.parse(savedCfg) as TankConfig;
-          setConfig({ ...parsed, name: t.name || parsed.name || DEFAULT_CONFIG.name });
+          cfgToSet = { ...parsed, name: t.name || parsed.name || DEFAULT_CONFIG.name };
         } else {
           const vc = latestVer?.config;
-          setConfig({
+          cfgToSet = {
             name: t.name || DEFAULT_CONFIG.name,
             speed: vc?.speed ?? DEFAULT_CONFIG.speed,
             sensorRange: vc?.sensorRange ?? DEFAULT_CONFIG.sensorRange,
             damage: vc?.damage ?? DEFAULT_CONFIG.damage,
             armor: vc?.armor ?? DEFAULT_CONFIG.armor,
             fireRate: vc?.fireRate ?? DEFAULT_CONFIG.fireRate,
-          });
+          };
         }
+        setConfig(cfgToSet);
 
+        savedStateRef.current = { source: srcToSet, config: cfgToSet };
         configLoadedRef.current = true;
 
         // Reflect latest version's compile status.
@@ -531,6 +571,7 @@ export default function TankEditor() {
           if (s.compileStatus === 'ready') {
             setSaveStatus('ready');
             setSaveError(null);
+            if (submittedStateRef.current) savedStateRef.current = submittedStateRef.current;
             // Refresh versions list
             getTank(tankId!).then(({ versions: v }) => setVersions(v ?? []));
             break;
@@ -571,6 +612,7 @@ export default function TankEditor() {
     }
     setSaveStatus('submitting');
     setSaveError(null);
+    submittedStateRef.current = { source, config };
     try {
       let id = tankId;
       if (!id || id === 'new') {
@@ -672,6 +714,13 @@ export default function TankEditor() {
     }
   }
 
+  // Unsaved-changes guard
+  const dirty = savedStateRef.current !== null && (
+    source !== savedStateRef.current.source ||
+    JSON.stringify(config) !== JSON.stringify(savedStateRef.current.config)
+  );
+  const blocker = useBlocker(dirty);
+
   // Derived state
   const sortedVersions = sortedByAge(versions);
   const latestVersion = sortedVersions[0];
@@ -704,6 +753,14 @@ export default function TankEditor() {
           <h2 style={{ margin: 0, fontSize: 18, color: '#e2e8f0' }}>
             {tank?.name || 'Unnamed Tank'}
           </h2>
+          {tankId && tankId !== 'new' && (
+            <Link
+              to={`/tanks/${tankId}`}
+              style={{ color: '#64748b', textDecoration: 'none', fontSize: 13 }}
+            >
+              View tank →
+            </Link>
+          )}
           {latestVersion && (
             <span style={{
               fontSize: 12, padding: '2px 8px', borderRadius: 4, fontWeight: 500,
@@ -793,6 +850,15 @@ export default function TankEditor() {
           loading={loadingGameDays}
           onSelect={handleRegister}
           onClose={() => setShowGameDayPicker(false)}
+        />
+      )}
+
+      {/* Unsaved-changes guard */}
+      {blocker.state === 'blocked' && (
+        <UnsavedChangesDialog
+          onSaveAndLeave={() => { handleSave(); blocker.proceed?.(); }}
+          onDiscard={() => blocker.proceed?.()}
+          onStay={() => blocker.reset?.()}
         />
       )}
     </Layout>
