@@ -1171,6 +1171,29 @@ func (h *handler) listGameDays(ctx context.Context) (events.APIGatewayV2HTTPResp
 	return jsonResp(http.StatusOK, gds), nil
 }
 
+// gameDayDisplayName appends a date suffix to baseName.
+// Same-day events: "Name · Jan 2". Multi-day events: "Name · Jan 2 – Jan 3".
+func gameDayDisplayName(baseName string, rrAt, finalAt time.Time) string {
+	rrDate := rrAt.UTC().Format("Jan 2")
+	finalDate := finalAt.UTC().Format("Jan 2")
+	suffix := rrDate
+	if finalDate != rrDate {
+		suffix = rrDate + " – " + finalDate
+	}
+	if baseName == "" {
+		return suffix
+	}
+	return baseName + " · " + suffix
+}
+
+// gameDayBaseName strips the date suffix added by gameDayDisplayName.
+func gameDayBaseName(displayName string) string {
+	if idx := strings.LastIndex(displayName, " · "); idx >= 0 {
+		return displayName[:idx]
+	}
+	return displayName
+}
+
 func (h *handler) createGameDay(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	if !isAdmin(req) {
 		return errResp(http.StatusForbidden, "admin access required"), nil
@@ -1219,7 +1242,7 @@ func (h *handler) createGameDay(ctx context.Context, req events.APIGatewayV2HTTP
 	now := time.Now().Unix()
 	gd := db.GameDay{
 		GameDayID: gameDayID,
-		Name:      strings.TrimSpace(body.Name),
+		Name:      gameDayDisplayName(strings.TrimSpace(body.Name), rrAt, finalAt),
 		Schedule: db.GameDaySchedule{
 			RegistrationClose: body.RegistrationCloseAt,
 			RoundRobin:        body.RoundRobinAt,
@@ -1400,8 +1423,18 @@ func (h *handler) patchGameDay(ctx context.Context, req events.APIGatewayV2HTTPR
 		}
 	}
 
+	// Determine base name: admin-supplied overrides existing; otherwise strip date suffix.
+	patchBaseName := strings.TrimSpace(body.Name)
+	if patchBaseName == "" {
+		patchBaseName = gameDayBaseName(existing.Name)
+	}
+	// Recompute full display name from merged schedule.
+	mergedRR, _ := parseAt(mergedRRAt)
+	mergedFinal, _ := parseAt(mergedFinalAt)
+	patchName := gameDayDisplayName(patchBaseName, mergedRR, mergedFinal)
+
 	upd := db.GameDayUpdate{
-		Name:                strings.TrimSpace(body.Name),
+		Name:                patchName,
 		RegistrationCloseAt: body.RegistrationCloseAt,
 		RoundRobinAt:        body.RoundRobinAt,
 		FinalAt:             body.FinalAt,

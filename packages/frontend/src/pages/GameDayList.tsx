@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useBlocker } from 'react-router-dom';
 import Layout, { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
 import { listGameDays, createGameDay, deleteGameDay, patchGameDay, listMaps } from '../services/api';
 import { useAuthStore } from '../store/authStore';
@@ -53,6 +53,12 @@ function isoToLocalDatetime(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** Strip the " · <date suffix>" appended by the backend. */
+function gameDayBaseName(displayName: string): string {
+  const idx = displayName.lastIndexOf(' · ');
+  return idx >= 0 ? displayName.slice(0, idx) : displayName;
+}
+
 function MapSelector({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
   const [maps, setMaps] = useState<GameMap[]>([]);
   useEffect(() => { listMaps().then(setMaps).catch(() => {}); }, []);
@@ -77,9 +83,38 @@ function MapSelector({ value, onChange }: { value: string[]; onChange: (v: strin
   );
 }
 
+const overlay: React.CSSProperties = {
+  position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+  display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
+};
+
+function UnsavedChangesDialog({ onSaveAndLeave, onDiscard, onStay }: {
+  onSaveAndLeave: () => void;
+  onDiscard: () => void;
+  onStay: () => void;
+}) {
+  return (
+    <div style={overlay}>
+      <div style={{ ...cardStyle, width: 380 }}>
+        <h3 style={{ margin: '0 0 8px', color: '#e2e8f0' }}>Unsaved changes</h3>
+        <p style={{ margin: '0 0 20px', fontSize: 14, color: '#94a3b8' }}>
+          You have unsaved changes. Do you want to save before leaving?
+        </p>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button onClick={onStay} style={ghostButtonStyle}>Keep editing</button>
+          <button onClick={onDiscard} style={{ ...ghostButtonStyle, color: '#f87171', borderColor: '#7f1d1d' }}>
+            Discard
+          </button>
+          <button onClick={onSaveAndLeave} style={primaryButtonStyle}>Save & Leave</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () => void; onCancel: () => void }) {
   const [fields, setFields] = useState({
-    name: gd.name ?? '',
+    name: gameDayBaseName(gd.name ?? ''),
     registrationClose: isoToLocalDatetime(gd.schedule.registrationClose),
     roundRobin: isoToLocalDatetime(gd.schedule.roundRobin),
     final: isoToLocalDatetime(gd.schedule.final),
@@ -90,23 +125,43 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const initialRef = useRef({
+    name: gameDayBaseName(gd.name ?? ''),
+    registrationClose: isoToLocalDatetime(gd.schedule.registrationClose),
+    roundRobin: isoToLocalDatetime(gd.schedule.roundRobin),
+    final: isoToLocalDatetime(gd.schedule.final),
+    autofill: gd.autofill ?? false,
+    randomMaps: gd.randomMaps ?? false,
+    forcedMapIds: [...(gd.forcedMapIds ?? [])],
+  });
+
+  const dirty =
+    fields.name !== initialRef.current.name ||
+    fields.registrationClose !== initialRef.current.registrationClose ||
+    fields.roundRobin !== initialRef.current.roundRobin ||
+    fields.final !== initialRef.current.final ||
+    autofill !== initialRef.current.autofill ||
+    randomMaps !== initialRef.current.randomMaps ||
+    JSON.stringify(forcedMapIds) !== JSON.stringify(initialRef.current.forcedMapIds);
+
+  const blocker = useBlocker(dirty);
+
   function set(key: string, val: string) {
     setFields((f) => ({ ...f, [key]: val }));
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function doSave(): Promise<boolean> {
     if (new Date(fields.registrationClose) >= new Date(fields.roundRobin)) {
       setErr('Registration must close before round robin starts');
-      return;
+      return false;
     }
     if (new Date(fields.roundRobin) >= new Date(fields.final)) {
       setErr('Round robin must start before the final');
-      return;
+      return false;
     }
     if (new Date(fields.final).getTime() - new Date(fields.roundRobin).getTime() < 2 * 60 * 60 * 1000) {
       setErr('At least 2 hours required between round robin and final');
-      return;
+      return false;
     }
     setSaving(true);
     setErr(null);
@@ -120,12 +175,19 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
         randomMaps,
         forcedMapIds,
       });
-      onSaved();
+      return true;
     } catch (e2: unknown) {
       setErr(e2 instanceof Error ? e2.message : 'Failed to save');
+      return false;
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const ok = await doSave();
+    if (ok) onSaved();
   }
 
   const inputStyle: React.CSSProperties = {
@@ -197,6 +259,17 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
           {saving ? 'Saving…' : 'Save'}
         </button>
       </form>
+      {blocker.state === 'blocked' && (
+        <UnsavedChangesDialog
+          onSaveAndLeave={async () => {
+            const ok = await doSave();
+            if (ok) blocker.proceed?.();
+            else blocker.reset?.();
+          }}
+          onDiscard={() => blocker.proceed?.()}
+          onStay={() => blocker.reset?.()}
+        />
+      )}
     </div>
   );
 }
@@ -227,7 +300,7 @@ function GameDayRow({ gd, onDeleted, onRefresh }: { gd: GameDay; onDeleted: () =
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
             <StatusBadge status={status} />
             <span style={{ color: '#e2e8f0', fontSize: 15, fontWeight: 600 }}>
-              {gd.name ? `${gd.name} · ` : ''}{new Date(gd.schedule.roundRobin).toLocaleDateString(undefined, {
+              {gd.name || new Date(gd.schedule.roundRobin).toLocaleDateString(undefined, {
                 weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
               })}
             </span>
@@ -314,23 +387,38 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // Baseline captured at mount; updated after a successful create so that a
+  // re-open of the reset form starts clean again.
+  const initialRef = useRef({ name: '', fields: defaultSchedule(), autofill: false, randomMaps: false, forcedMapIds: [] as string[] });
+
+  const dirty = open && (
+    name !== initialRef.current.name ||
+    fields.registrationClose !== initialRef.current.fields.registrationClose ||
+    fields.roundRobin !== initialRef.current.fields.roundRobin ||
+    fields.final !== initialRef.current.fields.final ||
+    autofill !== initialRef.current.autofill ||
+    randomMaps !== initialRef.current.randomMaps ||
+    JSON.stringify(forcedMapIds) !== JSON.stringify(initialRef.current.forcedMapIds)
+  );
+
+  const blocker = useBlocker(dirty);
+
   function set(key: string, val: string) {
     setFields((f) => ({ ...f, [key]: val }));
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function doCreate(): Promise<boolean> {
     if (new Date(fields.registrationClose) >= new Date(fields.roundRobin)) {
       setErr('Registration must close before round robin starts');
-      return;
+      return false;
     }
     if (new Date(fields.roundRobin) >= new Date(fields.final)) {
       setErr('Round robin must start before the final');
-      return;
+      return false;
     }
     if (new Date(fields.final).getTime() - new Date(fields.roundRobin).getTime() < 2 * 60 * 60 * 1000) {
       setErr('At least 2 hours required between round robin and final');
-      return;
+      return false;
     }
     setSaving(true);
     setErr(null);
@@ -344,18 +432,27 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
         randomMaps,
         forcedMapIds,
       });
+      const newDefaults = defaultSchedule();
       setOpen(false);
       setName('');
-      setFields(defaultSchedule());
+      setFields(newDefaults);
       setAutofill(false);
       setRandomMaps(false);
       setForcedMapIds([]);
+      initialRef.current = { name: '', fields: newDefaults, autofill: false, randomMaps: false, forcedMapIds: [] };
       onCreated();
+      return true;
     } catch (e2: unknown) {
       setErr(e2 instanceof Error ? e2.message : 'Failed to create');
+      return false;
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    await doCreate();
   }
 
   if (!open) {
@@ -437,6 +534,17 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
           {saving ? 'Creating…' : 'Create'}
         </button>
       </form>
+      {blocker.state === 'blocked' && (
+        <UnsavedChangesDialog
+          onSaveAndLeave={async () => {
+            const ok = await doCreate();
+            if (ok) blocker.proceed?.();
+            else blocker.reset?.();
+          }}
+          onDiscard={() => blocker.proceed?.()}
+          onStay={() => blocker.reset?.()}
+        />
+      )}
     </div>
   );
 }

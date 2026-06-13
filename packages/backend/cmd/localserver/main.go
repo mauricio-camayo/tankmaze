@@ -769,6 +769,29 @@ func (srv *server) listGameDays(w http.ResponseWriter) {
 	jsonOK(w, gds)
 }
 
+// gameDayDisplayName appends a date suffix to baseName.
+// Same-day events: "Name · Jan 2". Multi-day events: "Name · Jan 2 – Jan 3".
+func gameDayDisplayName(baseName string, rrAt, finalAt time.Time) string {
+	rrDate := rrAt.UTC().Format("Jan 2")
+	finalDate := finalAt.UTC().Format("Jan 2")
+	suffix := rrDate
+	if finalDate != rrDate {
+		suffix = rrDate + " – " + finalDate
+	}
+	if baseName == "" {
+		return suffix
+	}
+	return baseName + " · " + suffix
+}
+
+// gameDayBaseName strips the date suffix added by gameDayDisplayName.
+func gameDayBaseName(displayName string) string {
+	if idx := strings.LastIndex(displayName, " · "); idx >= 0 {
+		return displayName[:idx]
+	}
+	return displayName
+}
+
 func (srv *server) createGameDay(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name                string   `json:"name"`
@@ -818,7 +841,7 @@ func (srv *server) createGameDay(w http.ResponseWriter, r *http.Request) {
 
 	gd := db.GameDay{
 		GameDayID: newUUID(),
-		Name:      strings.TrimSpace(body.Name),
+		Name:      gameDayDisplayName(strings.TrimSpace(body.Name), rrAt, finalAt),
 		Schedule: db.GameDaySchedule{
 			RegistrationClose: body.RegistrationCloseAt,
 			RoundRobin:        body.RoundRobinAt,
@@ -921,9 +944,6 @@ func (srv *server) patchGameDay(w http.ResponseWriter, r *http.Request, gameDayI
 		}
 	}
 
-	if n := strings.TrimSpace(body.Name); n != "" {
-		gd.Name = n
-	}
 	if body.RegistrationCloseAt != "" {
 		gd.Schedule.RegistrationClose = body.RegistrationCloseAt
 	}
@@ -942,6 +962,14 @@ func (srv *server) patchGameDay(w http.ResponseWriter, r *http.Request, gameDayI
 	if body.RandomMaps != nil {
 		gd.RandomMaps = *body.RandomMaps
 	}
+	// Recompute full display name using base name and merged schedule.
+	patchBaseName := strings.TrimSpace(body.Name)
+	if patchBaseName == "" {
+		patchBaseName = gameDayBaseName(gd.Name)
+	}
+	rrAt, _ := parseISO(gd.Schedule.RoundRobin)
+	finalAt, _ := parseISO(gd.Schedule.Final)
+	gd.Name = gameDayDisplayName(patchBaseName, rrAt, finalAt)
 	srv.store.putGameDay(gd)
 	jsonOK(w, gd)
 }
