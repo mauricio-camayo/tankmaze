@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation, Outlet } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Navigate, useLocation, Outlet } from 'react-router-dom';
 import { Hub } from 'aws-amplify/utils';
 import { getAuthUser, getUserProfile } from './services/auth';
 import { useAuthStore } from './store/authStore';
@@ -41,30 +41,37 @@ function RequireAdmin() {
   return <Outlet />;
 }
 
-function AppRoutes() {
+function LoginRoute() {
   const { user, loading } = useAuthStore();
-
-  return (
-    <Routes>
-      <Route path="/login" element={loading ? null : user ? <Navigate to="/dashboard" replace /> : <Login />} />
-      <Route path="/watch" element={<Suspense fallback={null}><Watch /></Suspense>} />
-      <Route path="/leaderboard" element={<Leaderboard />} />
-      <Route path="/gamedays" element={<GameDayList />} />
-      <Route path="/gameday/:gameDayId" element={<GameDay />} />
-      <Route element={<RequireAuth />}>
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/tanks/new/edit" element={<TankEditor />} />
-        <Route path="/tanks/:tankId" element={<TankDetail />} />
-        <Route path="/tanks/:tankId/edit" element={<TankEditor />} />
-      </Route>
-      <Route element={<RequireAdmin />}>
-        <Route path="/admin/users" element={<AdminUsers />} />
-        <Route path="/admin/tanks" element={<AdminTanks />} />
-      </Route>
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
-    </Routes>
-  );
+  if (loading) return null;
+  if (user) return <Navigate to="/dashboard" replace />;
+  return <Login />;
 }
+
+const router = createBrowserRouter([
+  { path: '/login', element: <LoginRoute /> },
+  { path: '/watch', element: <Suspense fallback={null}><Watch /></Suspense> },
+  { path: '/leaderboard', element: <Leaderboard /> },
+  { path: '/gamedays', element: <GameDayList /> },
+  { path: '/gameday/:gameDayId', element: <GameDay /> },
+  {
+    element: <RequireAuth />,
+    children: [
+      { path: '/dashboard', element: <Dashboard /> },
+      { path: '/tanks/new/edit', element: <TankEditor /> },
+      { path: '/tanks/:tankId', element: <TankDetail /> },
+      { path: '/tanks/:tankId/edit', element: <TankEditor /> },
+    ],
+  },
+  {
+    element: <RequireAdmin />,
+    children: [
+      { path: '/admin/users', element: <AdminUsers /> },
+      { path: '/admin/tanks', element: <AdminTanks /> },
+    ],
+  },
+  { path: '*', element: <Navigate to="/dashboard" replace /> },
+]);
 
 export default function App() {
   const { setUser, setLoading } = useAuthStore();
@@ -94,9 +101,5 @@ export default function App() {
     return unsubscribe;
   }, [setUser, setLoading]);
 
-  return (
-    <BrowserRouter>
-      <AppRoutes />
-    </BrowserRouter>
-  );
+  return <RouterProvider router={router} />;
 }
