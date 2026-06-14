@@ -103,14 +103,25 @@ export class ApiStack extends Stack {
     tables.gamedays.grantReadData(matchRunner);
 
     // tournament-scheduler
+    // Assign an explicit function name so we can construct its ARN as a literal
+    // string for the schedulerInvokeRole policy — breaking the CDK circular
+    // dependency that would arise from using tournamentScheduler.functionArn
+    // in that policy while the function also references schedulerInvokeRole.roleArn.
+    const tournamentSchedulerFunctionName = 'tankmaze-tournament-scheduler';
+    const tournamentSchedulerArn = this.formatArn({
+      service: 'lambda',
+      resource: 'function',
+      resourceName: tournamentSchedulerFunctionName,
+    });
     const tournamentScheduler = goLambda('TournamentScheduler', 'tournament-scheduler', {
       ...tableEnvVars(tables),
-      MATCH_RUNNER_FUNCTION:    matchRunner.functionArn,
-      RANKING_UPDATER_FUNCTION: rankingUpdater.functionArn,
+      MATCH_RUNNER_FUNCTION:     matchRunner.functionArn,
+      RANKING_UPDATER_FUNCTION:  rankingUpdater.functionArn,
       SCHEDULER_INVOKE_ROLE_ARN: schedulerInvokeRole.roleArn,
+      TOURNAMENT_SCHEDULER_FUNCTION: tournamentSchedulerArn,
     });
-    // Self-reference: lets handleEliminationR1 update the final EventBridge rule.
-    tournamentScheduler.addEnvironment('TOURNAMENT_SCHEDULER_FUNCTION', tournamentScheduler.functionArn);
+    // Pin the actual function to the name we referenced above.
+    (tournamentScheduler.node.defaultChild as lambda.CfnFunction).functionName = tournamentSchedulerFunctionName;
     tables.gamedays.grantReadWriteData(tournamentScheduler);
     tables.matches.grantReadWriteData(tournamentScheduler);
     tables.tankVersions.grantReadData(tournamentScheduler);
@@ -135,7 +146,9 @@ export class ApiStack extends Stack {
     }));
     schedulerInvokeRole.addToPolicy(new iam.PolicyStatement({
       actions: ['lambda:InvokeFunction'],
-      resources: [tournamentScheduler.functionArn],
+      // Use the literal ARN (not a CDK token) to avoid a circular dependency:
+      // schedulerInvokeRole policy → tournamentScheduler ← schedulerInvokeRole env var.
+      resources: [tournamentSchedulerArn],
     }));
 
     // wss-handler — needs WebSocket APIGW endpoint added after API is created
