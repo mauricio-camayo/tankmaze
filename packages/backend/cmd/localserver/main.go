@@ -900,26 +900,59 @@ func (srv *server) patchGameDay(w http.ResponseWriter, r *http.Request, gameDayI
 		jsonErr(w, http.StatusNotFound, "game day not found")
 		return
 	}
-	if gd.Phases.RoundRobin.Status != "upcoming" {
-		jsonErr(w, http.StatusConflict, "game day has already started")
-		return
-	}
-	if finalAt, parseErr := time.Parse(time.RFC3339, gd.Schedule.Final); parseErr == nil && finalAt.Before(time.Now()) {
-		jsonErr(w, http.StatusConflict, "game day has already concluded")
-		return
-	}
+
+	force := r.URL.Query().Get("force") == "true"
+
 	var body struct {
-		Name                string    `json:"name,omitempty"`
-		RegistrationCloseAt string    `json:"registrationCloseAt,omitempty"`
-		RoundRobinAt        string    `json:"roundRobinAt,omitempty"`
-		FinalAt             string    `json:"finalAt,omitempty"`
-		Autofill            *bool     `json:"autofill"`
-		ForcedMapIDs        *[]string `json:"forcedMapIds"`
-		RandomMaps          *bool     `json:"randomMaps"`
+		Name                string            `json:"name,omitempty"`
+		RegistrationCloseAt string            `json:"registrationCloseAt,omitempty"`
+		RoundRobinAt        string            `json:"roundRobinAt,omitempty"`
+		FinalAt             string            `json:"finalAt,omitempty"`
+		Autofill            *bool             `json:"autofill"`
+		ForcedMapIDs        *[]string         `json:"forcedMapIds"`
+		RandomMaps          *bool             `json:"randomMaps"`
+		PhaseOverride       map[string]string `json:"phaseOverride,omitempty"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonErr(w, http.StatusBadRequest, "invalid request body")
 		return
+	}
+
+	// ?force=true: apply phase status overrides without schedule guards.
+	if force && len(body.PhaseOverride) > 0 {
+		validStatuses := map[string]bool{"upcoming": true, "running": true, "complete": true, "cancelled": true}
+		for phase, status := range body.PhaseOverride {
+			if !validStatuses[status] {
+				jsonErr(w, http.StatusBadRequest, "phaseOverride status must be one of: upcoming, running, complete, cancelled")
+				return
+			}
+			ps := db.PhaseStatus{Status: status}
+			switch phase {
+			case "roundRobin":
+				gd.Phases.RoundRobin = ps
+			case "final":
+				gd.Phases.Final = ps
+			default:
+				if gd.Phases.Elimination == nil {
+					gd.Phases.Elimination = make(map[string]db.PhaseStatus)
+				}
+				gd.Phases.Elimination[phase] = ps
+			}
+		}
+		srv.store.putGameDay(gd)
+		jsonOK(w, gd)
+		return
+	}
+
+	if !force && gd.Phases.RoundRobin.Status != "upcoming" {
+		jsonErr(w, http.StatusConflict, "game day has already started")
+		return
+	}
+	if !force {
+		if finalAt, parseErr := time.Parse(time.RFC3339, gd.Schedule.Final); parseErr == nil && finalAt.Before(time.Now()) {
+			jsonErr(w, http.StatusConflict, "game day has already concluded")
+			return
+		}
 	}
 
 	// Validate ordering on the merged schedule.

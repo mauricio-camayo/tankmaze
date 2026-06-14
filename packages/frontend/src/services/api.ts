@@ -126,6 +126,14 @@ export const patchGameDay = (
     randomMaps?: boolean;
   },
 ) => request<GameDay>(`/gamedays/${gameDayId}`, { method: 'PATCH', body: JSON.stringify(body) });
+export const overrideGameDayPhase = (
+  gameDayId: string,
+  phaseOverride: Record<string, 'upcoming' | 'running' | 'complete' | 'cancelled'>,
+) =>
+  request<GameDay>(`/gamedays/${gameDayId}?force=true`, {
+    method: 'PATCH',
+    body: JSON.stringify({ phaseOverride }),
+  });
 export const addRosterEntry = (gameDayId: string, tankId: string, version: string) =>
   request<void>(`/gamedays/${gameDayId}/roster`, {
     method: 'POST',

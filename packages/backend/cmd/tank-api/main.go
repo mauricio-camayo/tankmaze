@@ -19,7 +19,7 @@
 //	POST   /gamedays                           – create game day + EventBridge schedules (admin only)
 //	DELETE /gamedays/{id}                      – cancel game day (admin only, no phase started)
 //	GET    /gamedays/{id}                      – Game Day bracket and phase status
-//	PATCH  /gamedays/{id}                      – update phase schedule (admin only, upcoming only)
+//	PATCH  /gamedays/{id}                      – update phase schedule (admin only); ?force=true allows phase-status overrides on started/past game days
 //	GET    /maps                               – list active maps (no auth required)
 //	POST   /maps                               – create map (admin only)
 //	PATCH  /maps/{id}                          – update map name/description/isActive (admin only)
@@ -122,13 +122,17 @@ type createGameDayBody struct {
 }
 
 type patchGameDayBody struct {
-	Name                string    `json:"name,omitempty"`
-	RegistrationCloseAt string    `json:"registrationCloseAt,omitempty"`
-	RoundRobinAt        string    `json:"roundRobinAt,omitempty"`
-	FinalAt             string    `json:"finalAt,omitempty"`
-	Autofill            *bool     `json:"autofill"`
-	ForcedMapIDs        *[]string `json:"forcedMapIds"`
-	RandomMaps          *bool     `json:"randomMaps"`
+	Name                string           `json:"name,omitempty"`
+	RegistrationCloseAt string           `json:"registrationCloseAt,omitempty"`
+	RoundRobinAt        string           `json:"roundRobinAt,omitempty"`
+	FinalAt             string           `json:"finalAt,omitempty"`
+	Autofill            *bool            `json:"autofill"`
+	ForcedMapIDs        *[]string        `json:"forcedMapIds"`
+	RandomMaps          *bool            `json:"randomMaps"`
+	// PhaseOverride is only accepted when the request includes ?force=true.
+	// Keys: "roundRobin", "final", or an elimination round key (e.g. "r1").
+	// Value: "upcoming" | "running" | "complete" | "cancelled"
+	PhaseOverride       map[string]string `json:"phaseOverride,omitempty"`
 }
 
 type createMapBody struct {
@@ -1377,6 +1381,8 @@ func (h *handler) patchGameDay(ctx context.Context, req events.APIGatewayV2HTTPR
 		return errResp(http.StatusForbidden, "admin access required"), nil
 	}
 
+	force := req.QueryStringParameters["force"] == "true"
+
 	existing, err := h.store.GetGameDay(ctx, gameDayID)
 	if errors.Is(err, db.ErrNotFound) {
 		return errResp(http.StatusNotFound, "game day not found"), nil
@@ -1384,13 +1390,36 @@ func (h *handler) patchGameDay(ctx context.Context, req events.APIGatewayV2HTTPR
 		log.Printf("patch gameday %s: %v", gameDayID, err)
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
-	if finalAt, parseErr := time.Parse(time.RFC3339, existing.Schedule.Final); parseErr == nil && finalAt.Before(time.Now()) {
-		return errResp(http.StatusConflict, "game day has already concluded"), nil
+	if !force {
+		if finalAt, parseErr := time.Parse(time.RFC3339, existing.Schedule.Final); parseErr == nil && finalAt.Before(time.Now()) {
+			return errResp(http.StatusConflict, "game day has already concluded"), nil
+		}
 	}
 
 	var body patchGameDayBody
 	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
 		return errResp(http.StatusBadRequest, "invalid request body"), nil
+	}
+
+	// ?force=true: apply phase status overrides and skip all schedule guards.
+	if force && len(body.PhaseOverride) > 0 {
+		validStatuses := map[string]bool{"upcoming": true, "running": true, "complete": true, "cancelled": true}
+		for phase, status := range body.PhaseOverride {
+			if !validStatuses[status] {
+				return errResp(http.StatusBadRequest, "phaseOverride status must be one of: upcoming, running, complete, cancelled"), nil
+			}
+			ps := db.PhaseStatus{Status: status}
+			if applyErr := h.store.UpdateGameDayPhase(ctx, gameDayID, phase, ps); applyErr != nil {
+				log.Printf("patch gameday %s phase %s: %v", gameDayID, phase, applyErr)
+				return errResp(http.StatusInternalServerError, "internal error"), nil
+			}
+		}
+		// Re-fetch and return after phase overrides (no schedule changes in force mode).
+		gd, err := h.store.GetGameDay(ctx, gameDayID)
+		if err != nil {
+			return errResp(http.StatusInternalServerError, "internal error"), nil
+		}
+		return jsonResp(http.StatusOK, gd), nil
 	}
 
 	parseAt := func(s string) (time.Time, bool) {

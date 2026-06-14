@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useBlocker } from 'react-router-dom';
 import Layout, { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
-import { listGameDays, createGameDay, deleteGameDay, patchGameDay, listMaps } from '../services/api';
+import { listGameDays, createGameDay, deleteGameDay, patchGameDay, listMaps, overrideGameDayPhase } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import type { GameDay, GameDayPhaseStatus, GameMap } from '../types';
 
@@ -274,14 +274,26 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
   );
 }
 
+/** A game day is "stuck" when its scheduled time has passed but phases are still
+ *  "upcoming" — the EventBridge scheduler rule never fired or the Lambda exited
+ *  early without advancing the phase statuses. */
+function isStuck(gd: GameDay): boolean {
+  const past = new Date(gd.schedule.final).getTime() < Date.now();
+  const neverStarted = gd.phases.roundRobin.status === 'upcoming' && gd.phases.final.status === 'upcoming';
+  return past && neverStarted;
+}
+
 function GameDayRow({ gd, onDeleted, onRefresh }: { gd: GameDay; onDeleted: () => void; onRefresh: () => void }) {
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [overriding, setOverriding] = useState(false);
+  const [confirmOverride, setConfirmOverride] = useState(false);
   const [editing, setEditing] = useState(false);
   const { user } = useAuthStore();
   const status = phaseOverallStatus(gd);
 
   const isUpcoming = status === 'upcoming';
+  const stuck = isStuck(gd);
 
   async function handleDelete() {
     if (!confirmDelete) { setConfirmDelete(true); return; }
@@ -295,12 +307,34 @@ function GameDayRow({ gd, onDeleted, onRefresh }: { gd: GameDay; onDeleted: () =
     }
   }
 
+  async function handleCancelStuck() {
+    if (!confirmOverride) { setConfirmOverride(true); return; }
+    setOverriding(true);
+    try {
+      await overrideGameDayPhase(gd.gameDayId, {
+        roundRobin: 'cancelled',
+        final: 'cancelled',
+      });
+      onRefresh();
+    } catch {
+      // ignore — button resets on next render
+    } finally {
+      setOverriding(false);
+      setConfirmOverride(false);
+    }
+  }
+
   return (
     <div style={cardStyle}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
             <StatusBadge status={status} />
+            {stuck && (
+              <span style={{ fontSize: 11, color: '#f97316', background: 'rgba(249,115,22,0.1)', border: '1px solid #f97316', borderRadius: 4, padding: '2px 8px', fontWeight: 600 }}>
+                STUCK
+              </span>
+            )}
             <span style={{ color: '#e2e8f0', fontSize: 15, fontWeight: 600 }}>
               {gd.name || new Date(gd.schedule.roundRobin).toLocaleDateString(undefined, {
                 weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
@@ -321,7 +355,7 @@ function GameDayRow({ gd, onDeleted, onRefresh }: { gd: GameDay; onDeleted: () =
             )}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <Link
             to={`/gameday/${gd.gameDayId}`}
             style={{ ...ghostButtonStyle, textDecoration: 'none', display: 'inline-block' }}
@@ -332,10 +366,20 @@ function GameDayRow({ gd, onDeleted, onRefresh }: { gd: GameDay; onDeleted: () =
             <>
               {isUpcoming && new Date(gd.schedule.final) > new Date() && (
                 <button
-                  onClick={() => { setEditing((v) => !v); setConfirmDelete(false); }}
+                  onClick={() => { setEditing((v) => !v); setConfirmDelete(false); setConfirmOverride(false); }}
                   style={{ ...ghostButtonStyle, borderColor: '#a78bfa', color: '#a78bfa', cursor: 'pointer' }}
                 >
                   {editing ? 'Close' : 'Edit'}
+                </button>
+              )}
+              {stuck && (
+                <button
+                  onClick={handleCancelStuck}
+                  disabled={overriding}
+                  title="Mark both phases as cancelled so this game day stops appearing as upcoming"
+                  style={{ ...ghostButtonStyle, borderColor: '#f97316', color: '#f97316', cursor: 'pointer' }}
+                >
+                  {overriding ? 'Cancelling…' : confirmOverride ? 'Confirm cancel?' : 'Cancel stuck'}
                 </button>
               )}
               <button

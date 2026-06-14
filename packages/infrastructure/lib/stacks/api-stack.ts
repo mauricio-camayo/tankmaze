@@ -9,6 +9,7 @@ import * as apigwv2 from 'aws-cdk-lib/aws-apigatewayv2';
 import * as apigwv2integrations from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import * as apigwv2authorizers from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import * as scheduler from 'aws-cdk-lib/aws-scheduler';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import { Construct } from 'constructs';
 import { TableSet, tableEnvVars } from './storage-stack';
 
@@ -150,6 +151,21 @@ export class ApiStack extends Stack {
       // schedulerInvokeRole policy → tournamentScheduler ← schedulerInvokeRole env var.
       resources: [tournamentSchedulerArn],
     }));
+
+    // CloudWatch alarm: alert when tournament-scheduler Lambda errors so silent
+    // phase-transition failures are immediately visible (root cause of bug #106).
+    new cloudwatch.Alarm(this, 'TournamentSchedulerErrorAlarm', {
+      alarmName: 'tankmaze-tournament-scheduler-errors',
+      alarmDescription: 'tournament-scheduler Lambda returned an error — a Game Day phase may have silently failed to advance',
+      metric: tournamentScheduler.metricErrors({
+        period: Duration.minutes(5),
+        statistic: 'Sum',
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
 
     // wss-handler — needs WebSocket APIGW endpoint added after API is created
     const wssHandler = goLambda('WssHandler', 'wss-handler', {
