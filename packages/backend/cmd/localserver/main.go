@@ -550,6 +550,10 @@ func (srv *server) registerVersion(w http.ResponseWriter, r *http.Request, tankI
 		jsonErr(w, http.StatusConflict, "game day registration is closed")
 		return
 	}
+	if gd.Phases.RoundRobin.Status != "upcoming" {
+		jsonErr(w, http.StatusConflict, "game day registration is closed")
+		return
+	}
 	srv.store.addVersionRegistration(tankID, version, body.GameDayID)
 	srv.store.addRosterEntry(body.GameDayID, tankID, version, tank.Name)
 	jsonOK(w, map[string]string{"gameDayId": body.GameDayID})

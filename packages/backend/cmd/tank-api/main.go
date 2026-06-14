@@ -847,6 +847,9 @@ func (h *handler) registerVersion(ctx context.Context, req events.APIGatewayV2HT
 	if rc, err := time.Parse(time.RFC3339, gd.Schedule.RegistrationClose); err != nil || !time.Now().Before(rc) {
 		return errResp(http.StatusConflict, "game day registration is closed"), nil
 	}
+	if gd.Phases.RoundRobin.Status != "upcoming" && !isAdmin(req) {
+		return errResp(http.StatusConflict, "game day registration is closed"), nil
+	}
 	for _, id := range ver.RegisteredForGameDays {
 		if id == body.GameDayID {
 			return errResp(http.StatusConflict, "already registered for this game day"), nil
