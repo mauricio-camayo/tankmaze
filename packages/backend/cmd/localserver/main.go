@@ -546,7 +546,7 @@ func (srv *server) registerVersion(w http.ResponseWriter, r *http.Request, tankI
 		jsonErr(w, http.StatusNotFound, "game day not found")
 		return
 	}
-	if gd.Phases.RoundRobin.Status != "upcoming" {
+	if rc, err := time.Parse(time.RFC3339, gd.Schedule.RegistrationClose); err != nil || !time.Now().Before(rc) {
 		jsonErr(w, http.StatusConflict, "game day registration is closed")
 		return
 	}

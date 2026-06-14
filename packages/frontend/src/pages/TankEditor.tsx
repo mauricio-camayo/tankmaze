@@ -360,7 +360,7 @@ function GameDayPickerModal({
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
             {sorted.map((gd) => {
-              const isExpired = new Date(gd.schedule.final) < now;
+              const isExpired = new Date(gd.schedule.registrationClose) < now;
               const regClose = new Date(gd.schedule.registrationClose).toLocaleDateString(undefined, {
                 year: 'numeric', month: 'short', day: 'numeric',
               });
