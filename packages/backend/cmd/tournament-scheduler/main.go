@@ -34,6 +34,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	lambdasvc "github.com/aws/aws-sdk-go-v2/service/lambda"
 	ltypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
+	schedulersvc "github.com/aws/aws-sdk-go-v2/service/scheduler"
+	schedulertypes "github.com/aws/aws-sdk-go-v2/service/scheduler/types"
 
 	"github.com/tankmaze/backend/internal/db"
 )
@@ -55,6 +57,9 @@ type handler struct {
 	scoutVersion        string
 	bruiserTankID       string
 	bruiserVersion      string
+	schedulerSvc        *schedulersvc.Client
+	schedulerRoleArn    string
+	selfArn             string
 }
 
 var h *handler
@@ -74,6 +79,9 @@ func main() {
 		scoutVersion:       os.Getenv("SCOUT_VERSION"),
 		bruiserTankID:      os.Getenv("BRUISER_TANK_ID"),
 		bruiserVersion:     os.Getenv("BRUISER_VERSION"),
+		schedulerSvc:       schedulersvc.NewFromConfig(cfg),
+		schedulerRoleArn:   os.Getenv("SCHEDULER_INVOKE_ROLE_ARN"),
+		selfArn:            os.Getenv("TOURNAMENT_SCHEDULER_FUNCTION"),
 	}
 	lambda.Start(h.handle)
 }
@@ -337,6 +345,20 @@ func (h *handler) handleEliminationR1(ctx context.Context, gd db.GameDay) error 
 			elim[i] = finalAt.Add(-time.Duration(numRounds-i) * 30 * time.Minute).UTC().Format(time.RFC3339)
 		}
 		gd.Schedule.Elimination = elim
+
+		// Push the final forward if the last elimination round + 30 min buffer
+		// would overlap it. Admin-set finalAt is a floor, never a ceiling.
+		if len(elim) > 0 {
+			if lastElimAt, lerr := time.Parse(time.RFC3339, elim[len(elim)-1]); lerr == nil {
+				candidate := lastElimAt.Add(30 * time.Minute)
+				if candidate.After(finalAt) {
+					log.Printf("auto-advancing finalAt %s → %s for game day %s",
+						finalAt.Format(time.RFC3339), candidate.UTC().Format(time.RFC3339), gd.GameDayID)
+					gd.Schedule.Final = candidate.UTC().Format(time.RFC3339)
+					h.rescheduleFinal(ctx, gd)
+				}
+			}
+		}
 	}
 
 	// Seed the bracket.
@@ -967,6 +989,41 @@ func (h *handler) invokeMatchRunner(ctx context.Context, matchID string, sync bo
 		Payload:        payload,
 	}); err != nil {
 		log.Printf("invoke match-runner for %s: %v", matchID, err)
+	}
+}
+
+// rescheduleFinal updates the EventBridge Scheduler rule for the final phase
+// to fire at the new time stored in gd.Schedule.Final. No-ops gracefully when
+// the scheduler client or role ARN env vars are missing (e.g. in tests).
+func (h *handler) rescheduleFinal(ctx context.Context, gd db.GameDay) {
+	if h.schedulerSvc == nil || h.schedulerRoleArn == "" || h.selfArn == "" {
+		log.Printf("rescheduleFinal: scheduler not configured — skipping EventBridge update")
+		return
+	}
+	finalAt, err := time.Parse(time.RFC3339, gd.Schedule.Final)
+	if err != nil {
+		log.Printf("rescheduleFinal: parse finalAt: %v", err)
+		return
+	}
+	scheduleName := gd.GameDayID + "-final"
+	payload, _ := json.Marshal(map[string]string{"gameDayId": gd.GameDayID, "phase": "final"})
+	atExpr := "at(" + finalAt.UTC().Format("2006-01-02T15:04:05") + ")"
+	if _, err := h.schedulerSvc.UpdateSchedule(ctx, &schedulersvc.UpdateScheduleInput{
+		Name:                       aws.String(scheduleName),
+		GroupName:                  aws.String("tankmaze-gamedays"),
+		ScheduleExpression:         aws.String(atExpr),
+		ScheduleExpressionTimezone: aws.String("UTC"),
+		FlexibleTimeWindow: &schedulertypes.FlexibleTimeWindow{
+			Mode: schedulertypes.FlexibleTimeWindowModeOff,
+		},
+		Target: &schedulertypes.Target{
+			Arn:     aws.String(h.selfArn),
+			RoleArn: aws.String(h.schedulerRoleArn),
+			Input:   aws.String(string(payload)),
+		},
+		ActionAfterCompletion: schedulertypes.ActionAfterCompletionDelete,
+	}); err != nil {
+		log.Printf("rescheduleFinal %s: %v", scheduleName, err)
 	}
 }
 

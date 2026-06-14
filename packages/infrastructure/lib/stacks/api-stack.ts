@@ -107,7 +107,10 @@ export class ApiStack extends Stack {
       ...tableEnvVars(tables),
       MATCH_RUNNER_FUNCTION:    matchRunner.functionArn,
       RANKING_UPDATER_FUNCTION: rankingUpdater.functionArn,
+      SCHEDULER_INVOKE_ROLE_ARN: schedulerInvokeRole.roleArn,
     });
+    // Self-reference: lets handleEliminationR1 update the final EventBridge rule.
+    tournamentScheduler.addEnvironment('TOURNAMENT_SCHEDULER_FUNCTION', tournamentScheduler.functionArn);
     tables.gamedays.grantReadWriteData(tournamentScheduler);
     tables.matches.grantReadWriteData(tournamentScheduler);
     tables.tankVersions.grantReadData(tournamentScheduler);
