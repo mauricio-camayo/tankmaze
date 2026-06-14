@@ -46,7 +46,7 @@ type TankVersion struct {
 	WasmSHA256           string        `dynamodbav:"wasmSha256,omitempty"  json:"wasmSha256,omitempty"`
 	CompileStatus        string        `dynamodbav:"compileStatus"         json:"compileStatus"`
 	CompileError         string        `dynamodbav:"compileError,omitempty" json:"compileError,omitempty"`
-	RegisteredForGameDay string        `dynamodbav:"registeredForGameDay,omitempty" json:"registeredForGameDay,omitempty"`
+	RegisteredForGameDays []string      `dynamodbav:"registeredForGameDays,omitempty" json:"registeredForGameDays,omitempty"`
 	CreatedAt            int64         `dynamodbav:"createdAt"             json:"createdAt"`
 	// Major-only stats (zero value when not set)
 	WinRate          float64 `dynamodbav:"winRate,omitempty"          json:"winRate"`

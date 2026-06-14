@@ -212,8 +212,10 @@ function MajorVersionCard({ major, minors, isOwner }: { major: TankVersion; mino
             {major.disqualified && (
               <span style={{ background: '#f87171', color: '#fff', fontSize: 10, padding: '1px 6px', borderRadius: 4, fontWeight: 600 }}>DQ</span>
             )}
-            {major.registeredForGameDay && (
-              <span style={{ background: '#4ade80', color: '#0f0f1a', fontSize: 10, padding: '1px 6px', borderRadius: 4, fontWeight: 600 }}>REGISTERED</span>
+            {(major.registeredForGameDays?.length ?? 0) > 0 && (
+              <span style={{ background: '#4ade80', color: '#0f0f1a', fontSize: 10, padding: '1px 6px', borderRadius: 4, fontWeight: 600 }}>
+                REGISTERED{(major.registeredForGameDays!.length > 1) ? ` ×${major.registeredForGameDays!.length}` : ''}
+              </span>
             )}
           </div>
           <div style={{ color: '#64748b', fontSize: 12 }}>
@@ -348,12 +350,12 @@ export default function TankDetail() {
     }
   }
 
-  async function handleWithdraw() {
-    if (!tankId || !latestReadyMajorForActions?.registeredForGameDay) return;
+  async function handleWithdraw(gameDayId: string) {
+    if (!tankId || !latestReadyMajorForActions) return;
     setRegistering(true);
     setRegisterError(null);
     try {
-      await withdrawRegistration(tankId, latestReadyMajorForActions.version);
+      await withdrawRegistration(tankId, latestReadyMajorForActions.version, gameDayId);
       const updated = await getTank(tankId);
       setTank(updated);
     } catch (e) {
@@ -409,7 +411,7 @@ export default function TankDetail() {
   // For owner actions: a ready major version (compileStatus 'ready' or '' for public view).
   const latestReadyMajorForActions = majors.find((v) => v.compileStatus === 'ready' || v.compileStatus === '');
   const canRegister = isOwner && !!latestReadyMajorForActions;
-  const isRegistered = canRegister && !!latestReadyMajorForActions?.registeredForGameDay;
+  const isRegistered = canRegister && (latestReadyMajorForActions?.registeredForGameDays?.length ?? 0) > 0;
   const canTest = isOwner && !!latestReadyMajorForActions;
 
   return (
@@ -481,15 +483,16 @@ export default function TankDetail() {
             </button>
           )}
           {canRegister && (
-            isRegistered ? (
-              <button onClick={handleWithdraw} disabled={registering} style={ghostButtonStyle}>
-                {registering ? '…' : 'Withdraw Registration'}
-              </button>
-            ) : (
+            <>
+              {(latestReadyMajorForActions?.registeredForGameDays ?? []).map((gdId) => (
+                <button key={gdId} onClick={() => handleWithdraw(gdId)} disabled={registering} style={ghostButtonStyle}>
+                  {registering ? '…' : `Withdraw ·${gdId.slice(-6)}`}
+                </button>
+              ))}
               <button onClick={openRegisterPicker} disabled={registering} style={ghostButtonStyle}>
                 {registering ? '…' : 'Register for Game Day'}
               </button>
-            )
+            </>
           )}
           {latestReadyMajor && !tank.scoreTransferredTo && (
             <button onClick={() => setShowFork(true)} style={ghostButtonStyle}>Fork</button>
@@ -513,17 +516,19 @@ export default function TankDetail() {
                     setConfirmDelete(false);
                     if (e instanceof Error && e.message.startsWith('409')) {
                       setShowDeregisterConfirm(true);
-                      const registeredGdId = tank?.versions.find(
-                        (v) => v.registeredForGameDay != null && v.registeredForGameDay !== '',
-                      )?.registeredForGameDay;
-                      if (registeredGdId) {
+                      const registeredGdIds = tank?.versions.flatMap(
+                        (v) => v.registeredForGameDays ?? [],
+                      ) ?? [];
+                      if (registeredGdIds.length === 1) {
                         listGameDays().then((days) => {
-                          const gd = days.find((d) => d.gameDayId === registeredGdId);
+                          const gd = days.find((d) => d.gameDayId === registeredGdIds[0]);
                           if (gd) {
                             const date = new Date(gd.schedule.registrationClose);
                             setGameDayLabel(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
                           }
-                        }).catch(() => { /* label stays null, UUID shown as fallback */ });
+                        }).catch(() => { /* label stays null */ });
+                      } else if (registeredGdIds.length > 1) {
+                        setGameDayLabel(`${registeredGdIds.length} game days`);
                       }
                     } else {
                       alert(e instanceof Error ? e.message : 'Delete failed');
@@ -601,8 +606,8 @@ export default function TankDetail() {
       )}
 
       {showDeregisterConfirm && tank && tankId && (() => {
-        const registeredVersion = tank.versions.find(
-          (v) => v.registeredForGameDay != null && v.registeredForGameDay !== '',
+        const registeredVersions = tank.versions.filter(
+          (v) => (v.registeredForGameDays?.length ?? 0) > 0,
         );
         return (
           <div style={{
@@ -612,13 +617,9 @@ export default function TankDetail() {
             <div style={{ ...cardStyle, maxWidth: 420, width: '100%', padding: 28 }}>
               <h3 style={{ margin: '0 0 12px', color: '#f87171', fontSize: 17 }}>Tank is registered</h3>
               <p style={{ margin: '0 0 20px', color: '#94a3b8', fontSize: 14, lineHeight: 1.5 }}>
-                This tank is currently registered for a game day
-                {gameDayLabel
-                  ? ` (${gameDayLabel})`
-                  : registeredVersion?.registeredForGameDay
-                    ? ` (${registeredVersion.registeredForGameDay})`
-                    : ''}.
-                To delete it, the registration must be withdrawn first.
+                This tank is currently registered for
+                {gameDayLabel ? ` ${gameDayLabel}` : ' a game day'}.
+                To delete it, all registrations must be withdrawn first.
                 Proceed with de-registering and deleting the tank?
               </p>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -630,12 +631,16 @@ export default function TankDetail() {
                 </button>
                 <button
                   onClick={async () => {
-                    if (!registeredVersion) return;
+                    if (registeredVersions.length === 0) return;
                     setDeleting(true);
                     setShowDeregisterConfirm(false);
                     setGameDayLabel(null);
                     try {
-                      await withdrawRegistration(tankId, registeredVersion.version);
+                      for (const rv of registeredVersions) {
+                        for (const gdId of rv.registeredForGameDays ?? []) {
+                          await withdrawRegistration(tankId, rv.version, gdId);
+                        }
+                      }
                       await deleteTank(tankId);
                       navigate('/dashboard');
                     } catch (e) {

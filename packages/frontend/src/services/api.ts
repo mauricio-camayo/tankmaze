@@ -64,10 +64,10 @@ export const registerForGameDay = (tankId: string, version: string, gameDayId: s
     `/tanks/${tankId}/versions/${encodeURIComponent(version)}/register`,
     { method: 'POST', body: JSON.stringify({ gameDayId }) },
   );
-export const withdrawRegistration = (tankId: string, version: string) =>
+export const withdrawRegistration = (tankId: string, version: string, gameDayId: string) =>
   request<void>(
     `/tanks/${tankId}/versions/${encodeURIComponent(version)}/register`,
-    { method: 'DELETE' },
+    { method: 'DELETE', body: JSON.stringify({ gameDayId }) },
   );
 
 // Score transfer
@@ -112,8 +112,8 @@ export const createGameDay = (body: {
   forcedMapIds?: string[];
   randomMaps?: boolean;
 }) => request<GameDay>('/gamedays', { method: 'POST', body: JSON.stringify(body) });
-export const deleteGameDay = (gameDayId: string) =>
-  request<void>(`/gamedays/${gameDayId}`, { method: 'DELETE' });
+export const deleteGameDay = (gameDayId: string, force?: boolean) =>
+  request<void>(`/gamedays/${gameDayId}${force ? '?force=true' : ''}`, { method: 'DELETE' });
 export const patchGameDay = (
   gameDayId: string,
   body: {

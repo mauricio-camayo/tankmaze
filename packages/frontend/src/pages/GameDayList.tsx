@@ -281,11 +281,13 @@ function GameDayRow({ gd, onDeleted, onRefresh }: { gd: GameDay; onDeleted: () =
   const { user } = useAuthStore();
   const status = phaseOverallStatus(gd);
 
+  const isUpcoming = status === 'upcoming';
+
   async function handleDelete() {
     if (!confirmDelete) { setConfirmDelete(true); return; }
     setDeleting(true);
     try {
-      await deleteGameDay(gd.gameDayId);
+      await deleteGameDay(gd.gameDayId, !isUpcoming);
       onDeleted();
     } catch {
       setDeleting(false);
@@ -326,20 +328,22 @@ function GameDayRow({ gd, onDeleted, onRefresh }: { gd: GameDay; onDeleted: () =
           >
             View
           </Link>
-          {user?.isAdmin && status === 'upcoming' && new Date(gd.schedule.final) > new Date() && (
+          {user?.isAdmin && (
             <>
-              <button
-                onClick={() => { setEditing((v) => !v); setConfirmDelete(false); }}
-                style={{ ...ghostButtonStyle, borderColor: '#a78bfa', color: '#a78bfa', cursor: 'pointer' }}
-              >
-                {editing ? 'Close' : 'Edit'}
-              </button>
+              {isUpcoming && new Date(gd.schedule.final) > new Date() && (
+                <button
+                  onClick={() => { setEditing((v) => !v); setConfirmDelete(false); }}
+                  style={{ ...ghostButtonStyle, borderColor: '#a78bfa', color: '#a78bfa', cursor: 'pointer' }}
+                >
+                  {editing ? 'Close' : 'Edit'}
+                </button>
+              )}
               <button
                 onClick={handleDelete}
                 disabled={deleting}
                 style={{ ...ghostButtonStyle, borderColor: '#7f1d1d', color: '#f87171', cursor: 'pointer' }}
               >
-                {deleting ? 'Deleting…' : confirmDelete ? 'Confirm?' : 'Delete'}
+                {deleting ? 'Deleting…' : confirmDelete ? (!isUpcoming ? 'Force delete?' : 'Confirm?') : 'Delete'}
               </button>
             </>
           )}

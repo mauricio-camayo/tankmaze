@@ -40,7 +40,7 @@ export interface TankVersion {
   wasmSha256: string | null;
   compileStatus: 'pending' | 'compiling' | 'ready' | 'failed' | '';
   compileError: string | null;
-  registeredForGameDay: string | null;
+  registeredForGameDays: string[] | null;
   createdAt: number;
   winRate: number | null;
   matchesPlayed: number | null;

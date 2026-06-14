@@ -563,7 +563,7 @@ func (h *handler) deleteTank(ctx context.Context, req events.APIGatewayV2HTTPReq
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
 	for _, v := range versions {
-		if v.RegisteredForGameDay != "" {
+		if len(v.RegisteredForGameDays) > 0 {
 			return errResp(http.StatusConflict, "tank is registered for a game day and cannot be deleted"), nil
 		}
 	}
@@ -843,8 +843,13 @@ func (h *handler) registerVersion(ctx context.Context, req events.APIGatewayV2HT
 	if gd.Phases.RoundRobin.Status != "upcoming" {
 		return errResp(http.StatusConflict, "game day registration is closed"), nil
 	}
+	for _, id := range ver.RegisteredForGameDays {
+		if id == body.GameDayID {
+			return errResp(http.StatusConflict, "already registered for this game day"), nil
+		}
+	}
 
-	if err := h.store.UpdateVersionRegistration(ctx, tankID, version, body.GameDayID); err != nil {
+	if err := h.store.AddVersionRegistration(ctx, tankID, version, body.GameDayID); err != nil {
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
 	return jsonResp(http.StatusOK, map[string]string{"gameDayId": body.GameDayID}), nil
@@ -865,7 +870,13 @@ func (h *handler) deregisterVersion(ctx context.Context, req events.APIGatewayV2
 	if tank.UserID != uid {
 		return errResp(http.StatusForbidden, "forbidden"), nil
 	}
-	if err := h.store.UpdateVersionRegistration(ctx, tankID, version, ""); err != nil {
+	var body struct {
+		GameDayID string `json:"gameDayId"`
+	}
+	if err := json.Unmarshal([]byte(req.Body), &body); err != nil || body.GameDayID == "" {
+		return errResp(http.StatusBadRequest, "gameDayId is required"), nil
+	}
+	if err := h.store.RemoveVersionRegistration(ctx, tankID, version, body.GameDayID); err != nil {
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
 	return jsonResp(http.StatusOK, map[string]bool{"deregistered": true}), nil
@@ -1321,8 +1332,8 @@ func (h *handler) deleteGameDay(ctx context.Context, req events.APIGatewayV2HTTP
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
 
-	// Reject if any phase has already started.
-	if gd.Phases.RoundRobin.Status != "upcoming" {
+	force := req.QueryStringParameters["force"] == "true"
+	if !force && gd.Phases.RoundRobin.Status != "upcoming" {
 		return errResp(http.StatusConflict, "game day has already started"), nil
 	}
 

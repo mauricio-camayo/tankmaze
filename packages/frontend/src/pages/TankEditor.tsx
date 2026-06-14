@@ -674,13 +674,13 @@ export default function TankEditor() {
     }
   }
 
-  async function handleWithdraw() {
+  async function handleWithdraw(gameDayId: string) {
     if (!tankId) return;
     const latest = sortedByAge(versions)[0];
-    if (!latest || !isMajor(latest.version) || !latest.registeredForGameDay) return;
+    if (!latest || !isMajor(latest.version)) return;
     setRegistering(true);
     try {
-      await withdrawRegistration(tankId, latest.version);
+      await withdrawRegistration(tankId, latest.version, gameDayId);
       const { versions: v } = await getTank(tankId);
       setVersions(v ?? []);
     } catch (e) {
@@ -736,7 +736,7 @@ export default function TankEditor() {
     latestVersion &&
     isMajor(latestVersion.version) &&
     latestVersion.compileStatus === 'ready';
-  const isRegistered = canRegister && !!latestVersion?.registeredForGameDay;
+  const isRegistered = canRegister && (latestVersion?.registeredForGameDays?.length ?? 0) > 0;
   const isSaving = saveStatus === 'submitting' || saveStatus === 'polling';
 
   if (pageLoading) return <Layout><p style={{ color: '#64748b' }}>Loading…</p></Layout>;
@@ -774,15 +774,16 @@ export default function TankEditor() {
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {canRegister && (
-            isRegistered ? (
-              <button onClick={handleWithdraw} disabled={registering} style={ghostButtonStyle}>
-                {registering ? '…' : 'Withdraw Registration'}
-              </button>
-            ) : (
+            <>
+              {(latestVersion?.registeredForGameDays ?? []).map((gdId) => (
+                <button key={gdId} onClick={() => handleWithdraw(gdId)} disabled={registering} style={ghostButtonStyle}>
+                  {registering ? '…' : `Withdraw ·${gdId.slice(-6)}`}
+                </button>
+              ))}
               <button onClick={openRegisterPicker} disabled={registering} style={ghostButtonStyle}>
                 {registering ? '…' : 'Register for Game Day'}
               </button>
-            )
+            </>
           )}
           {canTest && (
             <button onClick={openTestDialog} style={ghostButtonStyle}>

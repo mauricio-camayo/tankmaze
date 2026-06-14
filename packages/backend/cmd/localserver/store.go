@@ -143,13 +143,37 @@ func (s *memStore) updateVersionConfig(tankID, version string, cfg db.VersionCon
 	}
 }
 
-func (s *memStore) updateVersionRegistration(tankID, version, gameDayID string) {
+func (s *memStore) addVersionRegistration(tankID, version, gameDayID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	vs := s.versions[tankID]
 	for i, v := range vs {
 		if v.Version == version {
-			vs[i].RegisteredForGameDay = gameDayID
+			for _, id := range vs[i].RegisteredForGameDays {
+				if id == gameDayID {
+					return
+				}
+			}
+			vs[i].RegisteredForGameDays = append(vs[i].RegisteredForGameDays, gameDayID)
+			s.versions[tankID] = vs
+			return
+		}
+	}
+}
+
+func (s *memStore) removeVersionRegistration(tankID, version, gameDayID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	vs := s.versions[tankID]
+	for i, v := range vs {
+		if v.Version == version {
+			filtered := vs[i].RegisteredForGameDays[:0]
+			for _, id := range v.RegisteredForGameDays {
+				if id != gameDayID {
+					filtered = append(filtered, id)
+				}
+			}
+			vs[i].RegisteredForGameDays = filtered
 			s.versions[tankID] = vs
 			return
 		}

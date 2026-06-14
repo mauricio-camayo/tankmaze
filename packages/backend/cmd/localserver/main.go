@@ -363,7 +363,7 @@ func (srv *server) deleteTank(w http.ResponseWriter, _ *http.Request, tankID str
 	}
 	versions := srv.store.listVersionsByTank(tankID)
 	for _, v := range versions {
-		if v.RegisteredForGameDay != "" {
+		if len(v.RegisteredForGameDays) > 0 {
 			jsonErr(w, http.StatusConflict, "tank is registered for a game day and cannot be deleted")
 			return
 		}
@@ -545,12 +545,19 @@ func (srv *server) registerVersion(w http.ResponseWriter, r *http.Request, tankI
 		jsonErr(w, http.StatusConflict, "game day registration is closed")
 		return
 	}
-	srv.store.updateVersionRegistration(tankID, version, body.GameDayID)
+	srv.store.addVersionRegistration(tankID, version, body.GameDayID)
 	jsonOK(w, map[string]string{"gameDayId": body.GameDayID})
 }
 
-func (srv *server) deregisterVersion(w http.ResponseWriter, _ *http.Request, tankID, version string) {
-	srv.store.updateVersionRegistration(tankID, version, "")
+func (srv *server) deregisterVersion(w http.ResponseWriter, r *http.Request, tankID, version string) {
+	var body struct {
+		GameDayID string `json:"gameDayId"`
+	}
+	if err := readJSON(r, &body); err != nil || body.GameDayID == "" {
+		jsonErr(w, http.StatusBadRequest, "gameDayId is required")
+		return
+	}
+	srv.store.removeVersionRegistration(tankID, version, body.GameDayID)
 	jsonOK(w, map[string]bool{"deregistered": true})
 }
 
@@ -863,13 +870,14 @@ func (srv *server) createGameDay(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(gd)
 }
 
-func (srv *server) deleteGameDay(w http.ResponseWriter, _ *http.Request, gameDayID string) {
+func (srv *server) deleteGameDay(w http.ResponseWriter, r *http.Request, gameDayID string) {
 	gd, err := srv.store.getGameDay(gameDayID)
 	if errors.Is(err, db.ErrNotFound) {
 		jsonErr(w, http.StatusNotFound, "game day not found")
 		return
 	}
-	if gd.Phases.RoundRobin.Status != "upcoming" {
+	force := r.URL.Query().Get("force") == "true"
+	if !force && gd.Phases.RoundRobin.Status != "upcoming" {
 		jsonErr(w, http.StatusConflict, "game day has already started")
 		return
 	}

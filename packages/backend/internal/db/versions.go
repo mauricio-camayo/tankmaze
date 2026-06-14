@@ -78,16 +78,52 @@ func (s *Store) UpdateVersionCompile(ctx context.Context, tankID, version string
 	return err
 }
 
-// UpdateVersionRegistration sets or clears the registeredForGameDay attribute.
-// Pass an empty gameDayID to deregister.
-func (s *Store) UpdateVersionRegistration(ctx context.Context, tankID, version, gameDayID string) error {
-	var upd expression.UpdateBuilder
-	if gameDayID != "" {
-		upd = expression.Set(expression.Name("registeredForGameDay"), expression.Value(gameDayID))
-	} else {
-		upd = expression.Remove(expression.Name("registeredForGameDay"))
+// AddVersionRegistration appends gameDayID to the registeredForGameDays list.
+// No-ops if already present.
+func (s *Store) AddVersionRegistration(ctx context.Context, tankID, version, gameDayID string) error {
+	ver, err := s.GetVersion(ctx, tankID, version)
+	if err != nil {
+		return err
 	}
+	for _, id := range ver.RegisteredForGameDays {
+		if id == gameDayID {
+			return nil
+		}
+	}
+	updated := append(ver.RegisteredForGameDays, gameDayID)
+	upd := expression.Set(expression.Name("registeredForGameDays"), expression.Value(updated))
+	expr, err := expression.NewBuilder().WithUpdate(upd).Build()
+	if err != nil {
+		return fmt.Errorf("build expression: %w", err)
+	}
+	_, err = s.db.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName:                 &s.versionsTable,
+		Key:                       versionKey(tankID, version),
+		UpdateExpression:          expr.Update(),
+		ExpressionAttributeNames:  expr.Names(),
+		ExpressionAttributeValues: expr.Values(),
+	})
+	return err
+}
 
+// RemoveVersionRegistration removes gameDayID from the registeredForGameDays list.
+func (s *Store) RemoveVersionRegistration(ctx context.Context, tankID, version, gameDayID string) error {
+	ver, err := s.GetVersion(ctx, tankID, version)
+	if err != nil {
+		return err
+	}
+	filtered := make([]string, 0, len(ver.RegisteredForGameDays))
+	for _, id := range ver.RegisteredForGameDays {
+		if id != gameDayID {
+			filtered = append(filtered, id)
+		}
+	}
+	var upd expression.UpdateBuilder
+	if len(filtered) == 0 {
+		upd = expression.Remove(expression.Name("registeredForGameDays"))
+	} else {
+		upd = expression.Set(expression.Name("registeredForGameDays"), expression.Value(filtered))
+	}
 	expr, err := expression.NewBuilder().WithUpdate(upd).Build()
 	if err != nil {
 		return fmt.Errorf("build expression: %w", err)
@@ -136,10 +172,10 @@ func (s *Store) SetVersionDisqualified(ctx context.Context, tankID, version stri
 	return err
 }
 
-// ScanVersionsByGameDay returns all version records whose registeredForGameDay
-// attribute equals gameDayID. This requires a full table scan.
+// ScanVersionsByGameDay returns all version records whose registeredForGameDays
+// list contains gameDayID. This requires a full table scan.
 func (s *Store) ScanVersionsByGameDay(ctx context.Context, gameDayID string) ([]TankVersion, error) {
-	filt := expression.Name("registeredForGameDay").Equal(expression.Value(gameDayID))
+	filt := expression.Name("registeredForGameDays").Contains(expression.Value(gameDayID))
 	expr, err := expression.NewBuilder().WithFilter(filt).Build()
 	if err != nil {
 		return nil, fmt.Errorf("build expression: %w", err)
