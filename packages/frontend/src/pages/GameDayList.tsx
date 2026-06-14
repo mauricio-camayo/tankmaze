@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useBlocker } from 'react-router-dom';
+import { Link, useBlocker, useLocation } from 'react-router-dom';
 import Layout, { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
 import { listGameDays, createGameDay, deleteGameDay, patchGameDay, listMaps, overrideGameDayPhase } from '../services/api';
 import { useAuthStore } from '../store/authStore';
@@ -283,12 +283,12 @@ function isStuck(gd: GameDay): boolean {
   return past && neverStarted;
 }
 
-function GameDayRow({ gd, onDeleted, onRefresh }: { gd: GameDay; onDeleted: () => void; onRefresh: () => void }) {
+function GameDayRow({ gd, onDeleted, onRefresh, autoOpen }: { gd: GameDay; onDeleted: () => void; onRefresh: () => void; autoOpen?: boolean }) {
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [overriding, setOverriding] = useState(false);
   const [confirmOverride, setConfirmOverride] = useState(false);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(autoOpen ?? false);
   const { user } = useAuthStore();
   const status = phaseOverallStatus(gd);
 
@@ -599,6 +599,8 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
 
 export default function GameDayList() {
   const { user } = useAuthStore();
+  const { state } = useLocation();
+  const editId: string | undefined = state?.editId;
   const [gameDays, setGameDays] = useState<GameDay[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -641,7 +643,7 @@ export default function GameDayList() {
             return order[phaseOverallStatus(a)] - order[phaseOverallStatus(b)];
           })
           .map((gd) => (
-            <GameDayRow key={gd.gameDayId} gd={gd} onDeleted={load} onRefresh={load} />
+            <GameDayRow key={gd.gameDayId} gd={gd} onDeleted={load} onRefresh={load} autoOpen={editId === gd.gameDayId} />
           ))}
       </div>
     </Layout>

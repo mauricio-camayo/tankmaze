@@ -650,7 +650,7 @@ export default function GameDayPage() {
         </div>
         {isAdmin && phases.roundRobin.status === 'upcoming' && (
           <button
-            onClick={() => navigate('/gamedays')}
+            onClick={() => navigate('/gamedays', { state: { editId: gameDay.gameDayId } })}
             style={{ ...ghostButtonStyle, fontSize: 13 }}
           >
             Edit
