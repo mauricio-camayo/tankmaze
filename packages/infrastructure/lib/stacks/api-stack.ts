@@ -120,11 +120,16 @@ export class ApiStack extends Stack {
       RANKING_UPDATER_FUNCTION:  rankingUpdater.functionArn,
       SCHEDULER_INVOKE_ROLE_ARN: schedulerInvokeRole.roleArn,
       TOURNAMENT_SCHEDULER_FUNCTION: tournamentSchedulerArn,
+      SCOUT_TANK_ID:             'builtin-scout',
+      SCOUT_VERSION:             'v1',
+      BRUISER_TANK_ID:           'builtin-bruiser',
+      BRUISER_VERSION:           'v1',
     });
     // Pin the actual function to the name we referenced above.
     (tournamentScheduler.node.defaultChild as lambda.CfnFunction).functionName = tournamentSchedulerFunctionName;
     tables.gamedays.grantReadWriteData(tournamentScheduler);
     tables.matches.grantReadWriteData(tournamentScheduler);
+    tables.tanks.grantReadData(tournamentScheduler);
     tables.tankVersions.grantReadData(tournamentScheduler);
     tables.connections.grantReadData(tournamentScheduler);
     matchRunner.grantInvoke(tournamentScheduler);
