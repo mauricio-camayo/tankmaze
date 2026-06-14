@@ -326,6 +326,18 @@ export default function TankDetail() {
       .catch(() => { /* rank unavailable — leave null */ });
   }, [tankId]);
 
+  // Pre-fetch game days when the tank is already registered, so Withdraw button labels
+  // can show the human-readable name instead of a UUID fragment.
+  useEffect(() => {
+    if (!tankId) return;
+    const ids = tank?.versions.flatMap((v) => v.registeredForGameDays ?? []) ?? [];
+    if (ids.length > 0 && gameDays.length === 0) {
+      setLoadingGameDays(true);
+      listGameDays().then(setGameDays).catch(() => setGameDays([])).finally(() => setLoadingGameDays(false));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tank]);
+
   async function openRegisterPicker() {
     setShowGameDayPicker(true);
     if (gameDays.length === 0) {
@@ -476,82 +488,105 @@ export default function TankDetail() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, flexShrink: 0, marginLeft: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-          {canTest && (
-            <button onClick={openTestDialog} style={ghostButtonStyle}>
-              Test vs AI
-            </button>
-          )}
-          {canRegister && (
-            <>
-              {(latestReadyMajorForActions?.registeredForGameDays ?? []).map((gdId) => (
-                <button key={gdId} onClick={() => handleWithdraw(gdId)} disabled={registering} style={ghostButtonStyle}>
-                  {registering ? '…' : `Withdraw ·${gdId.slice(-6)}`}
-                </button>
-              ))}
-              <button onClick={openRegisterPicker} disabled={registering} style={ghostButtonStyle}>
-                {registering ? '…' : 'Register for Game Day'}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0, marginLeft: 16, alignItems: 'flex-end' }}>
+          {/* Primary action row */}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {canTest && (
+              <button onClick={openTestDialog} style={ghostButtonStyle}>
+                Test vs AI
               </button>
-            </>
-          )}
-          {latestReadyMajor && !tank.scoreTransferredTo && (
-            <button onClick={() => setShowFork(true)} style={ghostButtonStyle}>Fork</button>
-          )}
-          {isOwner && (
-            <button onClick={() => navigate(`/tanks/${tankId}/edit`)} style={primaryButtonStyle}>
-              Edit
-            </button>
-          )}
-          {isOwner && (confirmDelete ? (
-            <>
-              <span style={{ color: '#f87171', fontSize: 13 }}>Delete forever?</span>
-              <button
-                onClick={async () => {
-                  setDeleting(true);
-                  try {
-                    await deleteTank(tankId!);
-                    navigate('/dashboard');
-                  } catch (e) {
-                    setDeleting(false);
-                    setConfirmDelete(false);
-                    if (e instanceof Error && e.message.startsWith('409')) {
-                      setShowDeregisterConfirm(true);
-                      const registeredGdIds = tank?.versions.flatMap(
-                        (v) => v.registeredForGameDays ?? [],
-                      ) ?? [];
-                      if (registeredGdIds.length === 1) {
-                        listGameDays().then((days) => {
-                          const gd = days.find((d) => d.gameDayId === registeredGdIds[0]);
-                          if (gd) {
-                            const date = new Date(gd.schedule.registrationClose);
-                            setGameDayLabel(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
-                          }
-                        }).catch(() => { /* label stays null */ });
-                      } else if (registeredGdIds.length > 1) {
-                        setGameDayLabel(`${registeredGdIds.length} game days`);
+            )}
+            {canRegister && (
+              <>
+                {(latestReadyMajorForActions?.registeredForGameDays ?? []).length < 2 &&
+                  (latestReadyMajorForActions?.registeredForGameDays ?? []).map((gdId) => {
+                    const gd = gameDays.find((d) => d.gameDayId === gdId);
+                    const label = gd?.name ?? gdId.slice(-6);
+                    return (
+                      <button key={gdId} onClick={() => handleWithdraw(gdId)} disabled={registering} style={ghostButtonStyle}>
+                        {registering ? '…' : `Withdraw · ${label}`}
+                      </button>
+                    );
+                  })}
+                <button onClick={openRegisterPicker} disabled={registering} style={ghostButtonStyle}>
+                  {registering ? '…' : 'Register for Game Day'}
+                </button>
+              </>
+            )}
+            {latestReadyMajor && !tank.scoreTransferredTo && (
+              <button onClick={() => setShowFork(true)} style={ghostButtonStyle}>Fork</button>
+            )}
+            {isOwner && (
+              <button onClick={() => navigate(`/tanks/${tankId}/edit`)} style={primaryButtonStyle}>
+                Edit
+              </button>
+            )}
+            {isOwner && (confirmDelete ? (
+              <>
+                <span style={{ color: '#f87171', fontSize: 13 }}>Delete forever?</span>
+                <button
+                  onClick={async () => {
+                    setDeleting(true);
+                    try {
+                      await deleteTank(tankId!);
+                      navigate('/dashboard');
+                    } catch (e) {
+                      setDeleting(false);
+                      setConfirmDelete(false);
+                      if (e instanceof Error && e.message.startsWith('409')) {
+                        setShowDeregisterConfirm(true);
+                        const registeredGdIds = tank?.versions.flatMap(
+                          (v) => v.registeredForGameDays ?? [],
+                        ) ?? [];
+                        if (registeredGdIds.length === 1) {
+                          listGameDays().then((days) => {
+                            const gd = days.find((d) => d.gameDayId === registeredGdIds[0]);
+                            if (gd) {
+                              const date = new Date(gd.schedule.registrationClose);
+                              setGameDayLabel(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
+                            }
+                          }).catch(() => { /* label stays null */ });
+                        } else if (registeredGdIds.length > 1) {
+                          setGameDayLabel(`${registeredGdIds.length} game days`);
+                        }
+                      } else {
+                        alert(e instanceof Error ? e.message : 'Delete failed');
                       }
-                    } else {
-                      alert(e instanceof Error ? e.message : 'Delete failed');
                     }
-                  }
-                }}
-                disabled={deleting}
+                  }}
+                  disabled={deleting}
+                  style={{ ...ghostButtonStyle, borderColor: '#7f1d1d', color: '#f87171' }}
+                >
+                  {deleting ? 'Deleting…' : 'Yes, delete'}
+                </button>
+                <button onClick={() => setConfirmDelete(false)} style={ghostButtonStyle}>
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setConfirmDelete(true)}
                 style={{ ...ghostButtonStyle, borderColor: '#7f1d1d', color: '#f87171' }}
               >
-                {deleting ? 'Deleting…' : 'Yes, delete'}
+                Delete
               </button>
-              <button onClick={() => setConfirmDelete(false)} style={ghostButtonStyle}>
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={() => setConfirmDelete(true)}
-              style={{ ...ghostButtonStyle, borderColor: '#7f1d1d', color: '#f87171' }}
-            >
-              Delete
-            </button>
-          ))}
+            ))}
+          </div>
+          {/* Withdraw row — only shown when registered for 2+ game days to avoid crowding the header */}
+          {canRegister && (latestReadyMajorForActions?.registeredForGameDays ?? []).length >= 2 && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              {(latestReadyMajorForActions!.registeredForGameDays!).map((gdId) => {
+                const gd = gameDays.find((d) => d.gameDayId === gdId);
+                const label = gd?.name ?? gdId.slice(-6);
+                return (
+                  <button key={gdId} onClick={() => handleWithdraw(gdId)} disabled={registering}
+                    style={{ ...ghostButtonStyle, fontSize: 12, padding: '3px 10px' }}>
+                    {registering ? '…' : `Withdraw · ${label}`}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
