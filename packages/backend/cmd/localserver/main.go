@@ -889,6 +889,9 @@ func (srv *server) deleteGameDay(w http.ResponseWriter, r *http.Request, gameDay
 		return
 	}
 	srv.store.deleteGameDay(gameDayID)
+	for _, t := range gd.RegisteredTanks {
+		srv.store.removeVersionRegistration(t.TankID, t.Version, gameDayID)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

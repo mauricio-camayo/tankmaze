@@ -1368,6 +1368,15 @@ func (h *handler) deleteGameDay(ctx context.Context, req events.APIGatewayV2HTTP
 		log.Printf("delete gameday %s: %v", gameDayID, err)
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
+	var cleanupFailed []string
+	for _, t := range gd.RegisteredTanks {
+		if err := h.store.RemoveVersionRegistration(ctx, t.TankID, t.Version, gameDayID); err != nil {
+			cleanupFailed = append(cleanupFailed, t.TankID+"@"+t.Version)
+		}
+	}
+	if len(cleanupFailed) > 0 {
+		log.Printf("delete gameday %s: failed to clean up registrations for %v (stale entries remain)", gameDayID, cleanupFailed)
+	}
 	return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusNoContent}, nil
 }
 
