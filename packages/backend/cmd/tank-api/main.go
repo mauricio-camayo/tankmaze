@@ -856,6 +856,9 @@ func (h *handler) registerVersion(ctx context.Context, req events.APIGatewayV2HT
 	if err := h.store.AddVersionRegistration(ctx, tankID, version, body.GameDayID); err != nil {
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
+	if err := h.store.AddRosterEntry(ctx, body.GameDayID, tankID, version, tank.Name); err != nil {
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
 	return jsonResp(http.StatusOK, map[string]string{"gameDayId": body.GameDayID}), nil
 }
 
@@ -881,6 +884,9 @@ func (h *handler) deregisterVersion(ctx context.Context, req events.APIGatewayV2
 		return errResp(http.StatusBadRequest, "gameDayId is required"), nil
 	}
 	if err := h.store.RemoveVersionRegistration(ctx, tankID, version, body.GameDayID); err != nil {
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	if err := h.store.RemoveRosterEntry(ctx, body.GameDayID, tankID); err != nil {
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
 	return jsonResp(http.StatusOK, map[string]bool{"deregistered": true}), nil

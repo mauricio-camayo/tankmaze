@@ -529,6 +529,11 @@ func (srv *server) registerVersion(w http.ResponseWriter, r *http.Request, tankI
 		jsonErr(w, http.StatusBadRequest, "only major versions can register for Game Days")
 		return
 	}
+	tank, err := srv.store.getTank(tankID)
+	if errors.Is(err, db.ErrNotFound) {
+		jsonErr(w, http.StatusNotFound, "tank not found")
+		return
+	}
 	var body struct {
 		GameDayID string `json:"gameDayId"`
 	}
@@ -546,6 +551,7 @@ func (srv *server) registerVersion(w http.ResponseWriter, r *http.Request, tankI
 		return
 	}
 	srv.store.addVersionRegistration(tankID, version, body.GameDayID)
+	srv.store.addRosterEntry(body.GameDayID, tankID, version, tank.Name)
 	jsonOK(w, map[string]string{"gameDayId": body.GameDayID})
 }
 
@@ -558,6 +564,7 @@ func (srv *server) deregisterVersion(w http.ResponseWriter, r *http.Request, tan
 		return
 	}
 	srv.store.removeVersionRegistration(tankID, version, body.GameDayID)
+	srv.store.removeRosterEntry(body.GameDayID, tankID)
 	jsonOK(w, map[string]bool{"deregistered": true})
 }
 
