@@ -225,8 +225,12 @@ func (srv *server) getAiTanks(w http.ResponseWriter) {
 	jsonOK(w, results)
 }
 
-func (srv *server) listTanks(w http.ResponseWriter, _ *http.Request) {
-	tanks := srv.store.listTanksByUser(localUserID)
+func (srv *server) listTanks(w http.ResponseWriter, r *http.Request) {
+	uid := localUserID
+	if viewUserID := r.URL.Query().Get("userId"); viewUserID != "" {
+		uid = viewUserID
+	}
+	tanks := srv.store.listTanksByUser(uid)
 	if tanks == nil {
 		tanks = []db.Tank{}
 	}
