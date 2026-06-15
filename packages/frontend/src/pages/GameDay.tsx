@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import Layout, { cardStyle, ghostButtonStyle, primaryButtonStyle } from '../components/Layout';
 import { getGameDay, getTank, addRosterEntry, removeRosterEntry, listAiTanks, adminListTanks, listMaps } from '../services/api';
 import { useAuthStore } from '../store/authStore';
+import { useGameDayStore } from '../store/gameDayStore';
 import type { GameDay, BracketSlot, GameDayPhaseStatus, GameDayGroup, Tank, TankVersion, GameMap } from '../types';
 
 const BRACKET_LABELS: Record<string, string> = {
@@ -557,6 +558,7 @@ export default function GameDayPage() {
   const [error, setError] = useState<string | null>(null);
   const [maps, setMaps] = useState<GameMap[]>([]);
   const { user } = useAuthStore();
+  const { setActiveGameDayLabel } = useGameDayStore();
 
   function reload() {
     if (!gameDayId) return;
@@ -581,6 +583,18 @@ export default function GameDayPage() {
     }, 10000);
     return () => clearInterval(id);
   }, [gameDayId, rrStatus]);
+
+  // Sync the header label whenever the loaded game day changes; clear on unmount.
+  useEffect(() => {
+    if (!gameDay) return;
+    const { phases, schedule } = gameDay;
+    const isUpcoming = phases.roundRobin.status === 'upcoming';
+    const ts = isUpcoming ? schedule.roundRobin : (phases.final.endedAt ? phases.final.endedAt * 1000 : schedule.final);
+    const d = new Date(ts);
+    const label = `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    setActiveGameDayLabel(label);
+    return () => setActiveGameDayLabel(null);
+  }, [gameDay, setActiveGameDayLabel]);
 
   if (loading) return <Layout><div style={{ color: '#64748b', padding: '40px 0' }}>Loading…</div></Layout>;
   if (error || !gameDay) return <Layout><div style={{ color: '#f87171' }}>{error ?? 'Game day not found'}</div></Layout>;
