@@ -64,7 +64,7 @@ function StatPips({ value }: { value: number }) {
   );
 }
 
-type TestOpponent = 'scout' | 'bruiser' | 'ranger';
+type TestOpponent = 'scout' | 'bruiser';
 
 const overlay: React.CSSProperties = {
   position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
@@ -162,7 +162,7 @@ function TestDialog({
         <h3 style={{ margin: '0 0 16px', color: '#e2e8f0' }}>Test vs AI</h3>
         <div style={{ marginBottom: 16 }}>
           <p style={{ margin: '0 0 8px', fontSize: 13, color: '#94a3b8' }}>Opponent</p>
-          {(['scout', 'bruiser', 'ranger'] as TestOpponent[]).map((op) => (
+          {(['scout', 'bruiser'] as TestOpponent[]).map((op) => (
             <label key={op} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, cursor: 'pointer' }}>
               <input type="radio" name="td-opponent" value={op} checked={opponent === op} onChange={() => setOpponent(op)} />
               <span style={{ color: '#e2e8f0', textTransform: 'capitalize', fontSize: 14 }}>{op}</span>

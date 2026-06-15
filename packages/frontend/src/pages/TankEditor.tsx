@@ -287,7 +287,7 @@ function TestDialog({
 
         <div style={{ marginBottom: 16 }}>
           <p style={{ margin: '0 0 8px', fontSize: 13, color: '#94a3b8' }}>Opponent</p>
-          {(['scout', 'bruiser', 'ranger'] as TestOpponent[]).map((op) => (
+          {(['scout', 'bruiser'] as TestOpponent[]).map((op) => (
             <label key={op} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, cursor: 'pointer' }}>
               <input
                 type="radio"
@@ -866,4 +866,4 @@ export default function TankEditor() {
   );
 }
 
-type TestOpponent = 'scout' | 'bruiser' | 'ranger';
+type TestOpponent = 'scout' | 'bruiser';

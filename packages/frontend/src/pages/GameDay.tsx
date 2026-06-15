@@ -32,11 +32,13 @@ function PhaseBadge({ status }: { status: GameDayPhaseStatus['status'] }) {
   );
 }
 
-function PhaseRow({ label, phase }: { label: string; phase: GameDayPhaseStatus }) {
+function PhaseRow({ label, phase, scheduledAt }: { label: string; phase: GameDayPhaseStatus; scheduledAt?: string }) {
   const timeLabel = phase.status === 'complete' && phase.endedAt
     ? `ended ${new Date(phase.endedAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
     : phase.status === 'running' && phase.startedAt
     ? `started ${new Date(phase.startedAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    : phase.status === 'upcoming' && scheduledAt
+    ? new Date(scheduledAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     : '';
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -701,7 +703,7 @@ export default function GameDayPage() {
               {new Date(schedule.registrationClose).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
             </span>
           </div>
-          <PhaseRow label="Round Robin" phase={phases.roundRobin} />
+          <PhaseRow label="Round Robin" phase={phases.roundRobin} scheduledAt={schedule.roundRobin} />
           {phases.roundRobin.status !== 'complete' ? (
             // Bracket not yet built — tank count unknown; skip pre-computed placeholder slots.
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -713,7 +715,7 @@ export default function GameDayPage() {
             (schedule.elimination ?? []).map((ts, i) => {
               const ps = phases.elimination?.[`r${i + 1}`];
               return ps ? (
-                <PhaseRow key={i} label={`Elimination R${i + 1}`} phase={ps} />
+                <PhaseRow key={i} label={`Elimination R${i + 1}`} phase={ps} scheduledAt={ts} />
               ) : (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span style={{ color: '#94a3b8', fontSize: 14 }}>Elimination R{i + 1}</span>
@@ -732,6 +734,7 @@ export default function GameDayPage() {
                 ? { ...phases.final, status: 'upcoming' }
                 : phases.final
             }
+            scheduledAt={schedule.final}
           />
         </div>
       </div>

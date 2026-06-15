@@ -1067,6 +1067,11 @@ func (srv *server) addRosterEntry(w http.ResponseWriter, r *http.Request, gameDa
 		tankName = t.Name
 	}
 	srv.store.addRosterEntry(gameDayID, body.TankID, body.Version, tankName)
+	// Mirror the registration on the TankVersion record so TankDetail shows the
+	// Withdraw button. Skip for AI/built-in tanks — they have no version record.
+	if !isAITankID(body.TankID) {
+		srv.store.addVersionRegistration(body.TankID, body.Version, gameDayID)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1080,7 +1085,19 @@ func (srv *server) removeRosterEntry(w http.ResponseWriter, gameDayID, tankID st
 		jsonErr(w, http.StatusConflict, "game day has already started")
 		return
 	}
+	// Capture the version before removing so we can update the TankVersion record.
+	var removedVersion string
+	for _, t := range gd.RegisteredTanks {
+		if t.TankID == tankID {
+			removedVersion = t.Version
+			break
+		}
+	}
 	srv.store.removeRosterEntry(gameDayID, tankID)
+	// Mirror the deregistration on the TankVersion record. Skip for AI/built-in tanks.
+	if removedVersion != "" && !isAITankID(tankID) {
+		srv.store.removeVersionRegistration(tankID, removedVersion, gameDayID)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

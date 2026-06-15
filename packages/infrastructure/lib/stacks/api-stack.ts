@@ -10,6 +10,7 @@ import * as apigwv2integrations from 'aws-cdk-lib/aws-apigatewayv2-integrations'
 import * as apigwv2authorizers from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import * as scheduler from 'aws-cdk-lib/aws-scheduler';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { Construct } from 'constructs';
 import { TableSet, tableEnvVars } from './storage-stack';
 
@@ -80,6 +81,35 @@ export class ApiStack extends Stack {
       assumedBy: new iam.ServicePrincipal('scheduler.amazonaws.com'),
     });
 
+    // DLQ for EventBridge Scheduler — failed invocations land here so they are
+    // immediately visible via the alarm below (closes the observability gap from bug #119).
+    const schedulerDLQ = new sqs.Queue(this, 'SchedulerDLQ', {
+      queueName: 'tankmaze-scheduler-dlq',
+      retentionPeriod: Duration.days(14),
+    });
+    schedulerDLQ.addToResourcePolicy(new iam.PolicyStatement({
+      principals: [new iam.ServicePrincipal('scheduler.amazonaws.com')],
+      actions: ['sqs:SendMessage'],
+      resources: [schedulerDLQ.queueArn],
+      conditions: {
+        ArnEquals: {
+          'aws:SourceArn': `arn:aws:scheduler:${this.region}:${this.account}:schedule/tankmaze-gamedays/*`,
+        },
+      },
+    }));
+    new cloudwatch.Alarm(this, 'SchedulerDLQAlarm', {
+      alarmName: 'tankmaze-scheduler-dlq-depth',
+      alarmDescription: 'EventBridge Scheduler failed to invoke tournament-scheduler — a game day phase was silently dropped',
+      metric: schedulerDLQ.metricApproximateNumberOfMessagesVisible({
+        period: Duration.minutes(5),
+        statistic: 'Sum',
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
     // ---- Lambda functions ----------------------------------------------
 
     // ranking-updater — no external Lambda deps
@@ -102,6 +132,7 @@ export class ApiStack extends Stack {
     tables.connections.grantReadData(matchRunner);
     tables.tankVersions.grantReadWriteData(matchRunner);
     tables.gamedays.grantReadData(matchRunner);
+    tables.maps.grantReadData(matchRunner);
 
     // tournament-scheduler
     // Assign an explicit function name so we can construct its ARN as a literal
@@ -119,6 +150,7 @@ export class ApiStack extends Stack {
       MATCH_RUNNER_FUNCTION:     matchRunner.functionArn,
       RANKING_UPDATER_FUNCTION:  rankingUpdater.functionArn,
       SCHEDULER_INVOKE_ROLE_ARN: schedulerInvokeRole.roleArn,
+      SCHEDULER_DLQ_ARN:         schedulerDLQ.queueArn,
       TOURNAMENT_SCHEDULER_FUNCTION: tournamentSchedulerArn,
       SCOUT_TANK_ID:             'builtin-scout',
       SCOUT_VERSION:             'v1',
@@ -179,6 +211,7 @@ export class ApiStack extends Stack {
     });
     tables.connections.grantReadWriteData(wssHandler);
     tables.matches.grantReadData(wssHandler);
+    tables.tankVersions.grantReadData(wssHandler);
     tables.gamedays.grantReadData(wssHandler);
     matchLogsBucket.grantRead(wssHandler);
 
@@ -195,6 +228,7 @@ export class ApiStack extends Stack {
       BRUISER_VERSION:               'v1',
       USER_POOL_ID:                  userPoolId,
       SCHEDULER_INVOKE_ROLE_ARN:     schedulerInvokeRole.roleArn,
+      SCHEDULER_DLQ_ARN:             schedulerDLQ.queueArn,
       TOURNAMENT_SCHEDULER_FUNCTION: tournamentScheduler.functionArn,
     });
     tables.tanks.grantReadWriteData(tankApi);

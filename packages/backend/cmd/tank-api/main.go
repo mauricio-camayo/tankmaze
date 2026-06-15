@@ -184,6 +184,7 @@ type handler struct {
 	bruiserVersion         string
 	userPoolID             string
 	schedulerRoleArn       string
+	schedulerDLQArn        string
 	tournamentSchedulerArn string
 }
 
@@ -214,6 +215,7 @@ func main() {
 		bruiserVersion:         os.Getenv("BRUISER_VERSION"),
 		userPoolID:             os.Getenv("USER_POOL_ID"),
 		schedulerRoleArn:       os.Getenv("SCHEDULER_INVOKE_ROLE_ARN"),
+		schedulerDLQArn:        os.Getenv("SCHEDULER_DLQ_ARN"),
 		tournamentSchedulerArn: os.Getenv("TOURNAMENT_SCHEDULER_FUNCTION"),
 	}
 
@@ -1305,6 +1307,14 @@ func (h *handler) createGameDay(ctx context.Context, req events.APIGatewayV2HTTP
 
 	for _, p := range phases {
 		payload, _ := json.Marshal(map[string]string{"gameDayId": gameDayID, "phase": p.phase})
+		target := &schedulertypes.Target{
+			Arn:     aws.String(h.tournamentSchedulerArn),
+			RoleArn: aws.String(h.schedulerRoleArn),
+			Input:   aws.String(string(payload)),
+		}
+		if h.schedulerDLQArn != "" {
+			target.DeadLetterConfig = &schedulertypes.DeadLetterConfig{Arn: aws.String(h.schedulerDLQArn)}
+		}
 		_, err := h.schedulerSvc.CreateSchedule(ctx, &schedulersvc.CreateScheduleInput{
 			Name:                        aws.String(p.name),
 			GroupName:                   aws.String("tankmaze-gamedays"),
@@ -1313,11 +1323,7 @@ func (h *handler) createGameDay(ctx context.Context, req events.APIGatewayV2HTTP
 			FlexibleTimeWindow: &schedulertypes.FlexibleTimeWindow{
 				Mode: schedulertypes.FlexibleTimeWindowModeOff,
 			},
-			Target: &schedulertypes.Target{
-				Arn:     aws.String(h.tournamentSchedulerArn),
-				RoleArn: aws.String(h.schedulerRoleArn),
-				Input:   aws.String(string(payload)),
-			},
+			Target:                target,
 			ActionAfterCompletion: schedulertypes.ActionAfterCompletionDelete,
 		})
 		if err != nil {
@@ -1558,6 +1564,13 @@ func (h *handler) addRosterEntry(ctx context.Context, req events.APIGatewayV2HTT
 		log.Printf("add roster entry gameday=%s tank=%s: %v", gameDayID, body.TankID, err)
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
+	// Mirror the registration on the TankVersion record so TankDetail shows the
+	// Withdraw button. Skip for AI/built-in tanks — they have no version record.
+	if !strings.HasPrefix(body.TankID, "builtin-") {
+		if err := h.store.AddVersionRegistration(ctx, body.TankID, body.Version, gameDayID); err != nil {
+			log.Printf("add version registration gameday=%s tank=%s version=%s: %v", gameDayID, body.TankID, body.Version, err)
+		}
+	}
 	return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusNoContent}, nil
 }
 
@@ -1575,9 +1588,23 @@ func (h *handler) removeRosterEntry(ctx context.Context, req events.APIGatewayV2
 	if gd.Phases.RoundRobin.Status != "upcoming" {
 		return errResp(http.StatusConflict, "game day has already started"), nil
 	}
+	// Capture the version before removing so we can update the TankVersion record.
+	var removedVersion string
+	for _, t := range gd.RegisteredTanks {
+		if t.TankID == tankID {
+			removedVersion = t.Version
+			break
+		}
+	}
 	if err := h.store.RemoveRosterEntry(ctx, gameDayID, tankID); err != nil {
 		log.Printf("remove roster entry gameday=%s tank=%s: %v", gameDayID, tankID, err)
 		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	// Mirror the deregistration on the TankVersion record. Skip for AI/built-in tanks.
+	if removedVersion != "" && !strings.HasPrefix(tankID, "builtin-") {
+		if err := h.store.RemoveVersionRegistration(ctx, tankID, removedVersion, gameDayID); err != nil {
+			log.Printf("remove version registration gameday=%s tank=%s version=%s: %v", gameDayID, tankID, removedVersion, err)
+		}
 	}
 	return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusNoContent}, nil
 }

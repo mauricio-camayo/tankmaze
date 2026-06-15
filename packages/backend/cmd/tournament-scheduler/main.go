@@ -59,6 +59,7 @@ type handler struct {
 	bruiserVersion      string
 	schedulerSvc        *schedulersvc.Client
 	schedulerRoleArn    string
+	schedulerDLQArn     string
 	selfArn             string
 }
 
@@ -81,6 +82,7 @@ func main() {
 		bruiserVersion:     os.Getenv("BRUISER_VERSION"),
 		schedulerSvc:       schedulersvc.NewFromConfig(cfg),
 		schedulerRoleArn:   os.Getenv("SCHEDULER_INVOKE_ROLE_ARN"),
+		schedulerDLQArn:    os.Getenv("SCHEDULER_DLQ_ARN"),
 		selfArn:            os.Getenv("TOURNAMENT_SCHEDULER_FUNCTION"),
 	}
 	lambda.Start(h.handle)
@@ -1020,6 +1022,14 @@ func (h *handler) rescheduleFinal(ctx context.Context, gd db.GameDay) {
 	scheduleName := gd.GameDayID + "-final"
 	payload, _ := json.Marshal(map[string]string{"gameDayId": gd.GameDayID, "phase": "final"})
 	atExpr := "at(" + finalAt.UTC().Format("2006-01-02T15:04:05") + ")"
+	target := &schedulertypes.Target{
+		Arn:     aws.String(h.selfArn),
+		RoleArn: aws.String(h.schedulerRoleArn),
+		Input:   aws.String(string(payload)),
+	}
+	if h.schedulerDLQArn != "" {
+		target.DeadLetterConfig = &schedulertypes.DeadLetterConfig{Arn: aws.String(h.schedulerDLQArn)}
+	}
 	if _, err := h.schedulerSvc.UpdateSchedule(ctx, &schedulersvc.UpdateScheduleInput{
 		Name:                       aws.String(scheduleName),
 		GroupName:                  aws.String("tankmaze-gamedays"),
@@ -1028,11 +1038,7 @@ func (h *handler) rescheduleFinal(ctx context.Context, gd db.GameDay) {
 		FlexibleTimeWindow: &schedulertypes.FlexibleTimeWindow{
 			Mode: schedulertypes.FlexibleTimeWindowModeOff,
 		},
-		Target: &schedulertypes.Target{
-			Arn:     aws.String(h.selfArn),
-			RoleArn: aws.String(h.schedulerRoleArn),
-			Input:   aws.String(string(payload)),
-		},
+		Target:                target,
 		ActionAfterCompletion: schedulertypes.ActionAfterCompletionDelete,
 	}); err != nil {
 		log.Printf("rescheduleFinal %s: %v", scheduleName, err)
