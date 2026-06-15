@@ -319,6 +319,9 @@ func (h *handler) listTanks(ctx context.Context, req events.APIGatewayV2HTTPRequ
 	if uid == "" {
 		return errResp(http.StatusUnauthorized, "unauthorized"), nil
 	}
+	if target := req.QueryStringParameters["userId"]; target != "" && isAdmin(req) {
+		uid = target
+	}
 	tanks, err := h.store.ListTanksByUser(ctx, uid)
 	if err != nil {
 		log.Printf("list tanks: %v", err)

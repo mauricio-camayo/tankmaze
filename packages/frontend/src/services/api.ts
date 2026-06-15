@@ -21,7 +21,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 // Tanks
-export const listTanks = () => request<Tank[]>('/tanks');
+export const listTanks = (userId?: string) =>
+  request<Tank[]>(userId ? `/tanks?userId=${encodeURIComponent(userId)}` : '/tanks');
 export const listAiTanks = () =>
   request<(Tank & { versions: TankVersion[] })[]>('/tanks/ai');
 export const getTank = (id: string) =>

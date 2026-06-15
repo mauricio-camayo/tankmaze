@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { listTanks, listAiTanks, forkTank, listGameDays } from '../services/api';
+import { useAuthStore } from '../store/authStore';
 import type { Tank, TankVersion, GameDay } from '../types';
 import { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
 
@@ -201,6 +202,11 @@ function AiTankCard({ aiTank, onForked }: { aiTank: AiTank; onForked: () => void
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const currentUser = useAuthStore((s) => s.user);
+  // Admin-only: view another user's tanks via ?userId=
+  const viewUserId = currentUser?.isAdmin ? (searchParams.get('userId') ?? undefined) : undefined;
+
   const [tanks, setTanks] = useState<Tank[]>([]);
   const [aiTanks, setAiTanks] = useState<AiTank[]>([]);
   const [runningGameDay, setRunningGameDay] = useState<GameDay | null>(null);
@@ -209,7 +215,7 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
 
   function reload() {
-    listTanks()
+    listTanks(viewUserId)
       .then((data) => setTanks(data ?? []))
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
@@ -240,9 +246,17 @@ export default function Dashboard() {
 
   return (
     <Layout>
-      {runningGameDay && <GameDayCard gd={runningGameDay} />}
-      {upcomingGameDay && <GameDayCard gd={upcomingGameDay} />}
-      {aiTanks.length > 0 && (
+      {viewUserId && (
+        <div style={{ ...cardStyle, marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(124,106,247,0.08)', border: '1px solid rgba(124,106,247,0.3)' }}>
+          <span style={{ color: '#a78bfa', fontSize: 13 }}>
+            Viewing tanks for user <code style={{ background: 'rgba(124,106,247,0.15)', padding: '2px 6px', borderRadius: 4 }}>{viewUserId}</code>
+          </span>
+          <Link to="/admin/users" style={{ color: '#7c6af7', fontSize: 13 }}>← Back to Users</Link>
+        </div>
+      )}
+      {!viewUserId && runningGameDay && <GameDayCard gd={runningGameDay} />}
+      {!viewUserId && upcomingGameDay && <GameDayCard gd={upcomingGameDay} />}
+      {!viewUserId && aiTanks.length > 0 && (
         <div style={{ marginBottom: 36 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             Start from a template
@@ -255,10 +269,12 @@ export default function Dashboard() {
         </div>
       )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
-        <h2 style={{ margin: 0, fontSize: 22, color: '#e2e8f0' }}>My Tanks</h2>
-        <button onClick={handleNewTank} style={primaryButtonStyle}>
-          + New Tank
-        </button>
+        <h2 style={{ margin: 0, fontSize: 22, color: '#e2e8f0' }}>{viewUserId ? 'Tanks' : 'My Tanks'}</h2>
+        {!viewUserId && (
+          <button onClick={handleNewTank} style={primaryButtonStyle}>
+            + New Tank
+          </button>
+        )}
       </div>
 
       {loading && (
@@ -274,11 +290,13 @@ export default function Dashboard() {
       {!loading && !error && tanks.length === 0 && (
         <div style={{ ...cardStyle, textAlign: 'center', padding: '48px 24px' }}>
           <p style={{ color: '#64748b', marginBottom: 16 }}>
-            You haven't created any tanks yet.
+            {viewUserId ? 'This user has no tanks.' : "You haven't created any tanks yet."}
           </p>
-          <button onClick={handleNewTank} style={primaryButtonStyle}>
-            + New Tank
-          </button>
+          {!viewUserId && (
+            <button onClick={handleNewTank} style={primaryButtonStyle}>
+              + New Tank
+            </button>
+          )}
         </div>
       )}
 
