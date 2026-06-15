@@ -125,6 +125,14 @@ func (h *handler) handle(ctx context.Context, evt schedulerEvent) error {
 // merges any admin-added roster entries, sorts by global rank, and stores the
 // locked list in gameDay.RegisteredTanks.
 func (h *handler) handleRegistrationClose(ctx context.Context, gd db.GameDay) error {
+	// Idempotency guard: if a later phase has already started (or the tournament
+	// was cancelled), registration_close is a no-op.
+	switch gd.Phases.RoundRobin.Status {
+	case "running", "complete", "cancelled":
+		log.Printf("registration_close: round_robin already %s for game day %s — skipping", gd.Phases.RoundRobin.Status, gd.GameDayID)
+		return nil
+	}
+
 	versions, err := h.store.ScanVersionsByGameDay(ctx, gd.GameDayID)
 	if err != nil {
 		return fmt.Errorf("scan registered versions: %w", err)
@@ -244,6 +252,10 @@ func (h *handler) handleRegistrationClose(ctx context.Context, gd db.GameDay) er
 func (h *handler) handleRoundRobin(ctx context.Context, gd db.GameDay) error {
 	if gd.Phases.RoundRobin.Status == "running" || gd.Phases.RoundRobin.Status == "complete" {
 		log.Printf("round_robin already %s for game day %s", gd.Phases.RoundRobin.Status, gd.GameDayID)
+		return nil
+	}
+	if gd.Phases.RoundRobin.Status == "cancelled" {
+		log.Printf("round_robin cancelled for game day %s — tournament was cancelled at registration_close", gd.GameDayID)
 		return nil
 	}
 	if len(gd.RegisteredTanks) == 0 {
