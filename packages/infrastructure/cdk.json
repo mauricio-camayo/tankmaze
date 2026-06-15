@@ -1,4 +1,7 @@
 {
   "app": "node dist/app.js",
-  "context": {}
+  "context": {
+    "userPoolId": "us-east-1_UTKL8MgiG",
+    "userPoolClientId": "1pfsic72hm41r2au9rf6vb4h69"
+  }
 }
