@@ -1,7 +1,8 @@
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { signOut } from '../services/auth';
 import { useAuthStore } from '../store/authStore';
-import { useGameDayStore } from '../store/gameDayStore';
+import { formatNavClock } from '../utils/time';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -9,8 +10,13 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   const { user, setUser } = useAuthStore();
-  const { activeGameDayLabel } = useGameDayStore();
   const navigate = useNavigate();
+  const [clock, setClock] = useState(() => formatNavClock(new Date()));
+
+  useEffect(() => {
+    const id = setInterval(() => setClock(formatNavClock(new Date())), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   async function handleSignOut() {
     await signOut();
@@ -33,11 +39,9 @@ export default function Layout({ children }: LayoutProps) {
           <Link to="/gamedays" style={navLinkStyle}>Game Days</Link>
           {user?.isAdmin && <Link to="/admin/users" style={{ ...navLinkStyle, color: '#f59e0b' }}>Admin</Link>}
         </div>
-        {activeGameDayLabel && (
-          <span style={{ color: '#7c6af7', fontSize: 13, fontWeight: 600 }}>
-            {activeGameDayLabel}
-          </span>
-        )}
+        <span style={{ color: '#7c6af7', fontSize: 13, fontWeight: 600 }}>
+          {clock}
+        </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {user && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
