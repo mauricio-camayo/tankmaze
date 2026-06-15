@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import Layout, { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../../components/Layout';
 import { adminListTanks, adminUpdateTank, adminDeleteTank } from '../../services/api';
 import type { Tank } from '../../types';
@@ -93,7 +94,9 @@ export default function AdminTanks() {
                           autoFocus
                         />
                       ) : (
-                        <span>{t.name}</span>
+                        <Link to={`/tanks/${t.tankId}`} style={{ color: '#e2e8f0', textDecoration: 'none' }}>
+                          {t.name}
+                        </Link>
                       )}
                     </td>
                     <td style={{ ...td, color: '#94a3b8' }}>{t.authorName || t.userId.slice(0, 8)}</td>

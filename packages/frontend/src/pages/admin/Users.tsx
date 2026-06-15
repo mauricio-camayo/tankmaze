@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import Layout, { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../../components/Layout';
 import {
   adminListUsers, adminUpdateUser, adminToggleUserRole, adminDeleteUser,
@@ -94,7 +95,11 @@ export default function AdminUsers() {
                 const isBusy = busy === u.sub;
                 return (
                   <tr key={u.sub} style={{ borderTop: '1px solid #2d2d4e' }}>
-                    <td style={td}>{u.name || '—'}</td>
+                    <td style={td}>
+                      <Link to={`/dashboard?userId=${u.sub}`} style={{ color: '#e2e8f0', textDecoration: 'none' }}>
+                        {u.name || u.email}
+                      </Link>
+                    </td>
                     <td style={td}>{u.email}</td>
                     <td style={td}>
                       <span style={{ color: u.enabled ? '#4ade80' : '#f87171' }}>
