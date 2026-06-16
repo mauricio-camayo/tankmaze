@@ -275,7 +275,22 @@ func (h *handler) handleRoundRobin(ctx context.Context, gd db.GameDay) error {
 		return nil
 	}
 	if len(gd.RegisteredTanks) == 0 {
-		return fmt.Errorf("no registered tanks for game day %s (registration_close must run first)", gd.GameDayID)
+		// registration_close either hasn't run yet or failed. Since the EventBridge
+		// schedule is already deleted by the time we get here, cascade into it now
+		// so a transient registration_close failure doesn't permanently block the RR.
+		log.Printf("round_robin: no registered tanks for %s — running registration_close inline", gd.GameDayID)
+		if err := h.handleRegistrationClose(ctx, gd); err != nil {
+			return fmt.Errorf("inline registration_close: %w", err)
+		}
+		// Re-read so we see the tanks (and any cancellation) that registration_close wrote.
+		var rereadErr error
+		gd, rereadErr = h.store.GetGameDay(ctx, gd.GameDayID)
+		if rereadErr != nil {
+			return fmt.Errorf("re-read gameday after registration_close: %w", rereadErr)
+		}
+		if gd.Phases.RoundRobin.Status == "cancelled" {
+			return nil
+		}
 	}
 
 	numGroups := max1((len(gd.RegisteredTanks) + maxGroupSize - 1) / maxGroupSize)
@@ -344,8 +359,10 @@ func (h *handler) handleEliminationR1(ctx context.Context, gd db.GameDay) error 
 		return fmt.Errorf("scan matches: %w", err)
 	}
 	if !allMatchesEnded(matches) {
-		log.Printf("not all RR matches ended for %s — skipping", gd.GameDayID)
-		return nil
+		// Return an error so Lambda's built-in async retry fires again in ~1 min
+		// and ~3 min. EventBridge already deleted its schedule, so this is the
+		// only retry path if matches are still running when elimination_r1 triggers.
+		return fmt.Errorf("elimination_r1 %s: not all RR matches ended yet — retrying", gd.GameDayID)
 	}
 
 	// Compute standings and qualify tanks.
@@ -476,8 +493,7 @@ func (h *handler) handleElimination(ctx context.Context, gd db.GameDay, round in
 
 	updatedPrev, allDone := updateSlotsFromMatches(prevSlots, matches)
 	if !allDone {
-		log.Printf("not all %s matches ended for %s — skipping", prevKey, gd.GameDayID)
-		return nil
+		return fmt.Errorf("%s %s: not all %s matches ended yet — retrying", curKey, gd.GameDayID, prevKey)
 	}
 
 	nextSlots := advanceBracketRound(updatedPrev)
@@ -574,8 +590,7 @@ func (h *handler) handleFinal(ctx context.Context, gd db.GameDay) error {
 
 	updated, allDone := updateSlotsFromMatches(lastSlots, matches)
 	if !allDone {
-		log.Printf("not all %s matches ended for %s — skipping final", lastRoundKey, gd.GameDayID)
-		return nil
+		return fmt.Errorf("final %s: not all %s matches ended yet — retrying", gd.GameDayID, lastRoundKey)
 	}
 
 	finalists := advanceBracketRound(updated)
