@@ -19,6 +19,7 @@ import (
 	crand "crypto/rand"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -88,37 +89,50 @@ func main() {
 	lambda.Start(h.handle)
 }
 
+const maxConflictRetries = 5
+
 func (h *handler) handle(ctx context.Context, evt schedulerEvent) error {
 	if evt.GameDayID == "" || evt.Phase == "" {
 		return fmt.Errorf("gameDayId and phase are required")
 	}
 	log.Printf("tournament-scheduler: gameDay=%s phase=%s", evt.GameDayID, evt.Phase)
 
-	gd, err := h.store.GetGameDay(ctx, evt.GameDayID)
-	if err != nil {
-		return fmt.Errorf("get gameday: %w", err)
-	}
-
-	switch evt.Phase {
-	case "registration_close":
-		return h.handleRegistrationClose(ctx, gd)
-	case "round_robin":
-		return h.handleRoundRobin(ctx, gd)
-	case "final":
-		return h.handleFinal(ctx, gd)
-	default:
-		if strings.HasPrefix(evt.Phase, "elimination_r") {
-			n, parseErr := strconv.Atoi(strings.TrimPrefix(evt.Phase, "elimination_r"))
-			if parseErr != nil || n < 1 {
-				return fmt.Errorf("invalid elimination phase: %s", evt.Phase)
-			}
-			if n == 1 {
-				return h.handleEliminationR1(ctx, gd)
-			}
-			return h.handleElimination(ctx, gd, n)
+	for attempt := 0; attempt <= maxConflictRetries; attempt++ {
+		gd, err := h.store.GetGameDay(ctx, evt.GameDayID)
+		if err != nil {
+			return fmt.Errorf("get gameday: %w", err)
 		}
-		return fmt.Errorf("unknown phase: %s", evt.Phase)
+
+		switch evt.Phase {
+		case "registration_close":
+			err = h.handleRegistrationClose(ctx, gd)
+		case "round_robin":
+			err = h.handleRoundRobin(ctx, gd)
+		case "final":
+			err = h.handleFinal(ctx, gd)
+		default:
+			if strings.HasPrefix(evt.Phase, "elimination_r") {
+				n, parseErr := strconv.Atoi(strings.TrimPrefix(evt.Phase, "elimination_r"))
+				if parseErr != nil || n < 1 {
+					return fmt.Errorf("invalid elimination phase: %s", evt.Phase)
+				}
+				if n == 1 {
+					err = h.handleEliminationR1(ctx, gd)
+				} else {
+					err = h.handleElimination(ctx, gd, n)
+				}
+			} else {
+				return fmt.Errorf("unknown phase: %s", evt.Phase)
+			}
+		}
+
+		if errors.Is(err, db.ErrConflict) {
+			log.Printf("tournament-scheduler: conflict on attempt %d for gameDay=%s phase=%s — retrying", attempt+1, evt.GameDayID, evt.Phase)
+			continue
+		}
+		return err
 	}
+	return fmt.Errorf("too many conflicts for gameDay=%s phase=%s", evt.GameDayID, evt.Phase)
 }
 
 // ---- Phase: registration_close ----------------------------------------------
@@ -486,6 +500,52 @@ func (h *handler) handleElimination(ctx context.Context, gd db.GameDay, round in
 
 // ---- Phase: final -----------------------------------------------------------
 
+// resumeInterruptedFinal handles the case where handleFinal previously started
+// (set final.status = "running") but timed out before completing. It finds the
+// championship match (created after final.startedAt), re-invokes match-runner
+// if needed, then marks the final complete and calls ranking-updater.
+func (h *handler) resumeInterruptedFinal(ctx context.Context, gd db.GameDay) error {
+	matches, err := h.store.ScanMatchesByGameDay(ctx, gd.GameDayID)
+	if err != nil {
+		return fmt.Errorf("scan matches: %w", err)
+	}
+
+	// The championship match is the one created on or after final.startedAt.
+	var finalMatch *db.Match
+	for i := range matches {
+		if int64(matches[i].CreatedAt) >= gd.Phases.Final.StartedAt {
+			m := matches[i]
+			finalMatch = &m
+			break
+		}
+	}
+
+	if finalMatch == nil {
+		// No final match created yet — fall through to normal handleFinal logic
+		// by returning a sentinel; caller should re-invoke handleFinal normally.
+		// This shouldn't happen in practice, but handle it gracefully.
+		log.Printf("resumeInterruptedFinal: no final match found for %s — creating one", gd.GameDayID)
+		gd.Phases.Final.Status = "upcoming"
+		return nil
+	}
+
+	if finalMatch.Status != "ended" {
+		log.Printf("resumeInterruptedFinal: re-invoking match-runner for %s", finalMatch.MatchID)
+		h.invokeMatchRunner(ctx, finalMatch.MatchID, true)
+	}
+
+	gd, err = h.store.GetGameDay(ctx, gd.GameDayID)
+	if err != nil {
+		return err
+	}
+	gd.Phases.Final.Status = "complete"
+	gd.Phases.Final.EndedAt = time.Now().Unix()
+	if err := h.store.PutGameDay(ctx, gd); err != nil {
+		return err
+	}
+	return h.invokeRankingUpdater(ctx, gd.GameDayID)
+}
+
 // handleFinal runs the championship: if the finalists are determined it invokes
 // match-runner synchronously, then invokes ranking-updater. A bye-champion skips
 // the match and goes directly to ranking-updater.
@@ -497,8 +557,14 @@ func (h *handler) handleFinal(ctx context.Context, gd db.GameDay) error {
 		return nil
 	}
 	if lastPhase.Status == "complete" {
-		log.Printf("final already processed for %s", gd.GameDayID)
-		return nil
+		if gd.Phases.Final.Status == "complete" {
+			log.Printf("final already complete for %s", gd.GameDayID)
+			return nil
+		}
+		// Last elimination round complete but final still "running" — tournament-scheduler
+		// previously timed out after starting the final match. Resume from post-match.
+		log.Printf("resuming interrupted final for %s", gd.GameDayID)
+		return h.resumeInterruptedFinal(ctx, gd)
 	}
 
 	matches, err := h.store.ScanMatchesByGameDay(ctx, gd.GameDayID)

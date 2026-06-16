@@ -35,7 +35,7 @@ export class ApiStack extends Stack {
 
     // ---- Helper: build a Go Lambda from cmd/<name> ----------------------
 
-    const goLambda = (id: string, cmd: string, env: Record<string, string>): lambda.Function => {
+    const goLambda = (id: string, cmd: string, env: Record<string, string>, timeoutSeconds = 29): lambda.Function => {
       return new lambda.Function(this, id, {
         runtime: lambda.Runtime.PROVIDED_AL2023,
         architecture: lambda.Architecture.ARM_64,
@@ -63,7 +63,7 @@ export class ApiStack extends Stack {
           },
         }),
         environment: env,
-        timeout: Duration.seconds(29),
+        timeout: Duration.seconds(timeoutSeconds),
         memorySize: 256,
       });
     };
@@ -121,11 +121,13 @@ export class ApiStack extends Stack {
     tables.gamedays.grantReadWriteData(rankingUpdater);
 
     // match-runner — needs WebSocket APIGW endpoint added after API is created
+    // 300s: cold-start WASM JIT compilation can take 60-120s per module × 2;
+    // warm containers reuse /tmp Wazero cache and finish in <40s total.
     const matchRunner = goLambda('MatchRunner', 'match-runner', {
       ...tableEnvVars(tables),
       WASM_BUCKET:        wasmBucket.bucketName,
       MATCH_LOGS_BUCKET:  matchLogsBucket.bucketName,
-    });
+    }, 300);
     wasmBucket.grantRead(matchRunner);
     matchLogsBucket.grantWrite(matchRunner);
     tables.matches.grantReadWriteData(matchRunner);
@@ -145,6 +147,8 @@ export class ApiStack extends Stack {
       resource: 'function',
       resourceName: tournamentSchedulerFunctionName,
     });
+    // tournament-scheduler timeout: must exceed match-runner's 300s for the
+    // synchronous championship final invocation plus overhead.
     const tournamentScheduler = goLambda('TournamentScheduler', 'tournament-scheduler', {
       ...tableEnvVars(tables),
       MATCH_RUNNER_FUNCTION:     matchRunner.functionArn,
@@ -156,7 +160,7 @@ export class ApiStack extends Stack {
       SCOUT_VERSION:             'v1',
       BRUISER_TANK_ID:           'builtin-bruiser',
       BRUISER_VERSION:           'v1',
-    });
+    }, 330);
     // Pin the actual function to the name we referenced above.
     (tournamentScheduler.node.defaultChild as lambda.CfnFunction).functionName = tournamentSchedulerFunctionName;
     tables.gamedays.grantReadWriteData(tournamentScheduler);
@@ -166,6 +170,16 @@ export class ApiStack extends Stack {
     tables.connections.grantReadData(tournamentScheduler);
     matchRunner.grantInvoke(tournamentScheduler);
     rankingUpdater.grantInvoke(tournamentScheduler);
+
+    // Allow the deployer IAM user to invoke these Lambdas directly — needed
+    // for manual recovery when EventBridge-triggered runs stall.
+    const deployerArn = `arn:aws:iam::${this.account}:user/deployer`;
+    for (const fn of [tournamentScheduler, matchRunner, rankingUpdater]) {
+      fn.addPermission('DeployerInvoke', {
+        principal: new iam.ArnPrincipal(deployerArn),
+        action: 'lambda:InvokeFunction',
+      });
+    }
     tournamentScheduler.addToRolePolicy(new iam.PolicyStatement({
       actions: [
         'scheduler:CreateSchedule',

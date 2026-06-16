@@ -164,6 +164,22 @@ func TestRankingRoundtrip(t *testing.T) {
 	}
 }
 
+func TestGameDayVersionRoundtrip(t *testing.T) {
+	orig := GameDay{
+		GameDayID: "gd-v",
+		Version:   7,
+		Phases: GameDayPhases{
+			RoundRobin: PhaseStatus{Status: "upcoming"},
+			Final:      PhaseStatus{Status: "upcoming"},
+		},
+		CreatedAt: 1,
+	}
+	got := marshalRoundtrip(t, orig)
+	if got.Version != orig.Version {
+		t.Errorf("Version roundtrip: got %d, want %d", got.Version, orig.Version)
+	}
+}
+
 func TestBracketRoundtrip(t *testing.T) {
 	orig := GameDay{
 		GameDayID: "gd-2",

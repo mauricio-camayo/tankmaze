@@ -864,7 +864,9 @@ func (h *handler) registerVersion(ctx context.Context, req events.APIGatewayV2HT
 	if err := h.store.AddVersionRegistration(ctx, tankID, version, body.GameDayID); err != nil {
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
-	if err := h.store.AddRosterEntry(ctx, body.GameDayID, tankID, version, tank.Name); err != nil {
+	if err := retryOnConflict(func() error {
+		return h.store.AddRosterEntry(ctx, body.GameDayID, tankID, version, tank.Name)
+	}); err != nil {
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
 	return jsonResp(http.StatusOK, map[string]string{"gameDayId": body.GameDayID}), nil
@@ -894,7 +896,9 @@ func (h *handler) deregisterVersion(ctx context.Context, req events.APIGatewayV2
 	if err := h.store.RemoveVersionRegistration(ctx, tankID, version, body.GameDayID); err != nil {
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
-	if err := h.store.RemoveRosterEntry(ctx, body.GameDayID, tankID); err != nil {
+	if err := retryOnConflict(func() error {
+		return h.store.RemoveRosterEntry(ctx, body.GameDayID, tankID)
+	}); err != nil {
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
 	return jsonResp(http.StatusOK, map[string]bool{"deregistered": true}), nil
@@ -1342,6 +1346,60 @@ func (h *handler) createGameDay(ctx context.Context, req events.APIGatewayV2HTTP
 	return jsonResp(http.StatusCreated, gd), nil
 }
 
+// upsertSchedule creates or updates an EventBridge Scheduler schedule so that
+// the phase fires at the given time. It is best-effort: errors are logged but
+// do not surface to the caller. Schedules in the past are skipped.
+func (h *handler) upsertSchedule(ctx context.Context, name, phase, gameDayID string, at time.Time) {
+	if h.schedulerSvc == nil || h.schedulerRoleArn == "" || h.tournamentSchedulerArn == "" {
+		return
+	}
+	if !at.After(time.Now()) {
+		log.Printf("upsertSchedule %s: time is in the past — skipping", name)
+		return
+	}
+	expr := "at(" + at.UTC().Format("2006-01-02T15:04:05") + ")"
+	payload, _ := json.Marshal(map[string]string{"gameDayId": gameDayID, "phase": phase})
+	target := &schedulertypes.Target{
+		Arn:     aws.String(h.tournamentSchedulerArn),
+		RoleArn: aws.String(h.schedulerRoleArn),
+		Input:   aws.String(string(payload)),
+	}
+	if h.schedulerDLQArn != "" {
+		target.DeadLetterConfig = &schedulertypes.DeadLetterConfig{Arn: aws.String(h.schedulerDLQArn)}
+	}
+	ftw := &schedulertypes.FlexibleTimeWindow{Mode: schedulertypes.FlexibleTimeWindowModeOff}
+
+	_, err := h.schedulerSvc.UpdateSchedule(ctx, &schedulersvc.UpdateScheduleInput{
+		Name:                        aws.String(name),
+		GroupName:                   aws.String("tankmaze-gamedays"),
+		ScheduleExpression:          aws.String(expr),
+		ScheduleExpressionTimezone:  aws.String("UTC"),
+		FlexibleTimeWindow:          ftw,
+		Target:                      target,
+		ActionAfterCompletion:       schedulertypes.ActionAfterCompletionDelete,
+	})
+	if err == nil {
+		return
+	}
+	var notFound *schedulertypes.ResourceNotFoundException
+	if !errors.As(err, &notFound) {
+		log.Printf("update schedule %s: %v", name, err)
+		return
+	}
+	// Schedule doesn't exist (already fired or was never created) — create it.
+	if _, createErr := h.schedulerSvc.CreateSchedule(ctx, &schedulersvc.CreateScheduleInput{
+		Name:                        aws.String(name),
+		GroupName:                   aws.String("tankmaze-gamedays"),
+		ScheduleExpression:          aws.String(expr),
+		ScheduleExpressionTimezone:  aws.String("UTC"),
+		FlexibleTimeWindow:          ftw,
+		Target:                      target,
+		ActionAfterCompletion:       schedulertypes.ActionAfterCompletionDelete,
+	}); createErr != nil {
+		log.Printf("create schedule %s (after update 404): %v", name, createErr)
+	}
+}
+
 func (h *handler) deleteGameDay(ctx context.Context, req events.APIGatewayV2HTTPRequest, gameDayID string) (events.APIGatewayV2HTTPResponse, error) {
 	if !isAdmin(req) {
 		return errResp(http.StatusForbidden, "admin access required"), nil
@@ -1500,6 +1558,15 @@ func (h *handler) patchGameDay(ctx context.Context, req events.APIGatewayV2HTTPR
 	mergedFinal, _ := parseAt(mergedFinalAt)
 	patchName := gameDayDisplayName(patchBaseName, mergedRR, mergedFinal)
 
+	// When FinalAt changes, recompute the derived elimination round times so
+	// the DB schedule.elimination array stays consistent with schedule.final.
+	var newElimR1, newElimR2 time.Time
+	if body.FinalAt != "" {
+		fn, _ := parseAt(body.FinalAt)
+		newElimR1 = fn.Add(-90 * time.Minute)
+		newElimR2 = fn.Add(-60 * time.Minute)
+	}
+
 	upd := db.GameDayUpdate{
 		Name:                patchName,
 		RegistrationCloseAt: body.RegistrationCloseAt,
@@ -1509,6 +1576,10 @@ func (h *handler) patchGameDay(ctx context.Context, req events.APIGatewayV2HTTPR
 		ForcedMapIDs:        body.ForcedMapIDs,
 		RandomMaps:          body.RandomMaps,
 	}
+	if body.FinalAt != "" {
+		elim := []string{newElimR1.UTC().Format(time.RFC3339), newElimR2.UTC().Format(time.RFC3339)}
+		upd.EliminationAt = elim
+	}
 
 	if err := h.store.UpdateGameDay(ctx, gameDayID, upd); errors.Is(err, db.ErrNotFound) {
 		return errResp(http.StatusNotFound, "game day not found"), nil
@@ -1517,6 +1588,25 @@ func (h *handler) patchGameDay(ctx context.Context, req events.APIGatewayV2HTTPR
 	} else if err != nil {
 		log.Printf("patch gameday %s: %v", gameDayID, err)
 		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+
+	// Sync EventBridge schedules for any rescheduled phases. Best-effort:
+	// errors are logged inside upsertSchedule and don't fail the response.
+	if body.RegistrationCloseAt != "" {
+		if rc, ok := parseAt(body.RegistrationCloseAt); ok {
+			h.upsertSchedule(ctx, gameDayID+"-reg-close", "registration_close", gameDayID, rc)
+		}
+	}
+	if body.RoundRobinAt != "" {
+		if rr, ok := parseAt(body.RoundRobinAt); ok {
+			h.upsertSchedule(ctx, gameDayID+"-rr", "round_robin", gameDayID, rr)
+		}
+	}
+	if body.FinalAt != "" {
+		fn, _ := parseAt(body.FinalAt)
+		h.upsertSchedule(ctx, gameDayID+"-final", "final", gameDayID, fn)
+		h.upsertSchedule(ctx, gameDayID+"-elim-r1", "elimination_r1", gameDayID, newElimR1)
+		h.upsertSchedule(ctx, gameDayID+"-elim-r2", "elimination_r2", gameDayID, newElimR2)
 	}
 
 	gd, err := h.store.GetGameDay(ctx, gameDayID)
@@ -1563,7 +1653,9 @@ func (h *handler) addRosterEntry(ctx context.Context, req events.APIGatewayV2HTT
 	if t, err := h.store.GetTank(ctx, body.TankID); err == nil {
 		tankName = t.Name
 	}
-	if err := h.store.AddRosterEntry(ctx, gameDayID, body.TankID, body.Version, tankName); err != nil {
+	if err := retryOnConflict(func() error {
+		return h.store.AddRosterEntry(ctx, gameDayID, body.TankID, body.Version, tankName)
+	}); err != nil {
 		log.Printf("add roster entry gameday=%s tank=%s: %v", gameDayID, body.TankID, err)
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
@@ -1599,7 +1691,9 @@ func (h *handler) removeRosterEntry(ctx context.Context, req events.APIGatewayV2
 			break
 		}
 	}
-	if err := h.store.RemoveRosterEntry(ctx, gameDayID, tankID); err != nil {
+	if err := retryOnConflict(func() error {
+		return h.store.RemoveRosterEntry(ctx, gameDayID, tankID)
+	}); err != nil {
 		log.Printf("remove roster entry gameday=%s tank=%s: %v", gameDayID, tankID, err)
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
@@ -2171,6 +2265,21 @@ func convertAISource(src string) string {
 		result = result[1:]
 	}
 	return strings.Join(result, "\n")
+}
+
+// retryOnConflict calls fn up to maxConflictRetries+1 times, retrying whenever
+// db.ErrConflict is returned (optimistic-locking failure on GameDay writes).
+func retryOnConflict(fn func() error) error {
+	const maxConflictRetries = 5
+	for attempt := 0; attempt <= maxConflictRetries; attempt++ {
+		err := fn()
+		if errors.Is(err, db.ErrConflict) {
+			log.Printf("retryOnConflict: attempt %d — retrying", attempt+1)
+			continue
+		}
+		return err
+	}
+	return fmt.Errorf("too many optimistic lock conflicts")
 }
 
 // newUUID generates a random UUID v4.

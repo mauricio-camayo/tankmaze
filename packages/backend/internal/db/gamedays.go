@@ -2,12 +2,15 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	dbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
 const (
@@ -50,18 +53,61 @@ func (s *Store) DeleteGameDay(ctx context.Context, gameDayID string) error {
 	return nil
 }
 
-// PutGameDay writes a Game Day record, overwriting any existing record for the
-// same gameDayId.
+// PutGameDay writes a Game Day record using optimistic locking on the Version
+// field. It increments Version before writing and uses a ConditionExpression to
+// ensure no concurrent writer has modified the record since it was read.
+//
+// For a brand-new record (Version == 0) the condition is attribute_not_exists,
+// preventing accidental overwrites of a record that was concurrently created.
+// For existing records the condition is version = :expected.
+//
+// Returns ErrConflict when the condition fails.
 func (s *Store) PutGameDay(ctx context.Context, gd GameDay) error {
+	expectedVersion := gd.Version
+	gd.Version = expectedVersion + 1
+
 	item, err := attributevalue.MarshalMap(gd)
 	if err != nil {
 		return fmt.Errorf("marshal gameday: %w", err)
 	}
-	_, err = s.db.PutItem(ctx, &dynamodb.PutItemInput{
+
+	input := &dynamodb.PutItemInput{
 		TableName: &s.gamedaysTable,
 		Item:      item,
-	})
-	return err
+	}
+
+	if expectedVersion == 0 {
+		// Version 0 covers two cases:
+		//   1. Truly new record — attribute_not_exists(gameDayId)
+		//   2. Record written before OCC was introduced (no version attribute) —
+		//      attribute_not_exists(#v)
+		// Both must be accepted so that pre-existing records can be upgraded in
+		// place without a migration.
+		cond := "attribute_not_exists(gameDayId) OR attribute_not_exists(#v) OR #v = :zero"
+		input.ConditionExpression = aws.String(cond)
+		input.ExpressionAttributeNames = map[string]string{"#v": "version"}
+		input.ExpressionAttributeValues = map[string]dbtypes.AttributeValue{
+			":zero": &dbtypes.AttributeValueMemberN{Value: "0"},
+		}
+	} else {
+		// Existing record: version must match what we read.
+		cond := "#v = :expected"
+		input.ConditionExpression = aws.String(cond)
+		input.ExpressionAttributeNames = map[string]string{"#v": "version"}
+		input.ExpressionAttributeValues = map[string]dbtypes.AttributeValue{
+			":expected": &dbtypes.AttributeValueMemberN{Value: fmt.Sprintf("%d", expectedVersion)},
+		}
+	}
+
+	_, putErr := s.db.PutItem(ctx, input)
+	if putErr != nil {
+		var ccf *dbtypes.ConditionalCheckFailedException
+		if errors.As(putErr, &ccf) {
+			return ErrConflict
+		}
+		return putErr
+	}
+	return nil
 }
 
 // GetGameDay returns the Game Day with the given gameDayId. Returns ErrNotFound

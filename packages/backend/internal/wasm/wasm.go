@@ -53,6 +53,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"time"
 
@@ -63,6 +64,20 @@ import (
 
 	tankmaze "github.com/tankmaze/sdk"
 )
+
+// compilationCache is a process-lifetime Wazero cache backed by /tmp.
+// Lambda containers reuse the same process for warm invocations, so the
+// compiled native code from the first invocation is reused on subsequent
+// ones — eliminating per-invocation JIT overhead.
+var compilationCache wazero.CompilationCache
+
+func init() {
+	var err error
+	compilationCache, err = wazero.NewCompilationCacheWithDir("/tmp/wazero-cache")
+	if err != nil {
+		log.Printf("wasm: compilation cache unavailable (%v) — running uncached", err)
+	}
+}
 
 const (
 	tickTimeout    = 50 * time.Millisecond
@@ -149,10 +164,13 @@ func LoadBytes(ctx context.Context, wasmBytes []byte) (*Module, error) {
 		tankCfgCh: make(chan struct{}),
 	}
 
-	m.rt = wazero.NewRuntimeWithConfig(ctx,
-		wazero.NewRuntimeConfig().
-			WithMemoryLimitPages(maxMemoryPages).
-			WithCloseOnContextDone(true)) // interrupt WASM when bgCtx is cancelled
+	rtCfg := wazero.NewRuntimeConfig().
+		WithMemoryLimitPages(maxMemoryPages).
+		WithCloseOnContextDone(true) // interrupt WASM when bgCtx is cancelled
+	if compilationCache != nil {
+		rtCfg = rtCfg.WithCompilationCache(compilationCache)
+	}
+	m.rt = wazero.NewRuntimeWithConfig(ctx, rtCfg)
 
 	if _, err := wasi_snapshot_preview1.Instantiate(ctx, m.rt); err != nil {
 		cancel()

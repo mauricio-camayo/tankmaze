@@ -170,6 +170,7 @@ type Group struct {
 type GameDay struct {
 	GameDayID       string                   `dynamodbav:"gameDayId"                  json:"gameDayId"`
 	Name            string                   `dynamodbav:"name,omitempty"             json:"name,omitempty"`
+	Version         int                      `dynamodbav:"version"                    json:"version"`
 	Schedule        GameDaySchedule          `dynamodbav:"schedule"                   json:"schedule"`
 	Phases          GameDayPhases            `dynamodbav:"phases"                     json:"phases"`
 	RegisteredTanks []MatchTank              `dynamodbav:"registeredTanks,omitempty"  json:"registeredTanks,omitempty"`

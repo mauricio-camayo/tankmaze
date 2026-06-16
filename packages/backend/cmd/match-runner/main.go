@@ -34,6 +34,7 @@ import (
 	agwtypes "github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi/types"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 
 	"github.com/tankmaze/backend/internal/db"
 	"github.com/tankmaze/backend/internal/engine"
@@ -232,19 +233,25 @@ func (h *handler) handle(ctx context.Context, evt matchEvent) error {
 	}
 
 	// ---- Download WASM binaries to /tmp -------------------------------------
+	// Use SHA256-keyed paths so the same binary is downloaded and compiled only
+	// once per Lambda container lifetime across all matches.
 
-	wasmPathA := fmt.Sprintf("/tmp/%s-a.wasm", matchID)
-	wasmPathB := fmt.Sprintf("/tmp/%s-b.wasm", matchID)
-	defer func() {
-		os.Remove(wasmPathA)
-		os.Remove(wasmPathB)
-	}()
+	wasmPathA := wasmCachePath(verA.WasmSHA256, matchID+"-a")
+	wasmPathB := wasmCachePath(verB.WasmSHA256, matchID+"-b")
 
-	if err := h.downloadWASM(ctx, verA.WasmS3Key, wasmPathA); err != nil {
-		return fmt.Errorf("download WASM A: %w", err)
+	missingA := h.downloadWASM(ctx, verA.WasmS3Key, wasmPathA)
+	missingB := h.downloadWASM(ctx, verB.WasmS3Key, wasmPathB)
+	if isWasmMissing(missingA) || isWasmMissing(missingB) {
+		// One or both WASM binaries are no longer in S3 (expired lifecycle or
+		// never uploaded). Record a forfeit rather than leaving the match stuck.
+		log.Printf("match %s: WASM missing (A=%v B=%v) — recording forfeit", matchID, missingA, missingB)
+		return h.recordForfeit(ctx, match, "", missingA, missingB)
 	}
-	if err := h.downloadWASM(ctx, verB.WasmS3Key, wasmPathB); err != nil {
-		return fmt.Errorf("download WASM B: %w", err)
+	if missingA != nil {
+		return fmt.Errorf("download WASM A: %w", missingA)
+	}
+	if missingB != nil {
+		return fmt.Errorf("download WASM B: %w", missingB)
 	}
 
 	// ---- Load maze ----------------------------------------------------------
@@ -425,10 +432,25 @@ func (h *handler) loadMaze(ctx context.Context, match db.Match) (maze.MazeGrid, 
 	return maze.Generate(seed, maze.SizeFromEnv()), nil
 }
 
+// wasmCachePath returns a deterministic /tmp path for a WASM binary.
+// When sha256 is known, the path is keyed by content so the same binary is
+// reused across matches in the same Lambda container. Falls back to a
+// per-invocation path when sha256 is empty.
+func wasmCachePath(sha256, fallback string) string {
+	if sha256 != "" {
+		return "/tmp/wasm-" + sha256 + ".wasm"
+	}
+	return "/tmp/" + fallback + ".wasm"
+}
+
 // downloadWASM fetches an S3 object and writes it to destPath.
+// If the file already exists at destPath it is reused without an S3 call.
 func (h *handler) downloadWASM(ctx context.Context, s3Key, destPath string) error {
 	if s3Key == "" {
 		return fmt.Errorf("WASM S3 key is empty")
+	}
+	if _, err := os.Stat(destPath); err == nil {
+		return nil // already cached in /tmp from a previous invocation
 	}
 	out, err := h.s3.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(h.wasmBucket),
@@ -447,6 +469,46 @@ func (h *handler) downloadWASM(ctx context.Context, s3Key, destPath string) erro
 
 	if _, err := io.Copy(f, out.Body); err != nil {
 		return fmt.Errorf("write %s: %w", destPath, err)
+	}
+	return nil
+}
+
+// isWasmMissing reports whether err indicates the WASM file no longer exists in S3.
+func isWasmMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	var noKey *s3types.NoSuchKey
+	return errors.As(err, &noKey)
+}
+
+// recordForfeit ends a match whose WASM is missing without running any ticks.
+// If A is missing → B wins; if B is missing → A wins; if both missing → void.
+func (h *handler) recordForfeit(ctx context.Context, match db.Match, _ string, errA, errB error) error {
+	aForfeit := isWasmMissing(errA)
+	bForfeit := isWasmMissing(errB)
+
+	var winner *int
+	var reason string
+	switch {
+	case aForfeit && bForfeit:
+		reason = "both_lose"
+	case aForfeit:
+		w := 1 // B wins
+		winner = &w
+		reason = "forfeit"
+	default:
+		w := 0 // A wins
+		winner = &w
+		reason = "forfeit"
+	}
+
+	result := db.MatchResult{
+		Winner: winner,
+		Reason: reason,
+	}
+	if err := h.store.SetMatchResult(ctx, match.MatchID, "", result); err != nil {
+		return fmt.Errorf("set forfeit result: %w", err)
 	}
 	return nil
 }

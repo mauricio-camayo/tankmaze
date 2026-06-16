@@ -18,6 +18,10 @@ import (
 // ErrNotFound is returned when a requested item does not exist in the table.
 var ErrNotFound = errors.New("item not found")
 
+// ErrConflict is returned by PutGameDay when the optimistic-locking condition
+// fails — another writer updated the record since it was last read.
+var ErrConflict = errors.New("optimistic lock conflict")
+
 // Store provides typed access to all TankMaze DynamoDB tables.
 type Store struct {
 	db               *dynamodb.Client
