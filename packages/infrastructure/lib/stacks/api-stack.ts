@@ -122,12 +122,12 @@ export class ApiStack extends Stack {
 
     // tournament-scheduler function name/ARN declared early so match-runner can
     // reference it without creating a circular CDK dependency.
+    // NOTE: this.formatArn() uses '/' as the default separator, producing
+    // function/name — but Lambda ARNs require the colon form function:name.
+    // Using a template literal avoids that bug without introducing a CDK token
+    // dependency on the Lambda resource itself.
     const tournamentSchedulerFunctionName = 'tankmaze-tournament-scheduler';
-    const tournamentSchedulerArn = this.formatArn({
-      service: 'lambda',
-      resource: 'function',
-      resourceName: tournamentSchedulerFunctionName,
-    });
+    const tournamentSchedulerArn = `arn:aws:lambda:${this.region}:${this.account}:function:${tournamentSchedulerFunctionName}`;
 
     // match-runner — needs WebSocket APIGW endpoint added after API is created
     // 300s: cold-start WASM JIT compilation can take 60-120s per module × 2;
