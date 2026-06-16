@@ -120,13 +120,25 @@ export class ApiStack extends Stack {
     tables.tanks.grantReadWriteData(rankingUpdater);
     tables.gamedays.grantReadWriteData(rankingUpdater);
 
+    // tournament-scheduler function name/ARN declared early so match-runner can
+    // reference it without creating a circular CDK dependency.
+    const tournamentSchedulerFunctionName = 'tankmaze-tournament-scheduler';
+    const tournamentSchedulerArn = this.formatArn({
+      service: 'lambda',
+      resource: 'function',
+      resourceName: tournamentSchedulerFunctionName,
+    });
+
     // match-runner — needs WebSocket APIGW endpoint added after API is created
     // 300s: cold-start WASM JIT compilation can take 60-120s per module × 2;
     // warm containers reuse /tmp Wazero cache and finish in <40s total.
     const matchRunner = goLambda('MatchRunner', 'match-runner', {
       ...tableEnvVars(tables),
-      WASM_BUCKET:        wasmBucket.bucketName,
-      MATCH_LOGS_BUCKET:  matchLogsBucket.bucketName,
+      WASM_BUCKET:                   wasmBucket.bucketName,
+      MATCH_LOGS_BUCKET:             matchLogsBucket.bucketName,
+      // Used by maybeAdvanceTournament to trigger the next phase when all
+      // matches in a game day end — makes phase transitions event-driven.
+      TOURNAMENT_SCHEDULER_FUNCTION: tournamentSchedulerArn,
     }, 300);
     wasmBucket.grantRead(matchRunner);
     matchLogsBucket.grantWrite(matchRunner);
@@ -137,16 +149,6 @@ export class ApiStack extends Stack {
     tables.maps.grantReadData(matchRunner);
 
     // tournament-scheduler
-    // Assign an explicit function name so we can construct its ARN as a literal
-    // string for the schedulerInvokeRole policy — breaking the CDK circular
-    // dependency that would arise from using tournamentScheduler.functionArn
-    // in that policy while the function also references schedulerInvokeRole.roleArn.
-    const tournamentSchedulerFunctionName = 'tankmaze-tournament-scheduler';
-    const tournamentSchedulerArn = this.formatArn({
-      service: 'lambda',
-      resource: 'function',
-      resourceName: tournamentSchedulerFunctionName,
-    });
     // tournament-scheduler timeout: must exceed match-runner's 300s for the
     // synchronous championship final invocation plus overhead.
     const tournamentScheduler = goLambda('TournamentScheduler', 'tournament-scheduler', {
@@ -170,6 +172,12 @@ export class ApiStack extends Stack {
     tables.connections.grantReadData(tournamentScheduler);
     matchRunner.grantInvoke(tournamentScheduler);
     rankingUpdater.grantInvoke(tournamentScheduler);
+    // IAM identity-based policy is sufficient for same-account Lambda invocations;
+    // uses the pre-computed ARN string to avoid a circular CDK dependency.
+    matchRunner.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['lambda:InvokeFunction'],
+      resources: [tournamentSchedulerArn],
+    }));
 
     // Allow the deployer IAM user to invoke these Lambdas directly — needed
     // for manual recovery when EventBridge-triggered runs stall.

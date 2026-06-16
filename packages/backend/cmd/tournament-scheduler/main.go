@@ -345,9 +345,18 @@ func (h *handler) createGroupMatches(ctx context.Context, gd db.GameDay, tanks [
 // standings, qualifies tanks, globally re-ranks them, seeds the bracket, and
 // creates round-1 elimination matches.
 func (h *handler) handleEliminationR1(ctx context.Context, gd db.GameDay) error {
-	if gd.Phases.RoundRobin.Status != "running" {
-		log.Printf("round_robin not yet running for %s — skipping elimination_r1", gd.GameDayID)
+	switch gd.Phases.RoundRobin.Status {
+	case "running":
+		// proceed
+	case "complete":
+		log.Printf("elimination_r1 %s: round_robin already complete — skipping", gd.GameDayID)
 		return nil
+	case "cancelled":
+		log.Printf("elimination_r1 %s: round_robin cancelled — skipping", gd.GameDayID)
+		return nil
+	default:
+		// "" or any unknown value means RR hasn't started; return error to trigger Lambda retry.
+		return fmt.Errorf("elimination_r1 %s: round_robin not started yet — retrying", gd.GameDayID)
 	}
 	if elim, ok := gd.Phases.Elimination["r1"]; ok && (elim.Status == "running" || elim.Status == "complete") {
 		log.Printf("elimination_r1 already %s for %s", elim.Status, gd.GameDayID)
@@ -465,8 +474,12 @@ func (h *handler) handleElimination(ctx context.Context, gd db.GameDay, round in
 	curKey := fmt.Sprintf("r%d", round)
 
 	prevPhase, ok := gd.Phases.Elimination[prevKey]
-	if !ok || prevPhase.Status != "running" {
-		log.Printf("%s not yet running for %s — skipping %s", prevKey, gd.GameDayID, curKey)
+	if !ok {
+		// Previous round never started; return error to trigger Lambda retry.
+		return fmt.Errorf("%s %s: %s not started yet — retrying", curKey, gd.GameDayID, prevKey)
+	}
+	if prevPhase.Status != "running" {
+		log.Printf("%s already %s for %s — skipping %s", prevKey, prevPhase.Status, gd.GameDayID, curKey)
 		return nil
 	}
 	if cur, ok := gd.Phases.Elimination[curKey]; ok && (cur.Status == "running" || cur.Status == "complete") {
@@ -569,8 +582,8 @@ func (h *handler) handleFinal(ctx context.Context, gd db.GameDay) error {
 	// Find the last running elimination round to get finalists.
 	lastRoundKey, lastPhase, lastSlots := lastEliminationRound(gd)
 	if lastRoundKey == "" {
-		log.Printf("no elimination round in progress for %s — skipping final", gd.GameDayID)
-		return nil
+		// No elimination round started yet; return error to trigger Lambda retry.
+		return fmt.Errorf("final %s: no elimination round started yet — retrying", gd.GameDayID)
 	}
 	if lastPhase.Status == "complete" {
 		if gd.Phases.Final.Status == "complete" {

@@ -33,6 +33,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	agwtypes "github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi/types"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	lambdasvc "github.com/aws/aws-sdk-go-v2/service/lambda"
+	ltypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 
@@ -171,14 +173,16 @@ var cardinalStr = [4]string{0: "N", 1: "S", 2: "E", 3: "W"}
 // ---- Handler ----------------------------------------------------------------
 
 type handler struct {
-	store         *db.Store
-	s3            *s3.Client
-	apigw         *apigatewaymanagementapi.Client
-	wasmBucket    string
-	logsBucket    string
-	tickLimit     int
-	projSpeed     int
-	wallHitDamage int
+	store                 *db.Store
+	s3                    *s3.Client
+	apigw                 *apigatewaymanagementapi.Client
+	lambdaSvc             *lambdasvc.Client
+	wasmBucket            string
+	logsBucket            string
+	tournamentSchedulerFn string
+	tickLimit             int
+	projSpeed             int
+	wallHitDamage         int
 }
 
 var h *handler
@@ -196,11 +200,13 @@ func main() {
 		apigw: apigatewaymanagementapi.NewFromConfig(cfg, func(o *apigatewaymanagementapi.Options) {
 			o.BaseEndpoint = aws.String(os.Getenv("APIGW_ENDPOINT"))
 		}),
-		wasmBucket:    os.Getenv("WASM_BUCKET"),
-		logsBucket:    os.Getenv("MATCH_LOGS_BUCKET"),
-		tickLimit:     engine.TickLimitFromEnv(),
-		projSpeed:     engine.ProjSpeedFromEnv(),
-		wallHitDamage: engine.WallHitDamageFromEnv(),
+		lambdaSvc:             lambdasvc.NewFromConfig(cfg),
+		wasmBucket:            os.Getenv("WASM_BUCKET"),
+		logsBucket:            os.Getenv("MATCH_LOGS_BUCKET"),
+		tournamentSchedulerFn: os.Getenv("TOURNAMENT_SCHEDULER_FUNCTION"),
+		tickLimit:             engine.TickLimitFromEnv(),
+		projSpeed:             engine.ProjSpeedFromEnv(),
+		wallHitDamage:         engine.WallHitDamageFromEnv(),
 	}
 
 	lambda.Start(h.handle)
@@ -402,6 +408,12 @@ func (h *handler) handle(ctx context.Context, evt matchEvent) error {
 	switch match.MatchType {
 	case "ranked":
 		h.updateRankedStats(ctx, match, verA, verB, result)
+		// When the last ranked match in a game day ends, trigger the next phase in
+		// tournament-scheduler. This makes phase transitions event-driven so they
+		// fire even if EventBridge schedules arrived before matches completed.
+		if match.GameDayID != "" && h.tournamentSchedulerFn != "" {
+			h.maybeAdvanceTournament(ctx, match.GameDayID)
+		}
 	case "test-ai", "test-own":
 		if err := h.store.IncrementTestMatchCount(ctx, match.TankA.TankID, match.TankA.Version); err != nil {
 			log.Printf("increment test match count A: %v", err)
@@ -741,4 +753,63 @@ func winnerStr(winner int) *string {
 		return &s
 	}
 	return nil
+}
+
+// maybeAdvanceTournament checks whether all ranked matches for gameDayID have
+// ended and, if so, invokes tournament-scheduler with the next phase. This
+// ensures phase transitions happen even when EventBridge schedules fire before
+// all matches complete and Lambda's 3-attempt retry window is exhausted.
+func (h *handler) maybeAdvanceTournament(ctx context.Context, gameDayID string) {
+	matches, err := h.store.ScanMatchesByGameDay(ctx, gameDayID)
+	if err != nil {
+		log.Printf("maybeAdvanceTournament %s: scan: %v", gameDayID, err)
+		return
+	}
+	for i := range matches {
+		if matches[i].Status != "ended" {
+			return
+		}
+	}
+	gd, err := h.store.GetGameDay(ctx, gameDayID)
+	if err != nil {
+		log.Printf("maybeAdvanceTournament %s: get game day: %v", gameDayID, err)
+		return
+	}
+	phase := nextTournamentPhase(gd)
+	if phase == "" {
+		return
+	}
+	log.Printf("maybeAdvanceTournament %s: all matches ended, triggering %s", gameDayID, phase)
+	payload, _ := json.Marshal(map[string]string{"gameDayId": gameDayID, "phase": phase})
+	if _, err := h.lambdaSvc.Invoke(ctx, &lambdasvc.InvokeInput{
+		FunctionName:   aws.String(h.tournamentSchedulerFn),
+		InvocationType: ltypes.InvocationTypeEvent,
+		Payload:        payload,
+	}); err != nil {
+		log.Printf("maybeAdvanceTournament %s: invoke %s: %v", gameDayID, phase, err)
+	}
+}
+
+// nextTournamentPhase returns the tournament-scheduler phase to trigger after
+// all current matches have ended, or "" if the tournament is already done.
+func nextTournamentPhase(gd db.GameDay) string {
+	if gd.Phases.Final.Status == "running" || gd.Phases.Final.Status == "complete" {
+		return ""
+	}
+	if gd.Phases.RoundRobin.Status == "running" {
+		return "elimination_r1"
+	}
+	// Find the highest running elimination round.
+	last := 0
+	for key, p := range gd.Phases.Elimination {
+		if p.Status == "running" && len(key) > 1 && key[0] == 'r' {
+			if n, err := strconv.Atoi(key[1:]); err == nil && n > last {
+				last = n
+			}
+		}
+	}
+	if last > 0 {
+		return fmt.Sprintf("elimination_r%d", last+1)
+	}
+	return ""
 }
