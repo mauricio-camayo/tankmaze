@@ -158,6 +158,9 @@ Three reference tank implementations are built into the platform. They serve two
 | **Scout** | 5 | 3 | 2 | 2 | 3 | Evades walls; circles opponent once detected |
 | **Ranger** | 3 | 5 | 3 | 2 | 2 | Patrols until opponent in range; precision firing |
 | **Bruiser** | 2 | 2 | 5 | 5 | 1 | Straight-line approach; fires on contact |
+| **Randy** | 3 | 3 | 3 | 3 | 3 | Fully random: picks a random action each tick with no strategy |
+
+**Randy** uses balanced stats (all 3s) and a fully random decision function: each tick it picks a random action from {Move Forward, Move Backward, Rotate Left, Rotate Right, Fire, Idle} with uniform probability and no memory of prior ticks. Randy requires the `math/rand` standard library (see §3.5 optional imports). Its purpose is to give tank authors a chaotic but beatable baseline, and to validate that deterministic strategies consistently outperform pure randomness. Randy depends on the optional stdlib imports feature (#29 in the task list) that makes `math/rand` available to user-authored tanks as well.
 
 Built-in tanks do not appear in ranked leaderboards. They cannot be beaten by the system to claim a rank.
 
