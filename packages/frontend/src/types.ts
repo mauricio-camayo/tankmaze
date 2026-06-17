@@ -190,7 +190,7 @@ export interface TickUpdate {
 export interface MatchSnapshot {
   matchId: string;
   status: MatchStatus;
-  maze: boolean[][];
+  maze: boolean[][] | null;
   tankA: TankState;
   tankB: TankState;
   projectiles: Projectile[];

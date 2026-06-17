@@ -349,7 +349,9 @@ func (h *handler) handleObserve(ctx context.Context, connID string, raw json.Raw
 
 	mazeGrid, mazeErr := h.loadMaze(ctx, match)
 	if mazeErr != nil {
-		mazeGrid = nil
+		log.Printf("observe: load maze for match %s: %v", match.MatchID, mazeErr)
+		_ = h.sendErr(ctx, connID, "internal_error", "failed to load match maze — try refreshing")
+		return resp(200), nil
 	}
 
 	tankNameA := match.TankA.TankID

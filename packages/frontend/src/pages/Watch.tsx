@@ -134,6 +134,10 @@ export default function Watch() {
   // ── Apply snapshot to scene once both are ready ────────────────────────
   useEffect(() => {
     if (!snapshot || !sceneReady || !sceneRef.current) return;
+    if (!snapshot.maze) {
+      setWsError('Match data unavailable — try refreshing');
+      return;
+    }
     sceneRef.current.initMaze(snapshot.maze);
     sceneRef.current.render(snapshot.tankA, snapshot.tankB, snapshot.projectiles, snapshot.tankA.tankId);
   }, [snapshot, sceneReady]);

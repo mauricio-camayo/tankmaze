@@ -235,6 +235,7 @@ export class ApiStack extends Stack {
     tables.matches.grantReadData(wssHandler);
     tables.tankVersions.grantReadData(wssHandler);
     tables.gamedays.grantReadData(wssHandler);
+    tables.maps.grantReadData(wssHandler);
     matchLogsBucket.grantRead(wssHandler);
 
     // tank-api
