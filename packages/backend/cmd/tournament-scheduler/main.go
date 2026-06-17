@@ -524,7 +524,17 @@ func (h *handler) handleElimination(ctx context.Context, gd db.GameDay, round in
 		return fmt.Errorf("save %s bracket: %w", curKey, err)
 	}
 
-	return h.createElimMatches(ctx, gd, curKey, nextSlots)
+	if err := h.createElimMatches(ctx, gd, curKey, nextSlots); err != nil {
+		return err
+	}
+	// If every slot in the new round is a bye (all previous matches were both_lose),
+	// no matches were created and maybeAdvanceTournament will never fire. Advance
+	// directly to the final now.
+	if activePairs(nextSlots) == 0 {
+		log.Printf("%s: all slots are byes — advancing directly to final for %s", curKey, gd.GameDayID)
+		return h.handleFinal(ctx, gd)
+	}
+	return nil
 }
 
 // ---- Phase: final -----------------------------------------------------------
@@ -609,8 +619,20 @@ func (h *handler) handleFinal(ctx context.Context, gd db.GameDay) error {
 	finalists := advanceBracketRound(updated)
 	// finalists has exactly 2 slots for the championship match.
 	if len(finalists) < 2 {
-		log.Printf("unexpected finalist count %d for %s", len(finalists), gd.GameDayID)
-		return nil
+		// All elimination matches ended in both_lose — no real finalists. Complete
+		// the final immediately with no champion rather than leaving it stuck.
+		log.Printf("no finalists for %s (all matches both_lose) — completing final with no champion", gd.GameDayID)
+		t := time.Now().Unix()
+		gd.Phases.Elimination[lastRoundKey] = db.PhaseStatus{
+			Status:    "complete",
+			StartedAt: lastPhase.StartedAt,
+			EndedAt:   t,
+		}
+		gd.Phases.Final = db.PhaseStatus{Status: "complete", StartedAt: t, EndedAt: t}
+		if err := h.store.PutGameDay(ctx, gd); err != nil {
+			return err
+		}
+		return h.invokeRankingUpdater(ctx, gd.GameDayID)
 	}
 	a, b := finalists[0], finalists[1]
 
