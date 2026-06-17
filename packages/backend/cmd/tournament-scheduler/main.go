@@ -400,11 +400,11 @@ func (h *handler) handleEliminationR1(ctx context.Context, gd db.GameDay) error 
 		}
 		gd.Schedule.Elimination = elim
 
-		// Push the final forward if the last elimination round + 30 min buffer
+		// Push the final forward if the last elimination round + 5 min buffer
 		// would overlap it. Admin-set finalAt is a floor, never a ceiling.
 		if len(elim) > 0 {
 			if lastElimAt, lerr := time.Parse(time.RFC3339, elim[len(elim)-1]); lerr == nil {
-				candidate := lastElimAt.Add(30 * time.Minute)
+				candidate := lastElimAt.Add(5 * time.Minute)
 				if candidate.After(finalAt) {
 					log.Printf("auto-advancing finalAt %s → %s for game day %s",
 						finalAt.Format(time.RFC3339), candidate.UTC().Format(time.RFC3339), gd.GameDayID)
@@ -413,6 +413,9 @@ func (h *handler) handleEliminationR1(ctx context.Context, gd db.GameDay) error 
 				}
 			}
 		}
+
+		// Upsert EventBridge schedules for r2-rN now that we know actual round times.
+		h.rescheduleElimRounds(ctx, gd, 1)
 	}
 
 	// Seed the bracket.
@@ -1119,6 +1122,52 @@ func (h *handler) invokeMatchRunner(ctx context.Context, matchID string, sync bo
 		Payload:        payload,
 	}); err != nil {
 		log.Printf("invoke match-runner for %s: %v", matchID, err)
+	}
+}
+
+// rescheduleElimRounds upserts EventBridge Scheduler rules for elimination
+// rounds fromRound+1 through len(gd.Schedule.Elimination). Called after
+// handleEliminationR1 has locked in the actual per-round times so that
+// fallback schedules fire at the right moment even if match-runner callbacks
+// are delayed.
+func (h *handler) rescheduleElimRounds(ctx context.Context, gd db.GameDay, fromRound int) {
+	if h.schedulerSvc == nil || h.schedulerRoleArn == "" || h.selfArn == "" {
+		return
+	}
+	for i, ts := range gd.Schedule.Elimination {
+		rn := i + 1
+		if rn <= fromRound {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, ts)
+		if err != nil || !t.After(time.Now()) {
+			continue
+		}
+		scheduleName := fmt.Sprintf("%s-elim-r%d", gd.GameDayID, rn)
+		phase := fmt.Sprintf("elimination_r%d", rn)
+		payload, _ := json.Marshal(map[string]string{"gameDayId": gd.GameDayID, "phase": phase})
+		atExpr := "at(" + t.UTC().Format("2006-01-02T15:04:05") + ")"
+		target := &schedulertypes.Target{
+			Arn:     aws.String(h.selfArn),
+			RoleArn: aws.String(h.schedulerRoleArn),
+			Input:   aws.String(string(payload)),
+		}
+		if h.schedulerDLQArn != "" {
+			target.DeadLetterConfig = &schedulertypes.DeadLetterConfig{Arn: aws.String(h.schedulerDLQArn)}
+		}
+		ftw := &schedulertypes.FlexibleTimeWindow{Mode: schedulertypes.FlexibleTimeWindowModeOff}
+		_, err = h.schedulerSvc.UpdateSchedule(ctx, &schedulersvc.UpdateScheduleInput{
+			Name:                       aws.String(scheduleName),
+			GroupName:                  aws.String("tankmaze-gamedays"),
+			ScheduleExpression:         aws.String(atExpr),
+			ScheduleExpressionTimezone: aws.String("UTC"),
+			FlexibleTimeWindow:         ftw,
+			Target:                     target,
+			ActionAfterCompletion:      schedulertypes.ActionAfterCompletionDelete,
+		})
+		if err != nil {
+			log.Printf("rescheduleElimRounds %s: %v (ignored)", scheduleName, err)
+		}
 	}
 }
 

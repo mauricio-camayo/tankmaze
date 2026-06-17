@@ -288,6 +288,95 @@ function MajorVersionCard({ major, minors, isOwner }: { major: TankVersion; mino
   );
 }
 
+const PAGE_SIZE = 10;
+
+function gameDayResult(gd: GameDay, tankId: string): string {
+  if (gd.phases.final.status === 'complete') {
+    const finalSlots = gd.bracket['final'] ?? [];
+    if (finalSlots.find((s) => s.tankId === tankId && s.status === 'won')) return 'Winner';
+    if (finalSlots.find((s) => s.tankId === tankId)) return 'Finalist';
+    const elimKeys = Object.keys(gd.bracket)
+      .filter((k) => /^r\d+$/.test(k))
+      .sort((a, b) => parseInt(b.slice(1)) - parseInt(a.slice(1)));
+    for (const k of elimKeys) {
+      const slot = (gd.bracket[k] ?? []).find((s) => s.tankId === tankId);
+      if (slot && (slot.status === 'lost' || slot.status === 'both_lose')) {
+        return `Eliminated in ${k.toUpperCase()}`;
+      }
+    }
+  }
+  if (gd.phases.roundRobin.status === 'complete') return 'Round Robin only';
+  return '—';
+}
+
+function GameDayHistory({ allGameDays, tankId }: { allGameDays: GameDay[]; tankId: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [page, setPage] = useState(0);
+
+  const pastGds = allGameDays.filter(
+    (gd) => gd.phases.roundRobin.status !== 'upcoming',
+  ).sort((a, b) => new Date(b.schedule.roundRobin).getTime() - new Date(a.schedule.roundRobin).getTime());
+
+  if (pastGds.length === 0) return null;
+
+  const totalPages = Math.ceil(pastGds.length / PAGE_SIZE);
+  const pageItems = pastGds.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  return (
+    <div style={{ ...cardStyle, marginTop: 24 }}>
+      <button
+        onClick={() => setExpanded((e) => !e)}
+        style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 14, fontWeight: 600, padding: 0, width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8 }}
+      >
+        {expanded ? '▾' : '▸'} Game Day History ({pastGds.length})
+      </button>
+      {expanded && (
+        <div style={{ marginTop: 14 }}>
+          {pageItems.map((gd) => {
+            const date = new Date(gd.schedule.roundRobin).toLocaleDateString(undefined, {
+              month: 'short', day: 'numeric', year: 'numeric',
+            });
+            const result = gameDayResult(gd, tankId);
+            const resultColor = result === 'Winner' ? '#4ade80' : result === 'Finalist' ? '#fbbf24' : '#64748b';
+            return (
+              <div key={gd.gameDayId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #2d2d4e' }}>
+                <div>
+                  <Link to={`/gameday/${gd.gameDayId}`} style={{ color: '#a78bfa', textDecoration: 'none', fontSize: 14, fontWeight: 500 }}>
+                    {gd.name ?? date}
+                  </Link>
+                  <div style={{ color: '#64748b', fontSize: 12, marginTop: 2 }}>{date}</div>
+                </div>
+                <span style={{ color: resultColor, fontSize: 13, fontWeight: result === 'Winner' || result === 'Finalist' ? 600 : 400 }}>
+                  {result}
+                </span>
+              </div>
+            );
+          })}
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 12 }}>
+              <button
+                onClick={() => setPage((p) => p - 1)}
+                disabled={page === 0}
+                style={{ ...ghostButtonStyle, padding: '3px 10px', fontSize: 12, opacity: page === 0 ? 0.4 : 1 }}
+              >
+                Prev
+              </button>
+              <span style={{ color: '#64748b', fontSize: 12, alignSelf: 'center' }}>{page + 1} / {totalPages}</span>
+              <button
+                onClick={() => setPage((p) => p + 1)}
+                disabled={page >= totalPages - 1}
+                style={{ ...ghostButtonStyle, padding: '3px 10px', fontSize: 12, opacity: page >= totalPages - 1 ? 0.4 : 1 }}
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function TankDetail() {
   const { tankId } = useParams<{ tankId: string }>();
   const navigate = useNavigate();
@@ -501,6 +590,7 @@ export default function TankDetail() {
                 {(latestReadyMajorForActions?.registeredForGameDays ?? []).length < 2 &&
                   (latestReadyMajorForActions?.registeredForGameDays ?? []).map((gdId) => {
                     const gd = gameDays.find((d) => d.gameDayId === gdId);
+                    if (gd && gd.phases.roundRobin.status !== 'upcoming') return null;
                     const label = gd?.name ?? gdId.slice(-6);
                     return (
                       <button key={gdId} onClick={() => handleWithdraw(gdId)} disabled={registering} style={ghostButtonStyle}>
@@ -577,6 +667,7 @@ export default function TankDetail() {
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               {(latestReadyMajorForActions!.registeredForGameDays!).map((gdId) => {
                 const gd = gameDays.find((d) => d.gameDayId === gdId);
+                if (gd && gd.phases.roundRobin.status !== 'upcoming') return null;
                 const label = gd?.name ?? gdId.slice(-6);
                 return (
                   <button key={gdId} onClick={() => handleWithdraw(gdId)} disabled={registering}
@@ -605,6 +696,12 @@ export default function TankDetail() {
           <MajorVersionCard key={major.version} major={major} minors={minorsByMajor[major.version] ?? []} isOwner={isOwner} />
         ))
       )}
+
+      {(() => {
+        const allGdIds = new Set(tank.versions.flatMap((v) => v.registeredForGameDays ?? []));
+        const tankGameDays = gameDays.filter((gd) => allGdIds.has(gd.gameDayId));
+        return tankGameDays.length > 0 ? <GameDayHistory allGameDays={tankGameDays} tankId={tank.tankId} /> : null;
+      })()}
 
       {registerError && (
         <p style={{ color: '#f87171', fontSize: 13, margin: '0 0 12px' }}>{registerError}</p>

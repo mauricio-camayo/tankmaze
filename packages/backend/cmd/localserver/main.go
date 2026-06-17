@@ -852,14 +852,15 @@ func (srv *server) createGameDay(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadRequest, "round robin must start before final")
 		return
 	}
-	if finalAt.Sub(rrAt) < 2*time.Hour {
-		jsonErr(w, http.StatusBadRequest, "at least 2 hours required between round robin and final")
-		return
+	const maxElimRounds = 5
+	elimination := make([]string, maxElimRounds)
+	for i := 0; i < maxElimRounds; i++ {
+		t := finalAt.Add(-time.Duration(maxElimRounds-i) * 30 * time.Minute)
+		if t.Before(rrAt) {
+			t = rrAt
+		}
+		elimination[i] = t.UTC().Format(time.RFC3339)
 	}
-
-	elimR1At := finalAt.Add(-90 * time.Minute)
-	elimR2At := finalAt.Add(-60 * time.Minute)
-	elimination := []string{elimR1At.UTC().Format(time.RFC3339), elimR2At.UTC().Format(time.RFC3339)}
 
 	gd := db.GameDay{
 		GameDayID: newUUID(),
@@ -1011,6 +1012,18 @@ func (srv *server) patchGameDay(w http.ResponseWriter, r *http.Request, gameDayI
 	}
 	if body.FinalAt != "" {
 		gd.Schedule.Final = body.FinalAt
+		fn, _ := parseISO(body.FinalAt)
+		rr, _ := parseISO(gd.Schedule.RoundRobin)
+		const maxElim = 5
+		elim := make([]string, maxElim)
+		for i := 0; i < maxElim; i++ {
+			t := fn.Add(-time.Duration(maxElim-i) * 30 * time.Minute)
+			if t.Before(rr) {
+				t = rr
+			}
+			elim[i] = t.UTC().Format(time.RFC3339)
+		}
+		gd.Schedule.Elimination = elim
 	}
 	if body.Autofill != nil {
 		gd.Autofill = *body.Autofill

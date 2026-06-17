@@ -605,7 +605,7 @@ export default function GameDayPage() {
   const bracketRounds = Object.entries(gameDay.bracket ?? {})
     .filter(([, slots]) => slots.length > 0)
     .sort(([a], [b]) => {
-      const order = ['r1', 'r2', 'r3', 'final'];
+      const order = ['r1', 'r2', 'r3', 'r4', 'r5', 'final'];
       return order.indexOf(a) - order.indexOf(b);
     });
 

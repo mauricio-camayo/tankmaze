@@ -235,7 +235,10 @@ export default function Dashboard() {
           d.phases.final.status === 'running' ||
           Object.values(d.phases.elimination ?? {}).some((p) => p.status === 'running');
         setRunningGameDay(future.find(isRunning) ?? null);
-        setUpcomingGameDay(future.find((d) => !isRunning(d)) ?? null);
+        const upcoming = future
+          .filter((d) => !isRunning(d))
+          .sort((a, b) => new Date(a.schedule.roundRobin).getTime() - new Date(b.schedule.roundRobin).getTime());
+        setUpcomingGameDay(upcoming[0] ?? null);
       })
       .catch(() => {});
   }, []);

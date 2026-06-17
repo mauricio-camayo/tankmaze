@@ -159,10 +159,6 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
       setErr('Round robin must start before the final');
       return false;
     }
-    if (new Date(fields.final).getTime() - new Date(fields.roundRobin).getTime() < 2 * 60 * 60 * 1000) {
-      setErr('At least 2 hours required between round robin and final');
-      return false;
-    }
     setSaving(true);
     setErr(null);
     try {
@@ -462,10 +458,6 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
     }
     if (new Date(fields.roundRobin) >= new Date(fields.final)) {
       setErr('Round robin must start before the final');
-      return false;
-    }
-    if (new Date(fields.final).getTime() - new Date(fields.roundRobin).getTime() < 2 * 60 * 60 * 1000) {
-      setErr('At least 2 hours required between round robin and final');
       return false;
     }
     setSaving(true);

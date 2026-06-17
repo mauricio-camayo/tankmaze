@@ -1263,13 +1263,19 @@ func (h *handler) createGameDay(ctx context.Context, req events.APIGatewayV2HTTP
 	if !rrAt.Before(finalAt) {
 		return errResp(http.StatusBadRequest, "round robin must start before final"), nil
 	}
-	if finalAt.Sub(rrAt) < 2*time.Hour {
-		return errResp(http.StatusBadRequest, "at least 2 hours required between round robin and final"), nil
+	const maxElimRounds = 5
+	elimTimes := make([]time.Time, maxElimRounds)
+	for i := 0; i < maxElimRounds; i++ {
+		t := finalAt.Add(-time.Duration(maxElimRounds-i) * 30 * time.Minute)
+		if t.Before(rrAt) {
+			t = rrAt
+		}
+		elimTimes[i] = t
 	}
-
-	elimR1At := finalAt.Add(-90 * time.Minute)
-	elimR2At := finalAt.Add(-60 * time.Minute)
-	elimination := []string{elimR1At.UTC().Format(time.RFC3339), elimR2At.UTC().Format(time.RFC3339)}
+	elimination := make([]string, maxElimRounds)
+	for i, t := range elimTimes {
+		elimination[i] = t.UTC().Format(time.RFC3339)
+	}
 
 	gameDayID := newUUID()
 	now := time.Now().Unix()
@@ -1307,8 +1313,11 @@ func (h *handler) createGameDay(ctx context.Context, req events.APIGatewayV2HTTP
 	}{
 		{gameDayID + "-reg-close", "registration_close", atExpr(regClose)},
 		{gameDayID + "-rr", "round_robin", atExpr(rrAt)},
-		{gameDayID + "-elim-r1", "elimination_r1", atExpr(elimR1At)},
-		{gameDayID + "-elim-r2", "elimination_r2", atExpr(elimR2At)},
+		{gameDayID + "-elim-r1", "elimination_r1", atExpr(elimTimes[0])},
+		{gameDayID + "-elim-r2", "elimination_r2", atExpr(elimTimes[1])},
+		{gameDayID + "-elim-r3", "elimination_r3", atExpr(elimTimes[2])},
+		{gameDayID + "-elim-r4", "elimination_r4", atExpr(elimTimes[3])},
+		{gameDayID + "-elim-r5", "elimination_r5", atExpr(elimTimes[4])},
 		{gameDayID + "-final", "final", atExpr(finalAt)},
 	}
 
@@ -1422,6 +1431,9 @@ func (h *handler) deleteGameDay(ctx context.Context, req events.APIGatewayV2HTTP
 		gameDayID + "-rr",
 		gameDayID + "-elim-r1",
 		gameDayID + "-elim-r2",
+		gameDayID + "-elim-r3",
+		gameDayID + "-elim-r4",
+		gameDayID + "-elim-r5",
 		gameDayID + "-final",
 	}
 	for _, name := range scheduleNames {
@@ -1560,11 +1572,17 @@ func (h *handler) patchGameDay(ctx context.Context, req events.APIGatewayV2HTTPR
 
 	// When FinalAt changes, recompute the derived elimination round times so
 	// the DB schedule.elimination array stays consistent with schedule.final.
-	var newElimR1, newElimR2 time.Time
+	var patchElimTimes [5]time.Time
 	if body.FinalAt != "" {
 		fn, _ := parseAt(body.FinalAt)
-		newElimR1 = fn.Add(-90 * time.Minute)
-		newElimR2 = fn.Add(-60 * time.Minute)
+		rr, _ := parseAt(mergedRRAt)
+		for i := 0; i < 5; i++ {
+			t := fn.Add(-time.Duration(5-i) * 30 * time.Minute)
+			if t.Before(rr) {
+				t = rr
+			}
+			patchElimTimes[i] = t
+		}
 	}
 
 	upd := db.GameDayUpdate{
@@ -1577,7 +1595,10 @@ func (h *handler) patchGameDay(ctx context.Context, req events.APIGatewayV2HTTPR
 		RandomMaps:          body.RandomMaps,
 	}
 	if body.FinalAt != "" {
-		elim := []string{newElimR1.UTC().Format(time.RFC3339), newElimR2.UTC().Format(time.RFC3339)}
+		elim := make([]string, 5)
+		for i, t := range patchElimTimes {
+			elim[i] = t.UTC().Format(time.RFC3339)
+		}
 		upd.EliminationAt = elim
 	}
 
@@ -1605,8 +1626,9 @@ func (h *handler) patchGameDay(ctx context.Context, req events.APIGatewayV2HTTPR
 	if body.FinalAt != "" {
 		fn, _ := parseAt(body.FinalAt)
 		h.upsertSchedule(ctx, gameDayID+"-final", "final", gameDayID, fn)
-		h.upsertSchedule(ctx, gameDayID+"-elim-r1", "elimination_r1", gameDayID, newElimR1)
-		h.upsertSchedule(ctx, gameDayID+"-elim-r2", "elimination_r2", gameDayID, newElimR2)
+		for i, t := range patchElimTimes {
+			h.upsertSchedule(ctx, fmt.Sprintf("%s-elim-r%d", gameDayID, i+1), fmt.Sprintf("elimination_r%d", i+1), gameDayID, t)
+		}
 	}
 
 	gd, err := h.store.GetGameDay(ctx, gameDayID)

@@ -264,13 +264,16 @@ A Game Day is a multi-phase tournament that unfolds over one or more days. Each 
 schedule:
   registration_close: "0 18 * * 6"    # Saturday 6 PM  — registration deadline
   round_robin:        "0 20 * * 6"    # Saturday 8 PM  — Phase 1 runs
-  elimination_r1:     "0 20 * * 0"    # Sunday   8 PM  — Round of 16 / Quarterfinals
-  elimination_r2:     "0 22 * * 0"    # Sunday  10 PM  — Semifinals
+  elimination_r1:     "0 20 * * 0"    # Sunday   8 PM  — Round 1 (up to 64 tanks)
+  elimination_r2:     "0 22 * * 0"    # Sunday  10 PM  — Round 2
+  elimination_r3:     "0 18 * * 1"    # Monday   6 PM  — Round 3 (if needed)
+  elimination_r4:     "0 20 * * 1"    # Monday   8 PM  — Round 4 (if needed)
+  elimination_r5:     "0 22 * * 1"    # Monday  10 PM  — Round 5 (if needed, ≤64-tank field)
   final:              "0 21 * * 6"    # Next Saturday 9 PM — Final
 ```
 
 - Each phase trigger fires independently. The platform skips a phase trigger if the previous phase has not yet completed (e.g., if Round Robin is still running when `elimination_r1` fires, R1 is postponed to the next `elimination_r1` tick).
-- Elimination phases beyond what the bracket requires are silently skipped (e.g., if only 2 tanks advance, R1 is the Final).
+- Elimination phases beyond what the bracket requires are silently skipped. The number of required rounds depends on the field size — see §6.3 Phase 1 → Phase 2 Qualification for the round count table.
 - All users see the full phase schedule for the current Game Day on their dashboard, including the status of each phase (upcoming / running / complete).
 
 ### 6.2 Registration
@@ -339,6 +342,22 @@ The number of tanks that advance to elimination depends on the total field size:
 For the standard group of 8 with > 64 total tanks: `⌊8 × 2/3⌋ = 5` tanks advance per group. The bottom 3 in each group are eliminated.
 
 All advancing tanks are **globally re-ranked** by their round-robin points (then by the tiebreakers above) before the elimination bracket is seeded.
+
+**Elimination rounds when ≤ 64 tanks register:**
+
+When all tanks advance, the number of elimination rounds (not counting the Final) is `⌊log₂(N)⌋ − 1`, where N is the number of advancing tanks. The Final always uses the last two surviving tanks. Specifically:
+
+| Advancing tanks (N) | Elimination rounds before Final | Total rounds incl. Final | Round sizes |
+|---|---|---|---|
+| 4 | 1 | 2 | R1: 4 → Final: 2 |
+| 8 | 2 | 3 | R1: 8 → R2: 4 → Final: 2 |
+| 16 | 3 | 4 | R1: 16 → R2: 8 → R3: 4 → Final: 2 |
+| 32 | 4 | 5 | R1: 32 → R2: 16 → R3: 8 → R4: 4 → Final: 2 |
+| 64 | 5 | 6 | R1: 64 → R2: 32 → R3: 16 → R4: 8 → R5: 4 → Final: 2 |
+
+If N is not a power of 2, the highest seeds receive **byes** in Round 1 so that the number of remaining tanks after Round 1 is the next lower power of 2 (see Phase 2 — rule 3 below).
+
+The platform schedule defines cron entries for each elimination round up to the maximum needed (one entry per possible round). Rounds that are not required for a given Game Day are silently skipped by the platform at runtime (see §6.1).
 
 ---
 
@@ -651,7 +670,12 @@ Each phase is triggered independently by its own cron entry (§6.1). Authors can
         ▼
 [elimination_r2 trigger] ──→ [Remaining matches run] ──→ [Results published]
         │
-       ...
+[elimination_r3 trigger] ──→ [Remaining matches run] ──→ [Results published]  (skipped if not needed)
+        │
+[elimination_r4 trigger] ──→ [Remaining matches run] ──→ [Results published]  (skipped if not needed)
+        │
+[elimination_r5 trigger] ──→ [Remaining matches run] ──→ [Results published]  (skipped if not needed)
+        │
         ▼
 [final trigger] ──→ [Final match runs] ──→ [Champion crowned]
         │
