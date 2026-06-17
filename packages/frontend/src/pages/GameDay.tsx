@@ -64,6 +64,7 @@ function SlotCell({ slot }: { slot: BracketSlot }) {
       border: `1px solid ${color}30`,
       background: `${color}08`,
       fontSize: 12, minWidth: 140,
+      lineHeight: '16px',
     }}>
       {slot.tankId ? (
         <Link to={`/tanks/${slot.tankId}`} style={{ color, textDecoration: 'none' }}>
@@ -82,22 +83,36 @@ function SlotCell({ slot }: { slot: BracketSlot }) {
   );
 }
 
-function BracketRound({ name, slots }: { name: string; slots: BracketSlot[] }) {
+// Bracket layout constants — must match SlotCell's rendered height exactly.
+// SlotCell: 6px padding-top + 16px line-height + 6px padding-bottom + 2px border = 30px
+// "vs" row: 12px line-height
+// pair height: SLOT_H + SLOT_GAP + VS_H + SLOT_GAP + SLOT_H
+const B_SLOT_H = 30;
+const B_VS_H = 12;
+const B_SLOT_GAP = 2;
+const B_PAIR_GAP = 16;
+const B_PAIR_H = B_SLOT_H + B_SLOT_GAP + B_VS_H + B_SLOT_GAP + B_SLOT_H; // 76px
+
+function BracketRound({ name, slots, roundIndex }: { name: string; slots: BracketSlot[]; roundIndex: number }) {
   const pairs: [BracketSlot, BracketSlot][] = [];
   for (let i = 0; i + 1 < slots.length; i += 2) {
     pairs.push([slots[i], slots[i + 1]]);
   }
+
+  // Each R(n) pair centers over 2^roundIndex R1 pairs (including their gaps).
+  const spanH = Math.pow(2, roundIndex) * B_PAIR_H + (Math.pow(2, roundIndex) - 1) * B_PAIR_GAP;
+  const pairPad = (spanH - B_PAIR_H) / 2;
 
   return (
     <div style={{ flexShrink: 0 }}>
       <div style={{ color: '#64748b', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
         {BRACKET_LABELS[name] ?? name}
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: B_PAIR_GAP }}>
         {pairs.map((pair, i) => (
-          <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: B_SLOT_GAP, paddingTop: pairPad, paddingBottom: pairPad }}>
             <SlotCell slot={pair[0]} />
-            <div style={{ paddingLeft: 10, color: '#2d2d4e', fontSize: 10 }}>vs</div>
+            <div style={{ paddingLeft: 10, color: '#2d2d4e', fontSize: 10, lineHeight: `${B_VS_H}px` }}>vs</div>
             <SlotCell slot={pair[1]} />
           </div>
         ))}
@@ -815,8 +830,8 @@ export default function GameDayPage() {
             Bracket
           </div>
           <div style={{ display: 'flex', gap: 40, overflowX: 'auto', paddingBottom: 4 }}>
-            {bracketRounds.map(([name, slots]) => (
-              <BracketRound key={name} name={name} slots={slots} />
+            {bracketRounds.map(([name, slots], i) => (
+              <BracketRound key={name} name={name} slots={slots} roundIndex={i} />
             ))}
           </div>
         </div>
