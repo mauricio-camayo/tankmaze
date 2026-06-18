@@ -144,6 +144,7 @@ export class ApiStack extends Stack {
     matchLogsBucket.grantWrite(matchRunner);
     tables.matches.grantReadWriteData(matchRunner);
     tables.connections.grantReadData(matchRunner);
+    tables.tanks.grantReadData(matchRunner);
     tables.tankVersions.grantReadWriteData(matchRunner);
     tables.gamedays.grantReadData(matchRunner);
     tables.maps.grantReadData(matchRunner);
@@ -234,6 +235,7 @@ export class ApiStack extends Stack {
     });
     tables.connections.grantReadWriteData(wssHandler);
     tables.matches.grantReadData(wssHandler);
+    tables.tanks.grantReadData(wssHandler);
     tables.tankVersions.grantReadData(wssHandler);
     tables.gamedays.grantReadData(wssHandler);
     tables.maps.grantReadData(wssHandler);

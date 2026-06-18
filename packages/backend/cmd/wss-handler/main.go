@@ -338,6 +338,52 @@ func (h *handler) handleObserve(ctx context.Context, connID string, raw json.Raw
 		return resp(200), nil
 	}
 
+	// Ended match with no tick log (forfeit or match-runner failure): send a
+	// snapshot built from the match record then immediately send MATCH_OVER so
+	// the frontend shows the result instead of a frozen, unresponsive canvas.
+	if match.Status == "ended" {
+		verA, errA := h.store.GetVersion(ctx, match.TankA.TankID, match.TankA.Version)
+		verB, errB := h.store.GetVersion(ctx, match.TankB.TankID, match.TankB.Version)
+		if errA != nil || errB != nil {
+			_ = h.sendErr(ctx, connID, "internal_error", "could not load version records")
+			return resp(200), nil
+		}
+		mazeGrid, mazeErr := h.loadMaze(ctx, match)
+		if mazeErr != nil {
+			log.Printf("observe: load maze for forfeit match %s: %v", match.MatchID, mazeErr)
+			_ = h.sendErr(ctx, connID, "internal_error", "failed to load match maze — try refreshing")
+			return resp(200), nil
+		}
+		tankNameA := h.lookupTankName(ctx, match.TankA)
+		tankNameB := h.lookupTankName(ctx, match.TankB)
+		snap := snapshotPayload{
+			MatchID:     match.MatchID,
+			Status:      "ended",
+			Maze:        mazeGrid,
+			TankA:       makeTankStateWS(match.TankA.TankID, match.TankA.Version, pointWS{0, 0}, "N", 100, verA.Config, tankNameA),
+			TankB:       makeTankStateWS(match.TankB.TankID, match.TankB.Version, pointWS{0, 0}, "N", 100, verB.Config, tankNameB),
+			Projectiles: []projWS{},
+			Tick:        0,
+			TotalTicks:  0,
+		}
+		_ = h.send(ctx, connID, wsEnvelope{Type: "MATCH_SNAPSHOT", Payload: snap})
+		if match.Result != nil {
+			_ = h.send(ctx, connID, wsEnvelope{Type: "MATCH_OVER", Payload: matchOverPayload{
+				Winner: dbWinnerToString(match.Result.Winner),
+				Reason: match.Result.Reason,
+				Stats: matchOverStats{
+					DamageA:      match.Result.DamageA,
+					DamageB:      match.Result.DamageB,
+					MovesA:       match.Result.MovesA,
+					MovesB:       match.Result.MovesB,
+					TicksElapsed: match.Result.TicksElapsed,
+					Flawless:     match.Result.Flawless,
+				},
+			}})
+		}
+		return resp(200), nil
+	}
+
 	// For active (or scheduled) matches, build a minimal snapshot from the
 	// match record + version configs so the frontend can render the maze.
 	// Tank positions will be corrected by the first incoming TICK_UPDATE.
@@ -595,6 +641,21 @@ func cardinalFromInt(d int) string {
 		return cardinalStr[d]
 	}
 	return "N"
+}
+
+// dbWinnerToString converts the db.MatchResult.Winner *int (0=A, 1=B, nil=both_lose)
+// to the "a"/"b"/null string expected by the frontend MATCH_OVER payload.
+func dbWinnerToString(w *int) *string {
+	if w == nil {
+		return nil
+	}
+	var s string
+	if *w == 0 {
+		s = "a"
+	} else {
+		s = "b"
+	}
+	return &s
 }
 
 // lookupTankName returns the display name for a match tank. Uses TankName from
