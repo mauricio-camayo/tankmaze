@@ -182,6 +182,10 @@ type handler struct {
 	scoutVersion           string
 	bruiserTankID          string
 	bruiserVersion         string
+	rangerTankID           string
+	rangerVersion          string
+	randyTankID            string
+	randyVersion           string
 	userPoolID             string
 	schedulerRoleArn       string
 	schedulerDLQArn        string
@@ -213,6 +217,10 @@ func main() {
 		scoutVersion:           os.Getenv("SCOUT_VERSION"),
 		bruiserTankID:          os.Getenv("BRUISER_TANK_ID"),
 		bruiserVersion:         os.Getenv("BRUISER_VERSION"),
+		rangerTankID:           os.Getenv("RANGER_TANK_ID"),
+		rangerVersion:          os.Getenv("RANGER_VERSION"),
+		randyTankID:            os.Getenv("RANDY_TANK_ID"),
+		randyVersion:           os.Getenv("RANDY_VERSION"),
 		userPoolID:             os.Getenv("USER_POOL_ID"),
 		schedulerRoleArn:       os.Getenv("SCHEDULER_INVOKE_ROLE_ARN"),
 		schedulerDLQArn:        os.Getenv("SCHEDULER_DLQ_ARN"),
@@ -533,6 +541,8 @@ func (h *handler) getAiTanks(ctx context.Context) (events.APIGatewayV2HTTPRespon
 	pairs := [][2]string{
 		{h.scoutTankID, h.scoutVersion},
 		{h.bruiserTankID, h.bruiserVersion},
+		{h.rangerTankID, h.rangerVersion},
+		{h.randyTankID, h.randyVersion},
 	}
 	results := make([]aiTankResponse, 0, len(pairs))
 	for _, p := range pairs {
@@ -699,7 +709,7 @@ func (h *handler) getVersionSource(ctx context.Context, req events.APIGatewayV2H
 	if err != nil {
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
-	isAiTank := tankID == h.scoutTankID || tankID == h.bruiserTankID
+	isAiTank := tankID == h.scoutTankID || tankID == h.bruiserTankID || tankID == h.rangerTankID || tankID == h.randyTankID
 	if tank.UserID != uid && !isAiTank {
 		return errResp(http.StatusForbidden, "forbidden"), nil
 	}
@@ -1032,8 +1042,12 @@ func (h *handler) startMatch(ctx context.Context, req events.APIGatewayV2HTTPReq
 			oppTankID, oppVersion = h.scoutTankID, h.scoutVersion
 		case "bruiser":
 			oppTankID, oppVersion = h.bruiserTankID, h.bruiserVersion
+		case "ranger":
+			oppTankID, oppVersion = h.rangerTankID, h.rangerVersion
+		case "randy":
+			oppTankID, oppVersion = h.randyTankID, h.randyVersion
 		default:
-			return errResp(http.StatusBadRequest, "unknown AI opponent; use 'scout' or 'bruiser'"), nil
+			return errResp(http.StatusBadRequest, "unknown AI opponent; use 'scout', 'bruiser', 'ranger', or 'randy'"), nil
 		}
 		if oppTankID == "" || oppVersion == "" {
 			return errResp(http.StatusServiceUnavailable, "AI opponent not configured"), nil

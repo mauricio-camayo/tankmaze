@@ -34,7 +34,16 @@ export default function Watch() {
   const [matchOver, setMatchOver] = useState<{ winner: 'a' | 'b' | null; reason: string } | null>(null);
   const [wsError,   setWsError]   = useState<string | null>(null);
   const [sceneReady, setSceneReady] = useState(false);
+  const [matchPending, setMatchPending] = useState(false);
+  const matchPendingRef = useRef(false);
   const snapshotTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollRef        = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoPlayRef    = useRef(false);
+
+  const setPending = (val: boolean) => {
+    matchPendingRef.current = val;
+    setMatchPending(val);
+  };
 
   // Keep refs in sync with Zustand state
   useEffect(() => { ticksRef.current    = ticks;     }, [ticks]);
@@ -77,6 +86,9 @@ export default function Watch() {
     reset();
     setMatchOver(null);
     setWsError(null);
+    setPending(false);
+    autoPlayRef.current = false;
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
 
     const socket = new ObserverSocket();
     socketRef.current = socket;
@@ -95,14 +107,32 @@ export default function Watch() {
             clearTimeout(snapshotTimeoutRef.current);
             snapshotTimeoutRef.current = null;
           }
+          // Clear any prior pending-poll state from a previous observe
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
           setSnapshot(event.payload);
-          // For active matches start playing; for ended matches pause at end
-          if (event.payload.status === 'active') {
+          if (event.payload.status === 'active' || event.payload.status === 'scheduled') {
             setPlaying(true);
+            // Show spinner immediately; start polling every 2 s until ticks arrive
+            setPending(true);
+            pollRef.current = setInterval(() => {
+              socketRef.current?.reobserve();
+            }, 2000);
+          } else if (event.payload.status === 'ended') {
+            // Arriving from a pending-poll re-observe: auto-play once ticks buffer
+            if (matchPendingRef.current) {
+              setPending(false);
+              autoPlayRef.current = true;
+            }
           }
           break;
         case 'TICK_UPDATE':
           applyTickUpdate(event.payload);
+          // First tick arriving means match is live — cancel the pending poll
+          if (pollRef.current) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+            setPending(false);
+          }
           // For live matches, advance the display tick with the stream
           if (useMatchStore.getState().snapshot?.status === 'active') {
             setCurrentTick(event.payload.tick);
@@ -113,7 +143,14 @@ export default function Watch() {
           break;
         case 'MATCH_OVER':
           setMatchOver({ winner: event.payload.winner, reason: event.payload.reason });
-          setPlaying(false);
+          if (useMatchStore.getState().snapshot?.status !== 'ended') {
+            // Live match ended: stop immediately
+            setPlaying(false);
+          } else if (autoPlayRef.current) {
+            // Arrived via pending-poll: all ticks are buffered, start replay
+            autoPlayRef.current = false;
+            setPlaying(true);
+          }
           break;
         case 'ERROR':
           setWsError(event.payload.message);
@@ -122,10 +159,8 @@ export default function Watch() {
     });
 
     return () => {
-      if (snapshotTimeoutRef.current) {
-        clearTimeout(snapshotTimeoutRef.current);
-        snapshotTimeoutRef.current = null;
-      }
+      if (snapshotTimeoutRef.current) { clearTimeout(snapshotTimeoutRef.current); snapshotTimeoutRef.current = null; }
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
       socket.disconnect();
       socketRef.current = null;
     };
@@ -202,25 +237,31 @@ export default function Watch() {
             <div style={{ color: '#f87171', marginBottom: 10, fontSize: 13 }}>{wsError}</div>
           )}
 
-          {/* Canvas host — always in DOM so Phaser can mount; hidden until snapshot */}
+          {/* Canvas host — always in DOM so Phaser can mount; hidden until ready */}
           <div style={{
             width: CANVAS, height: CANVAS,
             border: '1px solid #2d2d4e', borderRadius: 8,
             overflow: 'hidden',
-            display: snapshot ? 'block' : 'none',
+            display: snapshot && !matchPending ? 'block' : 'none',
           }}>
             <div ref={hostRef} style={{ width: '100%', height: '100%' }} />
           </div>
 
-          {/* Placeholder shown before snapshot arrives */}
-          {!snapshot && !wsError && (
+          {/* Placeholder: connecting or waiting for match to be processed */}
+          {(!snapshot || matchPending) && !wsError && (
             <div style={{
               width: CANVAS, height: CANVAS,
               border: '1px solid #2d2d4e', borderRadius: 8,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: '#64748b', fontSize: 14, background: '#0f0f1a',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              gap: 14, color: '#64748b', fontSize: 14, background: '#0f0f1a',
             }}>
-              Connecting to match…
+              <div style={{
+                width: 28, height: 28, border: '3px solid #2d2d4e',
+                borderTopColor: '#6366f1', borderRadius: '50%',
+                animation: 'spin 0.9s linear infinite',
+              }} />
+              <span>{matchPending ? 'Match is being processed… replaying automatically when ready' : 'Connecting to match…'}</span>
+              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
             </div>
           )}
 

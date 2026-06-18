@@ -164,6 +164,8 @@ type AiTank = Tank & { versions: TankVersion[] };
 const AI_DESCRIPTIONS: Record<string, string> = {
   Scout:   'High speed, medium sensor range. Great starting point for mobility-focused builds.',
   Bruiser: 'High damage and armor, slow speed. Start here for a tanky, close-range strategy.',
+  Ranger:  'Long sensor range, medium speed. Patrols the arena and fires with precision from a distance.',
+  Randy:   'Balanced stats, unpredictable movement. Wanders randomly until an opponent is spotted, then pursues.',
 };
 
 function AiTankCard({ aiTank, onForked }: { aiTank: AiTank; onForked: () => void }) {

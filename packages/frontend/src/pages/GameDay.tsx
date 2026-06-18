@@ -79,11 +79,6 @@ function SlotCell({ slot }: { slot: BracketSlot }) {
           {slot.status.replace('_', ' ').toUpperCase()}
         </span>
       )}
-      {slot.matchId && (
-        <Link to={`/watch?matchId=${slot.matchId}`} style={{ color: '#60a5fa', marginLeft: 8, fontSize: 10 }}>
-          Watch
-        </Link>
-      )}
     </div>
   );
 }
@@ -190,7 +185,12 @@ function BracketRound({ name, slots, roundIndex }: { name: string; slots: Bracke
         {pairs.map((pair, i) => (
           <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: B_SLOT_GAP, paddingTop: pairPad, paddingBottom: pairPad }}>
             <SlotCell slot={pair[0]} />
-            <div style={{ paddingLeft: 10, color: '#2d2d4e', fontSize: 10, lineHeight: `${B_VS_H}px` }}>vs</div>
+            <div style={{ paddingLeft: 10, color: '#2d2d4e', fontSize: 10, lineHeight: `${B_VS_H}px`, display: 'flex', alignItems: 'center', gap: 8 }}>
+              vs
+              {pair[0].matchId && (
+                <Link to={`/watch?matchId=${pair[0].matchId}`} style={{ color: '#60a5fa', fontSize: 10 }}>Watch</Link>
+              )}
+            </div>
             <SlotCell slot={pair[1]} />
           </div>
         ))}

@@ -166,6 +166,10 @@ export class ApiStack extends Stack {
       SCOUT_VERSION:             'v1',
       BRUISER_TANK_ID:           'builtin-bruiser',
       BRUISER_VERSION:           'v1',
+      RANGER_TANK_ID:            'builtin-ranger',
+      RANGER_VERSION:            'v1',
+      RANDY_TANK_ID:             'builtin-randy',
+      RANDY_VERSION:             'v1',
       MATCH_TTL_DAYS:            '7',
     }, 330);
     // Pin functions to stable names so they can be invoked by name from scripts.
@@ -256,6 +260,10 @@ export class ApiStack extends Stack {
       SCOUT_VERSION:                 'v1',
       BRUISER_TANK_ID:               'builtin-bruiser',
       BRUISER_VERSION:               'v1',
+      RANGER_TANK_ID:                'builtin-ranger',
+      RANGER_VERSION:                'v1',
+      RANDY_TANK_ID:                 'builtin-randy',
+      RANDY_VERSION:                 'v1',
       USER_POOL_ID:                  userPoolId,
       SCHEDULER_INVOKE_ROLE_ARN:     schedulerInvokeRole.roleArn,
       SCHEDULER_DLQ_ARN:             schedulerDLQ.queueArn,

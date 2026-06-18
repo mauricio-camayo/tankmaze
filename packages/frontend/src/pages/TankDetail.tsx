@@ -80,9 +80,9 @@ function GameDayPickerModal({
   onClose: () => void;
 }) {
   const now = new Date();
-  const sorted = [...gameDays].sort((a, b) => {
-    return a.schedule.registrationClose < b.schedule.registrationClose ? -1 : 1;
-  });
+  const sorted = [...gameDays]
+    .filter((gd) => new Date(gd.schedule.registrationClose) >= now && gd.phases.roundRobin.status === 'upcoming')
+    .sort((a, b) => (a.schedule.registrationClose < b.schedule.registrationClose ? -1 : 1));
   return (
     <div style={overlay}>
       <div style={{ ...cardStyle, width: 440, maxHeight: '80vh', overflowY: 'auto' }}>
@@ -90,11 +90,10 @@ function GameDayPickerModal({
         {loading ? (
           <p style={{ color: '#64748b', fontSize: 13, margin: '0 0 16px' }}>Loading game days…</p>
         ) : sorted.length === 0 ? (
-          <p style={{ color: '#64748b', fontSize: 13, margin: '0 0 16px' }}>No game days programmed yet.</p>
+          <p style={{ color: '#64748b', fontSize: 13, margin: '0 0 16px' }}>No open game days right now.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
             {sorted.map((gd) => {
-              const isExpired = new Date(gd.schedule.registrationClose) < now || gd.phases.roundRobin.status !== 'upcoming';
               const regClose = new Date(gd.schedule.registrationClose).toLocaleDateString(undefined, {
                 year: 'numeric', month: 'short', day: 'numeric',
               });
@@ -104,25 +103,14 @@ function GameDayPickerModal({
               return (
                 <button
                   key={gd.gameDayId}
-                  onClick={isExpired ? undefined : () => onSelect(gd.gameDayId)}
-                  disabled={isExpired}
+                  onClick={() => onSelect(gd.gameDayId)}
                   style={{
                     background: '#1a1a2e', border: '1px solid #2d2d4e', borderRadius: 6,
-                    color: isExpired ? '#4a5568' : '#e2e8f0',
-                    padding: '10px 14px', textAlign: 'left',
-                    cursor: isExpired ? 'default' : 'pointer',
-                    display: 'flex', flexDirection: 'column', gap: 4,
-                    opacity: isExpired ? 0.6 : 1,
+                    color: '#e2e8f0', padding: '10px 14px', textAlign: 'left',
+                    cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 4,
                   }}
                 >
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600 }}>
-                    {gd.name ?? final}
-                    {isExpired && (
-                      <span style={{ fontSize: 11, fontWeight: 400, color: '#64748b', background: '#2d2d4e', borderRadius: 4, padding: '1px 6px' }}>
-                        Completed
-                      </span>
-                    )}
-                  </span>
+                  <span style={{ fontSize: 14, fontWeight: 600 }}>{gd.name ?? final}</span>
                   <span style={{ fontSize: 12, color: '#64748b' }}>
                     Registration closes {regClose} · Final {final}
                   </span>

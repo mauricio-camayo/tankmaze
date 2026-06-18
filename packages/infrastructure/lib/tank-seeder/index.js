@@ -28,6 +28,22 @@ const AI_TANKS = [
     wasmKey: 'ai/bruiser/v1/tank.wasm',
     srcKey:  'ai/bruiser/v1/source.go',
   },
+  {
+    tankId:  'builtin-ranger',
+    name:    'Ranger',
+    version: 'v1',
+    config:  { speed: 3, sensorRange: 5, damage: 3, armor: 2, fireRate: 2 },
+    wasmKey: 'ai/ranger/v1/tank.wasm',
+    srcKey:  'ai/ranger/v1/source.go',
+  },
+  {
+    tankId:  'builtin-randy',
+    name:    'Randy',
+    version: 'v1',
+    config:  { speed: 3, sensorRange: 3, damage: 3, armor: 3, fireRate: 3 },
+    wasmKey: 'ai/randy/v1/tank.wasm',
+    srcKey:  'ai/randy/v1/source.go',
+  },
 ];
 
 async function sha256OfS3Object(bucket, key) {

@@ -80,7 +80,7 @@ func main() {
 	srv := newServer()
 
 	log.Println("Compiling AI tanks…")
-	for _, name := range []string{"scout", "bruiser"} {
+	for _, name := range []string{"scout", "bruiser", "ranger", "randy"} {
 		if err := srv.compileAITank(name); err != nil {
 			log.Printf("  WARNING: failed to compile %s: %v", name, err)
 			log.Printf("  (AI opponent %q will be unavailable)", name)
@@ -211,7 +211,7 @@ func (srv *server) getAiTanks(w http.ResponseWriter) {
 		Versions []db.TankVersion `json:"versions"`
 	}
 	results := make([]aiTankResponse, 0, 2)
-	for _, id := range []string{"__scout__", "__bruiser__"} {
+	for _, id := range []string{"__scout__", "__bruiser__", "__ranger__", "__randy__"} {
 		tank, err := srv.store.getTank(id)
 		if err != nil {
 			continue
@@ -661,10 +661,12 @@ func (srv *server) startMatch(w http.ResponseWriter, r *http.Request) {
 			oppTankID = "__scout__"
 		case "bruiser":
 			oppTankID = "__bruiser__"
-		case "ranger": // fallback to bruiser if ranger not available
-			oppTankID = "__bruiser__"
+		case "ranger":
+			oppTankID = "__ranger__"
+		case "randy":
+			oppTankID = "__randy__"
 		default:
-			jsonErr(w, http.StatusBadRequest, "unknown AI: use scout or bruiser")
+			jsonErr(w, http.StatusBadRequest, "unknown AI: use scout, bruiser, ranger, or randy")
 			return
 		}
 		oppVersion = "v1"

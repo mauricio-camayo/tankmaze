@@ -29,6 +29,10 @@ export class ObserverSocket {
     this.send({ action: 'REPLAY_SPEED', multiplier: String(multiplier) });
   }
 
+  reobserve() {
+    this.send({ action: 'OBSERVE', matchId: this.matchId });
+  }
+
   disconnect() {
     this.handler = null;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
