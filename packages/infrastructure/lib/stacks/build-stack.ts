@@ -77,12 +77,19 @@ export class BuildStack extends Stack {
             // Seed the local GOPROXY from S3, but skip if a prior build cached it locally.
             'if [ ! -f /tmp/goproxy/github.com/tankmaze/sdk/@v/list ]; then aws s3 cp s3://$WASM_BUCKET/goproxy/ /tmp/goproxy/ --recursive; fi',
 
-            // Download tank source
-            'mkdir -p /tmp/build',
-            'aws s3 cp s3://$WASM_BUCKET/$SOURCE_S3_KEY /tmp/build/main.go',
+            // Download tank source into a subdirectory so we can add a package main
+            // wrapper alongside it. The user code is package tank; the wrapper is
+            // package main and imports tank/tank.
+            'mkdir -p /tmp/build/tank',
+            'aws s3 cp s3://$WASM_BUCKET/$SOURCE_S3_KEY /tmp/build/tank/source.go',
 
             // go.mod — no replace directive needed; GOPROXY resolves the SDK locally
             'printf "module tank\\ngo 1.21\\nrequire github.com/tankmaze/sdk v0.0.0\\n" > /tmp/build/go.mod',
+
+            // Inject the package main wrapper that wires the host WASM imports to
+            // the user's Tick/Config exports. Without this, go build produces a .a
+            // archive (package tank is not main) instead of a WASM binary.
+            `printf 'package main\\n\\nimport (\\n\\t"encoding/json"\\n\\t"unsafe"\\n\\n\\ttankmaze "github.com/tankmaze/sdk"\\n\\t"tank/tank"\\n)\\n\\n//go:wasmimport tankmaze sensors_get\\n//go:noescape\\nfunc sensorsGet(ptr unsafe.Pointer, cap int32) int32\\n\\n//go:wasmimport tankmaze config_register\\n//go:noescape\\nfunc configRegister(ptr unsafe.Pointer, length int32)\\n\\n//go:wasmimport tankmaze action_put\\nfunc actionPut(encoded int32)\\n\\nfunc encode(a tankmaze.Action) int32 { return int32(a.Type)*10 + int32(a.Direction) }\\n\\nvar cfgJSON = func() []byte { b, _ := json.Marshal(tank.Config); return b }()\\n\\nfunc main() {\\n\\tconfigRegister(unsafe.Pointer(&cfgJSON[0]), int32(len(cfgJSON)))\\n\\tbuf := make([]byte, 4096)\\n\\tfor {\\n\\t\\tn := sensorsGet(unsafe.Pointer(&buf[0]), int32(len(buf)))\\n\\t\\tif n < 0 {\\n\\t\\t\\treturn\\n\\t\\t}\\n\\t\\tvar s tankmaze.Sensors\\n\\t\\tif err := json.Unmarshal(buf[:n], &s); err != nil {\\n\\t\\t\\tactionPut(encode(tankmaze.Action{Type: tankmaze.Idle}))\\n\\t\\t\\tcontinue\\n\\t\\t}\\n\\t\\tactionPut(encode(tank.Tick(s)))\\n\\t}\\n}\\n' > /tmp/build/main.go`,
           ],
         },
         build: {
