@@ -2,6 +2,7 @@ import { Stack, StackProps } from 'aws-cdk-lib';
 import * as codebuild from 'aws-cdk-lib/aws-codebuild';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 import { TableSet } from './storage-stack';
@@ -38,6 +39,12 @@ export class BuildStack extends Stack {
     });
     vpc.addGatewayEndpoint('DynamoEndpoint', {
       service: ec2.GatewayVpcEndpointAwsService.DYNAMODB,
+    });
+
+    // Interface endpoint so CodeBuild can stream logs to CloudWatch from the
+    // isolated VPC (no internet egress means the public endpoint is unreachable).
+    vpc.addInterfaceEndpoint('CwLogsEndpoint', {
+      service: ec2.InterfaceVpcEndpointAwsService.CLOUDWATCH_LOGS,
     });
 
     // CodeBuild IAM role
