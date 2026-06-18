@@ -35,7 +35,7 @@ export class ApiStack extends Stack {
 
     // ---- Helper: build a Go Lambda from cmd/<name> ----------------------
 
-    const goLambda = (id: string, cmd: string, env: Record<string, string>, timeoutSeconds = 29): lambda.Function => {
+    const goLambda = (id: string, cmd: string, env: Record<string, string>, timeoutSeconds = 29, memoryMB = 256): lambda.Function => {
       return new lambda.Function(this, id, {
         runtime: lambda.Runtime.PROVIDED_AL2023,
         architecture: lambda.Architecture.ARM_64,
@@ -64,7 +64,7 @@ export class ApiStack extends Stack {
         }),
         environment: env,
         timeout: Duration.seconds(timeoutSeconds),
-        memorySize: 256,
+        memorySize: memoryMB,
       });
     };
 
@@ -133,6 +133,8 @@ export class ApiStack extends Stack {
     // match-runner — needs WebSocket APIGW endpoint added after API is created
     // 300s: cold-start WASM JIT compilation can take 60-120s per module × 2;
     // warm containers reuse /tmp Wazero cache and finish in <40s total.
+    // 1024 MB: two concurrent Go WASM instances (~17 MB min each) + Wazero JIT
+    // compilation cache + match-runner Go runtime.
     const matchRunner = goLambda('MatchRunner', 'match-runner', {
       ...tableEnvVars(tables),
       WASM_BUCKET:                   wasmBucket.bucketName,
@@ -140,7 +142,7 @@ export class ApiStack extends Stack {
       // Used by maybeAdvanceTournament to trigger the next phase when all
       // matches in a game day end — makes phase transitions event-driven.
       TOURNAMENT_SCHEDULER_FUNCTION: tournamentSchedulerArn,
-    }, 300);
+    }, 300, 1024);
     wasmBucket.grantRead(matchRunner);
     matchLogsBucket.grantWrite(matchRunner);
     tables.matches.grantReadWriteData(matchRunner);
