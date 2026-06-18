@@ -158,9 +158,15 @@ Three reference tank implementations are built into the platform. They serve two
 | **Scout** | 5 | 3 | 2 | 2 | 3 | Evades walls; circles opponent once detected |
 | **Ranger** | 3 | 5 | 3 | 2 | 2 | Patrols until opponent in range; precision firing |
 | **Bruiser** | 2 | 2 | 5 | 5 | 1 | Straight-line approach; fires on contact |
-| **Randy** | 3 | 3 | 3 | 3 | 3 | Fully random: picks a random action each tick with no strategy |
+| **Randy** | 3 | 3 | 3 | 3 | 3 | Wanders randomly; pursues and fires once opponent enters sensor range |
 
-**Randy** uses balanced stats (all 3s) and a fully random decision function: each tick it picks a random action from {Move Forward, Move Backward, Rotate Left, Rotate Right, Fire, Idle} with uniform probability and no memory of prior ticks. Randy requires the `math/rand` standard library (see §3.5 optional imports). Its purpose is to give tank authors a chaotic but beatable baseline, and to validate that deterministic strategies consistently outperform pure randomness. Randy depends on the optional stdlib imports feature (#29 in the task list) that makes `math/rand` available to user-authored tanks as well.
+**Randy** uses balanced stats (all 3s) and a two-phase decision function:
+
+- **Wander phase** (no opponent in sensor range): each tick Randy applies a random move *and* a random rotation simultaneously — moving forward or backward at random while also rotating left or right at random. This combined move+rotate action produces erratic, unpredictable movement across the arena. Randy checks its sensor data for walls before moving and rotates away if a wall is directly ahead, preventing it from getting stuck. Randy does not fire during this phase.
+- **Pursuit phase** (opponent detected in sensor range): Randy moves toward the detected opponent's position each tick and fires while doing so. It tracks the opponent as long as sensor contact is maintained.
+- **Lost contact**: if the opponent leaves sensor range, Randy immediately reverts to the wander phase.
+
+Randy requires the `math/rand` standard library. Its purpose is to be a noticeably harder baseline than pure randomness — authors must actively outmanoeuvre a pursuing enemy, not just outlast random fire.
 
 Built-in tanks do not appear in ranked leaderboards. They cannot be beaten by the system to claim a rank.
 

@@ -96,7 +96,7 @@ export class BuildStack extends Stack {
           commands: [
             [
               'if [ "$CODEBUILD_BUILD_SUCCEEDING" = "1" ]; then',
-              '  aws s3 cp /tmp/tank.wasm s3://$WASM_BUCKET/$OUTPUT_WASM_KEY --tagging "versionType=minor"',
+              '  aws s3api put-object --bucket $WASM_BUCKET --key $OUTPUT_WASM_KEY --body /tmp/tank.wasm --tagging "versionType=minor"',
               '  && aws dynamodb update-item',
               '    --table-name $TANK_VERSIONS_TABLE',
               '    --key "{\\"tankId\\":{\\"S\\":\\"$TANK_ID\\"},\\"version\\":{\\"S\\":\\"$VERSION\\"}}"',
