@@ -1,10 +1,11 @@
 'use strict';
 
-// Creates Tank + TankVersion records for the two built-in AI opponents.
-// Uses fixed tankIds (builtin-scout, builtin-bruiser) so the operation is
-// fully idempotent and the env vars wired to tank-api never change.
+// Creates or updates Tank + TankVersion records for built-in AI opponents.
+// Uses fixed tankIds so the env vars wired to tank-api never change.
+// Runs on every deploy: always re-hashes the WASM from S3 and patches
+// wasmSha256 if the file was replaced (e.g. by AiTanksDeployment).
 
-const { DynamoDBClient, GetItemCommand, PutItemCommand } = require('@aws-sdk/client-dynamodb');
+const { DynamoDBClient, GetItemCommand, PutItemCommand, UpdateItemCommand } = require('@aws-sdk/client-dynamodb');
 const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { createHash } = require('crypto');
 
@@ -83,13 +84,14 @@ exports.handler = async () => {
       console.log(`tank ${t.tankId} already exists, skipping`);
     }
 
-    // TankVersion record (idempotent)
+    // TankVersion record — always re-hash from S3 so a CDK redeploy that
+    // replaces the WASM file doesn't leave a stale wasmSha256 in the DB.
+    const wasmSha256 = await sha256OfS3Object(wasmBucket, t.wasmKey);
     const existingVer = await dynamo.send(new GetItemCommand({
       TableName: versionsTable,
       Key: { tankId: { S: t.tankId }, version: { S: t.version } },
     }));
     if (!existingVer.Item) {
-      const wasmSha256 = await sha256OfS3Object(wasmBucket, t.wasmKey);
       await dynamo.send(new PutItemCommand({
         TableName: versionsTable,
         Item: {
@@ -112,7 +114,18 @@ exports.handler = async () => {
       }));
       console.log(`created version ${t.tankId}/${t.version} (sha256: ${wasmSha256.slice(0, 12)}…)`);
     } else {
-      console.log(`version ${t.tankId}/${t.version} already exists, skipping`);
+      const storedHash = existingVer.Item.wasmSha256?.S;
+      if (storedHash !== wasmSha256) {
+        await dynamo.send(new UpdateItemCommand({
+          TableName: versionsTable,
+          Key: { tankId: { S: t.tankId }, version: { S: t.version } },
+          UpdateExpression: 'SET wasmSha256 = :h',
+          ExpressionAttributeValues: { ':h': { S: wasmSha256 } },
+        }));
+        console.log(`updated wasmSha256 for ${t.tankId}/${t.version}: ${(storedHash||'none').slice(0,12)}… → ${wasmSha256.slice(0,12)}…`);
+      } else {
+        console.log(`version ${t.tankId}/${t.version} up to date (sha256: ${wasmSha256.slice(0, 12)}…)`);
+      }
     }
   }
 };

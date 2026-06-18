@@ -82,6 +82,11 @@ export class StorageStack extends Stack {
       timeToLiveAttribute: 'ttl',
       removalPolicy: RemovalPolicy.RETAIN,
     });
+    connections.addGlobalSecondaryIndex({
+      indexName: 'matchId-index',
+      partitionKey: { name: 'matchId', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
 
     const gamedays = new dynamodb.Table(this, 'GamedaysTable', {
       tableName: 'tankmaze-gamedays',
