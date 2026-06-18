@@ -80,9 +80,17 @@ type logTankMeta struct {
 }
 
 type logTick struct {
-	Tick int          `json:"tick"`
-	A    logTankTick  `json:"a"`
-	B    logTankTick  `json:"b"`
+	Tick        int          `json:"tick"`
+	A           logTankTick  `json:"a"`
+	B           logTankTick  `json:"b"`
+	Projectiles []logProj    `json:"projectiles,omitempty"`
+}
+
+type logProj struct {
+	X     int    `json:"x"`
+	Y     int    `json:"y"`
+	Dir   string `json:"dir"`
+	Owner int    `json:"owner"` // 0 = tank A, 1 = tank B
 }
 
 type logTankTick struct {
@@ -170,6 +178,13 @@ type matchOverStats struct {
 
 // cardinalStr maps Direction int (N=0,S=1,E=2,W=3) to letter.
 var cardinalStr = [4]string{0: "N", 1: "S", 2: "E", 3: "W"}
+
+func dirName(d tankmaze.Direction) string {
+	if int(d) < len(cardinalStr) {
+		return cardinalStr[d]
+	}
+	return "N"
+}
 
 // ---- Handler ----------------------------------------------------------------
 
@@ -288,16 +303,18 @@ func (h *handler) handle(ctx context.Context, evt matchEvent) error {
 	cfgB := versionToTankConfig(verB)
 	eng := engine.New(grid, cfgA, cfgB, h.tickLimit, h.projSpeed, h.wallHitDamage)
 
-	modA, err := wasm.Load(ctx, wasmPathA, verA.WasmSHA256)
-	if err != nil {
-		return fmt.Errorf("load WASM A: %w", err)
+	modA, errLoadA := wasm.Load(ctx, wasmPathA, verA.WasmSHA256)
+	modB, errLoadB := wasm.Load(ctx, wasmPathB, verB.WasmSHA256)
+	if errLoadA != nil || errLoadB != nil {
+		if errLoadA != nil {
+			log.Printf("match %s: cannot load WASM A: %v — recording forfeit", matchID, errLoadA)
+		}
+		if errLoadB != nil {
+			log.Printf("match %s: cannot load WASM B: %v — recording forfeit", matchID, errLoadB)
+		}
+		return h.recordLoadForfeit(ctx, match, errLoadA, errLoadB)
 	}
 	defer modA.Close(context.Background())
-
-	modB, err := wasm.Load(ctx, wasmPathB, verB.WasmSHA256)
-	if err != nil {
-		return fmt.Errorf("load WASM B: %w", err)
-	}
 	defer modB.Close(context.Background())
 
 	// ---- Mark match active --------------------------------------------------
@@ -336,6 +353,15 @@ func (h *handler) handle(ctx context.Context, evt matchEvent) error {
 		result = eng.Step(actionA, actionB, crashedA, crashedB)
 
 		state := eng.State()
+		logProjs := make([]logProj, len(state.Projectiles))
+		for i, p := range state.Projectiles {
+			logProjs[i] = logProj{
+				X:     p.Position[1], // col
+				Y:     p.Position[0], // row
+				Dir:   dirName(p.Facing),
+				Owner: p.Owner,
+			}
+		}
 		ticks = append(ticks, logTick{
 			Tick: state.Tick,
 			A: logTankTick{
@@ -352,6 +378,7 @@ func (h *handler) handle(ctx context.Context, evt matchEvent) error {
 				Violation:  timedOutB,
 				Log:        logsB,
 			},
+			Projectiles: logProjs,
 		})
 
 		h.broadcast(ctx, match, verA, verB, state)
@@ -536,6 +563,30 @@ func (h *handler) recordForfeit(ctx context.Context, match db.Match, _ string, e
 	}
 	if err := h.store.SetMatchResult(ctx, match.MatchID, "", result); err != nil {
 		return fmt.Errorf("set forfeit result: %w", err)
+	}
+	return nil
+}
+
+// recordLoadForfeit ends a match whose WASM module failed to load.
+// If only A fails → B wins; if only B fails → A wins; if both fail → void.
+func (h *handler) recordLoadForfeit(ctx context.Context, match db.Match, errA, errB error) error {
+	var winner *int
+	var reason string
+	switch {
+	case errA != nil && errB != nil:
+		reason = "both_lose"
+	case errA != nil:
+		w := 1
+		winner = &w
+		reason = "forfeit"
+	default:
+		w := 0
+		winner = &w
+		reason = "forfeit"
+	}
+	result := db.MatchResult{Winner: winner, Reason: reason}
+	if err := h.store.SetMatchResult(ctx, match.MatchID, "", result); err != nil {
+		return fmt.Errorf("set load-forfeit result: %w", err)
 	}
 	return nil
 }

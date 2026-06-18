@@ -171,9 +171,17 @@ type logTankMeta struct {
 }
 
 type tickEntry struct {
-	Tick int          `json:"tick"`
-	A    logTankEntry `json:"a"`
-	B    logTankEntry `json:"b"`
+	Tick        int           `json:"tick"`
+	A           logTankEntry  `json:"a"`
+	B           logTankEntry  `json:"b"`
+	Projectiles []logProjEntry `json:"projectiles"`
+}
+
+type logProjEntry struct {
+	X     int    `json:"x"`
+	Y     int    `json:"y"`
+	Dir   string `json:"dir"`
+	Owner int    `json:"owner"`
 }
 
 // logTankEntry holds only the fields wss-handler needs from each tank per tick.
@@ -549,6 +557,18 @@ func (h *handler) streamReplayWithSnapshot(ctx context.Context, connID, s3Key st
 			case <-time.After(delay):
 			}
 		}
+		projs := make([]projWS, len(entry.Projectiles))
+		for i, p := range entry.Projectiles {
+			ownerID := tl.Tanks.A.TankID
+			if p.Owner == 1 {
+				ownerID = tl.Tanks.B.TankID
+			}
+			projs[i] = projWS{
+				Position:    pointWS{X: p.X, Y: p.Y},
+				Direction:   p.Dir,
+				OwnerTankID: ownerID,
+			}
+		}
 		tick := tickPayload{
 			Tick: entry.Tick,
 			TankA: makeTankStateWS(
@@ -563,7 +583,7 @@ func (h *handler) streamReplayWithSnapshot(ctx context.Context, connID, s3Key st
 				cardinalFromInt(entry.B.Sensors.Facing), entry.B.Sensors.HP,
 				tl.Tanks.B.Config, nameB,
 			),
-			Projectiles: []projWS{}, // projectile state not stored in tick log
+			Projectiles: projs,
 		}
 		if err := h.send(ctx, connID, wsEnvelope{Type: "TICK_UPDATE", Payload: tick}); err != nil {
 			return err

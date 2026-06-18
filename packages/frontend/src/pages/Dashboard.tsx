@@ -168,12 +168,80 @@ const AI_DESCRIPTIONS: Record<string, string> = {
   Randy:   'Balanced stats, unpredictable movement. Wanders randomly until an opponent is spotted, then pursues.',
 };
 
-function AiTankCard({ aiTank, onForked }: { aiTank: AiTank; onForked: () => void }) {
-  const navigate = useNavigate();
-  const [forking, setForking] = useState(false);
-  const readyVersion = aiTank.versions.find((v) => v.compileStatus === 'ready');
+const STAT_LABELS: Array<{ key: keyof TankVersion['config']; label: string }> = [
+  { key: 'speed',       label: 'Speed'    },
+  { key: 'sensorRange', label: 'Sensor'   },
+  { key: 'damage',      label: 'Damage'   },
+  { key: 'armor',       label: 'Armor'    },
+  { key: 'fireRate',    label: 'Fire Rate'},
+];
 
-  async function handleFork() {
+function StatPips({ value, max = 5 }: { value: number; max?: number }) {
+  return (
+    <div style={{ display: 'flex', gap: 3 }}>
+      {Array.from({ length: max }).map((_, i) => (
+        <div key={i} style={{
+          width: 10, height: 10, borderRadius: 2,
+          background: i < value ? '#7c6af7' : '#2d2d4e',
+        }} />
+      ))}
+    </div>
+  );
+}
+
+function AiTankInfoModal({ aiTank, onFork, onClose, forking }: {
+  aiTank: AiTank;
+  onFork: () => void;
+  onClose: () => void;
+  forking: boolean;
+}) {
+  const readyVersion = aiTank.versions.find((v) => v.compileStatus === 'ready');
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
+    }} onClick={onClose}>
+      <div style={{ ...cardStyle, width: 340, maxWidth: '90vw' }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+          <div style={{ fontWeight: 700, fontSize: 17, color: '#e2e8f0' }}>{aiTank.name}</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
+        </div>
+        <p style={{ margin: '0 0 16px', fontSize: 13, color: '#94a3b8', lineHeight: 1.5 }}>
+          {AI_DESCRIPTIONS[aiTank.name] ?? ''}
+        </p>
+        {readyVersion && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
+            {STAT_LABELS.map(({ key, label }) => (
+              <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 12, color: '#64748b', width: 70 }}>{label}</span>
+                <StatPips value={readyVersion.config[key] as number} />
+              </div>
+            ))}
+          </div>
+        )}
+        <button
+          onClick={onFork}
+          disabled={forking || !readyVersion}
+          style={{ ...primaryButtonStyle, width: '100%' }}
+        >
+          {forking ? 'Forking…' : `Fork ${aiTank.name}`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AiTemplateRow({ aiTanks, onForked }: { aiTanks: AiTank[]; onForked: () => void }) {
+  const navigate = useNavigate();
+  const [selected, setSelected] = useState<string | null>(null);
+  const [modal, setModal]       = useState<string | null>(null);
+  const [forking, setForking]   = useState(false);
+
+  const selectedTank = aiTanks.find((t) => t.tankId === selected);
+  const modalTank    = aiTanks.find((t) => t.tankId === modal);
+
+  async function handleFork(aiTank: AiTank) {
+    const readyVersion = aiTank.versions.find((v) => v.compileStatus === 'ready');
     if (!readyVersion) return;
     setForking(true);
     try {
@@ -186,19 +254,64 @@ function AiTankCard({ aiTank, onForked }: { aiTank: AiTank; onForked: () => void
   }
 
   return (
-    <div style={{ ...cardStyle, flex: 1, minWidth: 220 }}>
-      <div style={{ fontWeight: 700, fontSize: 15, color: '#e2e8f0', marginBottom: 6 }}>{aiTank.name}</div>
-      <p style={{ margin: '0 0 14px', fontSize: 13, color: '#64748b', lineHeight: 1.5 }}>
-        {AI_DESCRIPTIONS[aiTank.name] ?? ''}
-      </p>
-      <button
-        onClick={handleFork}
-        disabled={forking || !readyVersion}
-        style={{ ...primaryButtonStyle, width: '100%' }}
-      >
-        {forking ? 'Forking…' : `Fork ${aiTank.name}`}
-      </button>
-    </div>
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        {aiTanks.map((ai) => {
+          const isSelected = selected === ai.tankId;
+          return (
+            <div key={ai.tankId} style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+              <button
+                onClick={() => setSelected(isSelected ? null : ai.tankId)}
+                style={{
+                  background: isSelected ? 'rgba(124,106,247,0.15)' : '#1a1a2e',
+                  border: `1px solid ${isSelected ? '#7c6af7' : '#2d2d4e'}`,
+                  borderRadius: '6px 0 0 6px',
+                  color: isSelected ? '#a78bfa' : '#cbd5e1',
+                  padding: '6px 12px',
+                  fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                {ai.name}
+              </button>
+              <button
+                onClick={() => setModal(ai.tankId)}
+                title={`About ${ai.name}`}
+                style={{
+                  background: isSelected ? 'rgba(124,106,247,0.10)' : '#1a1a2e',
+                  border: `1px solid ${isSelected ? '#7c6af7' : '#2d2d4e'}`,
+                  borderLeft: 'none',
+                  borderRadius: '0 6px 6px 0',
+                  color: '#64748b', padding: '6px 8px',
+                  fontSize: 12, cursor: 'pointer',
+                }}
+              >
+                ⓘ
+              </button>
+            </div>
+          );
+        })}
+        <button
+          onClick={() => selectedTank && handleFork(selectedTank)}
+          disabled={!selected || forking}
+          style={{
+            ...primaryButtonStyle,
+            opacity: !selected || forking ? 0.45 : 1,
+            cursor: !selected || forking ? 'not-allowed' : 'pointer',
+          }}
+        >
+          {forking ? 'Forking…' : 'Fork selected template'}
+        </button>
+      </div>
+
+      {modalTank && (
+        <AiTankInfoModal
+          aiTank={modalTank}
+          forking={forking}
+          onFork={() => { handleFork(modalTank); setModal(null); }}
+          onClose={() => setModal(null)}
+        />
+      )}
+    </>
   );
 }
 
@@ -266,11 +379,7 @@ export default function Dashboard() {
           <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             Start from a template
           </h3>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            {aiTanks.map((ai) => (
-              <AiTankCard key={ai.tankId} aiTank={ai} onForked={reload} />
-            ))}
-          </div>
+          <AiTemplateRow aiTanks={aiTanks} onForked={reload} />
         </div>
       )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
