@@ -394,6 +394,7 @@ export default function TankDetail() {
   const [showGameDayPicker, setShowGameDayPicker] = useState(false);
   const [gameDays, setGameDays] = useState<GameDay[]>([]);
   const [loadingGameDays, setLoadingGameDays] = useState(false);
+  const [gameDaysLoaded, setGameDaysLoaded] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [registerError, setRegisterError] = useState<string | null>(null);
   // Test vs AI
@@ -422,7 +423,10 @@ export default function TankDetail() {
     const ids = tank?.versions.flatMap((v) => v.registeredForGameDays ?? []) ?? [];
     if (ids.length > 0 && gameDays.length === 0) {
       setLoadingGameDays(true);
-      listGameDays().then(setGameDays).catch(() => setGameDays([])).finally(() => setLoadingGameDays(false));
+      listGameDays()
+        .then((days) => { setGameDays(days); setGameDaysLoaded(true); })
+        .catch(() => { setGameDays([]); setGameDaysLoaded(true); })
+        .finally(() => setLoadingGameDays(false));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tank]);
@@ -431,7 +435,10 @@ export default function TankDetail() {
     setShowGameDayPicker(true);
     if (gameDays.length === 0) {
       setLoadingGameDays(true);
-      listGameDays().then(setGameDays).catch(() => setGameDays([])).finally(() => setLoadingGameDays(false));
+      listGameDays()
+        .then((days) => { setGameDays(days); setGameDaysLoaded(true); })
+        .catch(() => { setGameDays([]); setGameDaysLoaded(true); })
+        .finally(() => setLoadingGameDays(false));
     }
   }
 
@@ -587,14 +594,13 @@ export default function TankDetail() {
             )}
             {canRegister && (
               <>
-                {(latestReadyMajorForActions?.registeredForGameDays ?? []).length < 2 &&
+                {gameDaysLoaded && (latestReadyMajorForActions?.registeredForGameDays ?? []).length < 2 &&
                   (latestReadyMajorForActions?.registeredForGameDays ?? []).map((gdId) => {
                     const gd = gameDays.find((d) => d.gameDayId === gdId);
-                    if (gd && gd.phases.roundRobin.status !== 'upcoming') return null;
-                    const label = gd?.name ?? gdId.slice(-6);
+                    if (!gd || gd.phases.roundRobin.status !== 'upcoming') return null;
                     return (
                       <button key={gdId} onClick={() => handleWithdraw(gdId)} disabled={registering} style={ghostButtonStyle}>
-                        {registering ? '…' : `Withdraw · ${label}`}
+                        {registering ? '…' : `Withdraw · ${gd.name}`}
                       </button>
                     );
                   })}
@@ -663,16 +669,15 @@ export default function TankDetail() {
             ))}
           </div>
           {/* Withdraw row — only shown when registered for 2+ game days to avoid crowding the header */}
-          {canRegister && (latestReadyMajorForActions?.registeredForGameDays ?? []).length >= 2 && (
+          {gameDaysLoaded && canRegister && (latestReadyMajorForActions?.registeredForGameDays ?? []).length >= 2 && (
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               {(latestReadyMajorForActions!.registeredForGameDays!).map((gdId) => {
                 const gd = gameDays.find((d) => d.gameDayId === gdId);
-                if (gd && gd.phases.roundRobin.status !== 'upcoming') return null;
-                const label = gd?.name ?? gdId.slice(-6);
+                if (!gd || gd.phases.roundRobin.status !== 'upcoming') return null;
                 return (
                   <button key={gdId} onClick={() => handleWithdraw(gdId)} disabled={registering}
                     style={{ ...ghostButtonStyle, fontSize: 12, padding: '3px 10px' }}>
-                    {registering ? '…' : `Withdraw · ${label}`}
+                    {registering ? '…' : `Withdraw · ${gd.name}`}
                   </button>
                 );
               })}

@@ -162,6 +162,7 @@ export class ApiStack extends Stack {
       SCOUT_VERSION:             'v1',
       BRUISER_TANK_ID:           'builtin-bruiser',
       BRUISER_VERSION:           'v1',
+      MATCH_TTL_DAYS:            '7',
     }, 330);
     // Pin the actual function to the name we referenced above.
     (tournamentScheduler.node.defaultChild as lambda.CfnFunction).functionName = tournamentSchedulerFunctionName;

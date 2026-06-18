@@ -147,6 +147,7 @@ type BracketSlot struct {
 	Version  string `dynamodbav:"version"            json:"version"`
 	Status   string `dynamodbav:"status"             json:"status"`
 	TankName string `dynamodbav:"tankName,omitempty" json:"tankName,omitempty"`
+	MatchID  string `dynamodbav:"matchId,omitempty"  json:"matchId,omitempty"`
 }
 
 // GroupStanding is one tank's record within a round-robin group.

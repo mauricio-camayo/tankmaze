@@ -75,6 +75,7 @@ type logTankPair struct {
 type logTankMeta struct {
 	TankID  string           `json:"tankId"`
 	Version string           `json:"version"`
+	Name    string           `json:"name,omitempty"`
 	Config  db.VersionConfig `json:"config"`
 }
 
@@ -238,6 +239,20 @@ func (h *handler) handle(ctx context.Context, evt matchEvent) error {
 		return fmt.Errorf("get version B (%s/%s): %w", match.TankB.TankID, match.TankB.Version, err)
 	}
 
+	// Resolve display names for the tick log.
+	nameA := match.TankA.TankName
+	if nameA == "" {
+		if t, err := h.store.GetTank(ctx, match.TankA.TankID); err == nil {
+			nameA = t.Name
+		}
+	}
+	nameB := match.TankB.TankName
+	if nameB == "" {
+		if t, err := h.store.GetTank(ctx, match.TankB.TankID); err == nil {
+			nameB = t.Name
+		}
+	}
+
 	// ---- Download WASM binaries to /tmp -------------------------------------
 	// Use SHA256-keyed paths so the same binary is downloaded and compiled only
 	// once per Lambda container lifetime across all matches.
@@ -363,8 +378,8 @@ func (h *handler) handle(ctx context.Context, evt matchEvent) error {
 		MapID:    match.MapID,
 		Maze:     grid.Cells,
 		Tanks: logTankPair{
-			A: logTankMeta{TankID: match.TankA.TankID, Version: match.TankA.Version, Config: verA.Config},
-			B: logTankMeta{TankID: match.TankB.TankID, Version: match.TankB.Version, Config: verB.Config},
+			A: logTankMeta{TankID: match.TankA.TankID, Version: match.TankA.Version, Name: nameA, Config: verA.Config},
+			B: logTankMeta{TankID: match.TankB.TankID, Version: match.TankB.Version, Name: nameB, Config: verB.Config},
 		},
 		Ticks:  ticks,
 		Result: engineResultToLog(result),

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import Layout, { cardStyle, ghostButtonStyle, primaryButtonStyle } from '../components/Layout';
 import { getGameDay, getTank, addRosterEntry, removeRosterEntry, listAiTanks, adminListTanks, listMaps } from '../services/api';
@@ -79,6 +79,11 @@ function SlotCell({ slot }: { slot: BracketSlot }) {
           {slot.status.replace('_', ' ').toUpperCase()}
         </span>
       )}
+      {slot.matchId && (
+        <Link to={`/watch?matchId=${slot.matchId}`} style={{ color: '#60a5fa', marginLeft: 8, fontSize: 10 }}>
+          Watch
+        </Link>
+      )}
     </div>
   );
 }
@@ -92,6 +97,79 @@ const B_VS_H = 12;
 const B_SLOT_GAP = 2;
 const B_PAIR_GAP = 16;
 const B_PAIR_H = B_SLOT_H + B_SLOT_GAP + B_VS_H + B_SLOT_GAP + B_SLOT_H; // 76px
+
+// Width of the gap between bracket columns (also the connector SVG width).
+const B_CONN_W = 40;
+// Approximate height of the round label div (fontSize:11 ~16px + marginBottom:10).
+const B_LABEL_H = 26;
+
+// Draws two-level "elbow" connector lines between adjacent bracket columns.
+//
+// Level 1 (inner, at x=spineX1): one elbow per from-pair connecting the pair's
+//   two slot centres with a vertical spine; a horizontal arm exits from the midY.
+// Level 2 (outer, at x=spineX2): one elbow per to-pair, combining two consecutive
+//   inner exits; its midY aligns exactly with the to-pair's "vs" position.
+//
+// Only rendered when toPairs === fromPairs / 2 (standard halving rounds); the
+// "final" key breaks this invariant and falls back to a plain spacer.
+function BracketConnector({ fromRoundIndex, fromSlots, toSlots }: {
+  fromRoundIndex: number;
+  fromSlots: BracketSlot[];
+  toSlots: BracketSlot[];
+}) {
+  const fromPairs = Math.floor(fromSlots.length / 2);
+  const toPairs = Math.floor(toSlots.length / 2);
+
+  if (fromPairs !== toPairs * 2) {
+    return <div style={{ width: B_CONN_W, flexShrink: 0 }} />;
+  }
+
+  const spanH = Math.pow(2, fromRoundIndex) * B_PAIR_H + (Math.pow(2, fromRoundIndex) - 1) * B_PAIR_GAP;
+  const pairPad = (spanH - B_PAIR_H) / 2;
+  const totalH = fromPairs * spanH + (fromPairs - 1) * B_PAIR_GAP;
+  const spineX1 = B_CONN_W / 2;       // inner spine x (midpoint of connector width)
+  const spineX2 = B_CONN_W - 2;       // outer spine x (near right edge)
+
+  const lines: React.ReactElement[] = [];
+  const innerMidYs: number[] = [];
+
+  // Level 1: inner elbow per from-pair
+  for (let p = 0; p < fromPairs; p++) {
+    const pY0 = p * (spanH + B_PAIR_GAP);
+    const topY = pY0 + pairPad + B_SLOT_H / 2;
+    const btmY = pY0 + pairPad + B_PAIR_H - B_SLOT_H / 2;
+    const midY = (topY + btmY) / 2;
+    innerMidYs.push(midY);
+    lines.push(
+      <line key={`ta${p}`} x1={0} y1={topY} x2={spineX1} y2={topY} />,
+      <line key={`ba${p}`} x1={0} y1={btmY} x2={spineX1} y2={btmY} />,
+      <line key={`va${p}`} x1={spineX1} y1={topY} x2={spineX1} y2={btmY} />,
+      <line key={`ea${p}`} x1={spineX1} y1={midY} x2={spineX2} y2={midY} />,
+    );
+  }
+
+  // Level 2: outer elbow per to-pair, joining consecutive inner exits
+  for (let q = 0; q < toPairs; q++) {
+    const mY0 = innerMidYs[2 * q];
+    const mY1 = innerMidYs[2 * q + 1];
+    const outerMidY = (mY0 + mY1) / 2;
+    lines.push(
+      <line key={`vb${q}`} x1={spineX2} y1={mY0} x2={spineX2} y2={mY1} />,
+      // short exit cap from outer spine to the right edge of the connector
+      <line key={`eb${q}`} x1={spineX2} y1={outerMidY} x2={B_CONN_W} y2={outerMidY} />,
+    );
+  }
+
+  return (
+    <div style={{ flexShrink: 0, paddingTop: B_LABEL_H }}>
+      <svg width={B_CONN_W} height={totalH} style={{ display: 'block' }}>
+        <g stroke="#334155" strokeWidth={1} fill="none" strokeLinecap="round">
+          {lines}
+        </g>
+      </svg>
+    </div>
+  );
+}
 
 function BracketRound({ name, slots, roundIndex }: { name: string; slots: BracketSlot[]; roundIndex: number }) {
   const pairs: [BracketSlot, BracketSlot][] = [];
@@ -829,9 +907,18 @@ export default function GameDayPage() {
           <div style={{ color: '#64748b', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 16 }}>
             Bracket
           </div>
-          <div style={{ display: 'flex', gap: 40, overflowX: 'auto', paddingBottom: 4 }}>
+          <div style={{ display: 'flex', overflowX: 'auto', paddingBottom: 4 }}>
             {bracketRounds.map(([name, slots], i) => (
-              <BracketRound key={name} name={name} slots={slots} roundIndex={i} />
+              <React.Fragment key={name}>
+                {i > 0 && (
+                  <BracketConnector
+                    fromRoundIndex={i - 1}
+                    fromSlots={bracketRounds[i - 1][1]}
+                    toSlots={slots}
+                  />
+                )}
+                <BracketRound name={name} slots={slots} roundIndex={i} />
+              </React.Fragment>
             ))}
           </div>
         </div>

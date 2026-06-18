@@ -62,6 +62,7 @@ type handler struct {
 	schedulerRoleArn    string
 	schedulerDLQArn     string
 	selfArn             string
+	matchTTLDays        int
 }
 
 var h *handler
@@ -71,6 +72,12 @@ func main() {
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		log.Fatalf("load AWS config: %v", err)
+	}
+	matchTTLDays := 7
+	if v := os.Getenv("MATCH_TTL_DAYS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			matchTTLDays = n
+		}
 	}
 	h = &handler{
 		store:              db.New(dynamodb.NewFromConfig(cfg)),
@@ -85,6 +92,7 @@ func main() {
 		schedulerRoleArn:   os.Getenv("SCHEDULER_INVOKE_ROLE_ARN"),
 		schedulerDLQArn:    os.Getenv("SCHEDULER_DLQ_ARN"),
 		selfArn:            os.Getenv("TOURNAMENT_SCHEDULER_FUNCTION"),
+		matchTTLDays:       matchTTLDays,
 	}
 	lambda.Start(h.handle)
 }
@@ -460,12 +468,16 @@ func (h *handler) handleEliminationR1(ctx context.Context, gd db.GameDay) error 
 	if gd.Bracket == nil {
 		gd.Bracket = make(map[string][]db.BracketSlot)
 	}
-	gd.Bracket["r1"] = slots
+	// Create match records first so MatchIDs are persisted with the bracket.
+	updatedSlots, err := h.createElimMatches(ctx, gd, "r1", slots)
+	if err != nil {
+		return err
+	}
+	gd.Bracket["r1"] = updatedSlots
 	if err := h.store.PutGameDay(ctx, gd); err != nil {
 		return fmt.Errorf("save r1 bracket: %w", err)
 	}
-
-	return h.createElimMatches(ctx, gd, "r1", slots)
+	return nil
 }
 
 // ---- Phase: elimination_r{N} (N ≥ 2) ---------------------------------------
@@ -521,19 +533,21 @@ func (h *handler) handleElimination(ctx context.Context, gd db.GameDay, round in
 		EndedAt:   now,
 	}
 	gd.Phases.Elimination[curKey] = db.PhaseStatus{Status: "running", StartedAt: now}
+	// Create match records first so MatchIDs are persisted with the bracket.
+	updatedNext, err := h.createElimMatches(ctx, gd, curKey, nextSlots)
+	if err != nil {
+		return err
+	}
 	gd.Bracket[prevKey] = updatedPrev
-	gd.Bracket[curKey] = nextSlots
+	gd.Bracket[curKey] = updatedNext
 	if err := h.store.PutGameDay(ctx, gd); err != nil {
 		return fmt.Errorf("save %s bracket: %w", curKey, err)
 	}
 
-	if err := h.createElimMatches(ctx, gd, curKey, nextSlots); err != nil {
-		return err
-	}
 	// If every slot in the new round is a bye (all previous matches were both_lose),
 	// no matches were created and maybeAdvanceTournament will never fire. Advance
 	// directly to the final now.
-	if activePairs(nextSlots) == 0 {
+	if activePairs(updatedNext) == 0 {
 		log.Printf("%s: all slots are byes — advancing directly to final for %s", curKey, gd.GameDayID)
 		return h.handleFinal(ctx, gd)
 	}
@@ -580,6 +594,16 @@ func (h *handler) resumeInterruptedFinal(ctx context.Context, gd db.GameDay) err
 	if err != nil {
 		return err
 	}
+	// Populate bracket["final"] from the match result so ranking-updater can read it.
+	if m, merr := h.store.GetMatch(ctx, finalMatch.MatchID); merr == nil && m.Result != nil {
+		slotA := db.BracketSlot{TankID: m.TankA.TankID, Version: m.TankA.Version, TankName: m.TankA.TankName}
+		slotB := db.BracketSlot{TankID: m.TankB.TankID, Version: m.TankB.Version, TankName: m.TankB.TankName}
+		finalSlots := finalBracketSlots(slotA, slotB, m)
+		for i := range finalSlots {
+			finalSlots[i].MatchID = finalMatch.MatchID
+		}
+		gd.Bracket["final"] = finalSlots
+	}
 	gd.Phases.Final.Status = "complete"
 	gd.Phases.Final.EndedAt = time.Now().Unix()
 	if err := h.store.PutGameDay(ctx, gd); err != nil {
@@ -620,18 +644,31 @@ func (h *handler) handleFinal(ctx context.Context, gd db.GameDay) error {
 	}
 
 	finalists := advanceBracketRound(updated)
-	// finalists has exactly 2 slots for the championship match.
+
+	now := time.Now().Unix()
+
+	// len(finalists) < 2 when the last elimination round had only 2 bracket slots
+	// (i.e. the tournament was small enough that r1 IS effectively the championship),
+	// or when every match in the round ended both_lose leaving zero real survivors.
+	// Either way we need to save the resolved bracket before returning.
 	if len(finalists) < 2 {
-		// All elimination matches ended in both_lose — no real finalists. Complete
-		// the final immediately with no champion rather than leaving it stuck.
-		log.Printf("no finalists for %s (all matches both_lose) — completing final with no champion", gd.GameDayID)
-		t := time.Now().Unix()
+		gd.Bracket[lastRoundKey] = updated
 		gd.Phases.Elimination[lastRoundKey] = db.PhaseStatus{
 			Status:    "complete",
 			StartedAt: lastPhase.StartedAt,
-			EndedAt:   t,
+			EndedAt:   now,
 		}
-		gd.Phases.Final = db.PhaseStatus{Status: "complete", StartedAt: t, EndedAt: t}
+		if len(finalists) == 1 && finalists[0].TankID != "" {
+			// Single real finalist — they are champion; the final is uncontested.
+			champion := finalists[0]
+			champion.Status = "won"
+			gd.Bracket["final"] = []db.BracketSlot{champion, {Status: "bye"}}
+			log.Printf("champion (uncontested final): %s/%s", champion.TankID, champion.Version)
+		} else {
+			// All matches ended both_lose — no real finalist, no champion.
+			log.Printf("no finalists for %s (all matches both_lose) — completing final with no champion", gd.GameDayID)
+		}
+		gd.Phases.Final = db.PhaseStatus{Status: "complete", StartedAt: now, EndedAt: now}
 		if err := h.store.PutGameDay(ctx, gd); err != nil {
 			return err
 		}
@@ -639,7 +676,6 @@ func (h *handler) handleFinal(ctx context.Context, gd db.GameDay) error {
 	}
 	a, b := finalists[0], finalists[1]
 
-	now := time.Now().Unix()
 	gd.Phases.Elimination[lastRoundKey] = db.PhaseStatus{
 		Status:    "complete",
 		StartedAt: lastPhase.StartedAt,
@@ -661,8 +697,10 @@ func (h *handler) handleFinal(ctx context.Context, gd db.GameDay) error {
 		return h.invokeRankingUpdater(ctx, gd.GameDayID)
 
 	case a.TankID == "":
-		// b is champion by bye.
+		// b is champion by bye — populate the final bracket slot so the UI shows it.
 		log.Printf("champion by bye: %s/%s", b.TankID, b.Version)
+		b.Status = "won"
+		gd.Bracket["final"] = []db.BracketSlot{{Status: "bye"}, b}
 		gd.Phases.Final.Status = "complete"
 		gd.Phases.Final.EndedAt = now
 		if err := h.store.PutGameDay(ctx, gd); err != nil {
@@ -671,8 +709,10 @@ func (h *handler) handleFinal(ctx context.Context, gd db.GameDay) error {
 		return h.invokeRankingUpdater(ctx, gd.GameDayID)
 
 	case b.TankID == "":
-		// a is champion by bye.
+		// a is champion by bye — populate the final bracket slot so the UI shows it.
 		log.Printf("champion by bye: %s/%s", a.TankID, a.Version)
+		a.Status = "won"
+		gd.Bracket["final"] = []db.BracketSlot{a, {Status: "bye"}}
 		gd.Phases.Final.Status = "complete"
 		gd.Phases.Final.EndedAt = now
 		if err := h.store.PutGameDay(ctx, gd); err != nil {
@@ -688,8 +728,8 @@ func (h *handler) handleFinal(ctx context.Context, gd db.GameDay) error {
 	}
 
 	matchID, err := h.createRankedMatch(ctx, gd,
-		db.MatchTank{TankID: a.TankID, Version: a.Version},
-		db.MatchTank{TankID: b.TankID, Version: b.Version})
+		db.MatchTank{TankID: a.TankID, Version: a.Version, TankName: a.TankName},
+		db.MatchTank{TankID: b.TankID, Version: b.Version, TankName: b.TankName})
 	if err != nil {
 		return fmt.Errorf("create final match: %w", err)
 	}
@@ -697,10 +737,18 @@ func (h *handler) handleFinal(ctx context.Context, gd db.GameDay) error {
 	log.Printf("invoking final match %s synchronously", matchID)
 	h.invokeMatchRunner(ctx, matchID, true /* synchronous */)
 
-	// Mark final complete and invoke ranking-updater.
+	// Reload gd and populate bracket["final"] from the completed match result
+	// before marking the final complete so ranking-updater can read it.
 	gd, err = h.store.GetGameDay(ctx, gd.GameDayID)
 	if err != nil {
 		return err
+	}
+	if m, merr := h.store.GetMatch(ctx, matchID); merr == nil && m.Result != nil {
+		finalSlots := finalBracketSlots(a, b, m)
+		for i := range finalSlots {
+			finalSlots[i].MatchID = matchID
+		}
+		gd.Bracket["final"] = finalSlots
 	}
 	gd.Phases.Final.Status = "complete"
 	gd.Phases.Final.EndedAt = time.Now().Unix()
@@ -834,11 +882,15 @@ func updateSlotsFromMatches(slots []db.BracketSlot, matches []db.Match) ([]db.Br
 	return updated, allDone
 }
 
-// createElimMatches creates match records and invokes match-runner for each
-// pair of real tanks in the given bracket round's slots.
-func (h *handler) createElimMatches(ctx context.Context, gd db.GameDay, roundKey string, slots []db.BracketSlot) error {
-	for i := 0; i+1 < len(slots); i += 2 {
-		a, b := slots[i], slots[i+1]
+// createElimMatches creates match records for each pair of real tanks, sets
+// MatchID on the returned slots, and invokes match-runner asynchronously.
+// Must be called before PutGameDay so the matchIDs are persisted with the bracket.
+func (h *handler) createElimMatches(ctx context.Context, gd db.GameDay, roundKey string, slots []db.BracketSlot) ([]db.BracketSlot, error) {
+	result := make([]db.BracketSlot, len(slots))
+	copy(result, slots)
+	var matchIDs []string
+	for i := 0; i+1 < len(result); i += 2 {
+		a, b := result[i], result[i+1]
 		if a.TankID == "" || b.TankID == "" {
 			continue // bye pair — no match needed
 		}
@@ -846,14 +898,19 @@ func (h *handler) createElimMatches(ctx context.Context, gd db.GameDay, roundKey
 			continue // already auto-resolved
 		}
 		matchID, err := h.createRankedMatch(ctx, gd,
-			db.MatchTank{TankID: a.TankID, Version: a.Version},
-			db.MatchTank{TankID: b.TankID, Version: b.Version})
+			db.MatchTank{TankID: a.TankID, Version: a.Version, TankName: a.TankName},
+			db.MatchTank{TankID: b.TankID, Version: b.Version, TankName: b.TankName})
 		if err != nil {
-			return fmt.Errorf("create %s match %d/%d: %w", roundKey, i, i+1, err)
+			return nil, fmt.Errorf("create %s match %d/%d: %w", roundKey, i, i+1, err)
 		}
-		h.invokeMatchRunner(ctx, matchID, false)
+		result[i].MatchID = matchID
+		result[i+1].MatchID = matchID
+		matchIDs = append(matchIDs, matchID)
 	}
-	return nil
+	for _, id := range matchIDs {
+		h.invokeMatchRunner(ctx, id, false)
+	}
+	return result, nil
 }
 
 // activePairs returns the number of pairs in slots where both sides are real tanks.
@@ -1096,6 +1153,7 @@ func (h *handler) createRankedMatch(ctx context.Context, gd db.GameDay, a, b db.
 		TankA:     a,
 		TankB:     b,
 		CreatedAt: time.Now().Unix(),
+		TTL:       time.Now().Add(time.Duration(h.matchTTLDays) * 24 * time.Hour).Unix(),
 	}
 	if len(gd.ForcedMapIDs) > 0 {
 		match.MapID = gd.ForcedMapIDs[rand.Intn(len(gd.ForcedMapIDs))]
@@ -1224,6 +1282,23 @@ func (h *handler) invokeRankingUpdater(ctx context.Context, gameDayID string) er
 }
 
 // ---- Misc helpers -----------------------------------------------------------
+
+// finalBracketSlots builds the bracket["final"] entry from a completed championship
+// match. slotA and slotB are the BracketSlots for TankA and TankB respectively.
+// Winner==nil means both_lose; Winner==0 means TankA won; Winner==1 means TankB won.
+func finalBracketSlots(slotA, slotB db.BracketSlot, m db.Match) []db.BracketSlot {
+	if m.Result == nil || m.Result.Winner == nil {
+		slotA.Status = "both_lose"
+		slotB.Status = "both_lose"
+	} else if *m.Result.Winner == 0 {
+		slotA.Status = "won"
+		slotB.Status = "lost"
+	} else {
+		slotA.Status = "lost"
+		slotB.Status = "won"
+	}
+	return []db.BracketSlot{slotA, slotB}
+}
 
 // findMatchForPair searches matches for one with the given tank IDs on either side.
 func findMatchForPair(matches []db.Match, tankA, tankB string) *db.Match {

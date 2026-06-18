@@ -101,6 +101,7 @@ export interface BracketSlot {
   version: string | null;
   tankName?: string;
   status: 'playing' | 'won' | 'lost' | 'both_lose' | 'bye';
+  matchId?: string;
 }
 
 export interface GroupStanding {

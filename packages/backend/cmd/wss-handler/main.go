@@ -164,8 +164,9 @@ type logTankPair struct {
 }
 
 type logTankMeta struct {
-	TankID  string          `json:"tankId"`
-	Version string          `json:"version"`
+	TankID  string           `json:"tankId"`
+	Version string           `json:"version"`
+	Name    string           `json:"name,omitempty"`
 	Config  db.VersionConfig `json:"config"`
 }
 
@@ -354,8 +355,8 @@ func (h *handler) handleObserve(ctx context.Context, connID string, raw json.Raw
 		return resp(200), nil
 	}
 
-	tankNameA := match.TankA.TankID
-	tankNameB := match.TankB.TankID
+	tankNameA := h.lookupTankName(ctx, match.TankA)
+	tankNameB := h.lookupTankName(ctx, match.TankB)
 
 	snap := snapshotPayload{
 		MatchID:     match.MatchID,
@@ -444,6 +445,15 @@ func (h *handler) streamReplayWithSnapshot(ctx context.Context, connID, s3Key st
 		return fmt.Errorf("decode tick log: %w", err)
 	}
 
+	nameA := tl.Tanks.A.Name
+	if nameA == "" {
+		nameA = tl.Tanks.A.TankID
+	}
+	nameB := tl.Tanks.B.Name
+	if nameB == "" {
+		nameB = tl.Tanks.B.TankID
+	}
+
 	// Build initial TankState from the first tick that is at or after fromTick.
 	// Falls back to tick 0 when seeking.
 	var initA, initB tankStateWS
@@ -453,12 +463,12 @@ func (h *handler) streamReplayWithSnapshot(ctx context.Context, connID, s3Key st
 		initA = makeTankStateWS(
 			tl.Tanks.A.TankID, tl.Tanks.A.Version,
 			pointWS{X: entry.A.Sensors.Position.X, Y: entry.A.Sensors.Position.Y},
-			dirA, entry.A.Sensors.HP, tl.Tanks.A.Config, tl.Tanks.A.TankID,
+			dirA, entry.A.Sensors.HP, tl.Tanks.A.Config, nameA,
 		)
 		initB = makeTankStateWS(
 			tl.Tanks.B.TankID, tl.Tanks.B.Version,
 			pointWS{X: entry.B.Sensors.Position.X, Y: entry.B.Sensors.Position.Y},
-			dirB, entry.B.Sensors.HP, tl.Tanks.B.Config, tl.Tanks.B.TankID,
+			dirB, entry.B.Sensors.HP, tl.Tanks.B.Config, nameB,
 		)
 		if entry.Tick >= fromTick {
 			break
@@ -499,13 +509,13 @@ func (h *handler) streamReplayWithSnapshot(ctx context.Context, connID, s3Key st
 				tl.Tanks.A.TankID, tl.Tanks.A.Version,
 				pointWS{X: entry.A.Sensors.Position.X, Y: entry.A.Sensors.Position.Y},
 				cardinalFromInt(entry.A.Sensors.Facing), entry.A.Sensors.HP,
-				tl.Tanks.A.Config, tl.Tanks.A.TankID,
+				tl.Tanks.A.Config, nameA,
 			),
 			TankB: makeTankStateWS(
 				tl.Tanks.B.TankID, tl.Tanks.B.Version,
 				pointWS{X: entry.B.Sensors.Position.X, Y: entry.B.Sensors.Position.Y},
 				cardinalFromInt(entry.B.Sensors.Facing), entry.B.Sensors.HP,
-				tl.Tanks.B.Config, tl.Tanks.B.TankID,
+				tl.Tanks.B.Config, nameB,
 			),
 			Projectiles: []projWS{}, // projectile state not stored in tick log
 		}
@@ -585,6 +595,18 @@ func cardinalFromInt(d int) string {
 		return cardinalStr[d]
 	}
 	return "N"
+}
+
+// lookupTankName returns the display name for a match tank. Uses TankName from
+// the match record when available; falls back to GetTank, then to TankID.
+func (h *handler) lookupTankName(ctx context.Context, mt db.MatchTank) string {
+	if mt.TankName != "" {
+		return mt.TankName
+	}
+	if t, err := h.store.GetTank(ctx, mt.TankID); err == nil {
+		return t.Name
+	}
+	return mt.TankID
 }
 
 // invertMaze converts engine convention (true=open) to frontend convention (true=wall).

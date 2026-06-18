@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, Link, useBlocker } from 'react-router-dom';
 import Editor from '@monaco-editor/react';
+import type * as MonacoType from 'monaco-editor';
+import { syntaxCheck } from '../lib/syntaxCheck';
 import Layout from '../components/Layout';
 import {
   createTank,
@@ -48,21 +50,23 @@ function defaultSource(): string {
 `;
 }
 
-function buildSource(body: string, cfg: TankConfig): string {
-  return `package tank
-
-import . "github.com/tankmaze/sdk"
-
-var Config = TankConfig{
-\tName:        ${JSON.stringify(cfg.name)},
-\tSpeed:       ${cfg.speed},
-\tSensorRange: ${cfg.sensorRange},
-\tDamage:      ${cfg.damage},
-\tArmor:       ${cfg.armor},
-\tFireRate:    ${cfg.fireRate},
+function buildSource(body: string, cfg: TankConfig, extraImports: string[] = []): string {
+  const sdkLine = '. "github.com/tankmaze/sdk"';
+  const importBlock = extraImports.length === 0
+    ? `import ${sdkLine}`
+    : `import (\n\t${sdkLine}\n${extraImports.map(p => `\t"${p}"`).join('\n')}\n)`;
+  return `package tank\n\n${importBlock}\n\nvar Config = TankConfig{\n\tName:        ${JSON.stringify(cfg.name)},\n\tSpeed:       ${cfg.speed},\n\tSensorRange: ${cfg.sensorRange},\n\tDamage:      ${cfg.damage},\n\tArmor:       ${cfg.armor},\n\tFireRate:    ${cfg.fireRate},\n}\n\n${body}`;
 }
 
-${body}`;
+function parseExtraImports(src: string): string[] {
+  const blockMatch = src.match(/import \(([\s\S]*?)\)/);
+  if (!blockMatch) return [];
+  return blockMatch[1]
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l && !l.includes('tankmaze'))
+    .map(l => l.replace(/^"(.*)"$/, '$1'))
+    .filter(Boolean);
 }
 
 // Strip the locked preamble from sources loaded from S3 or old localStorage values.
@@ -112,6 +116,8 @@ function sortedByAge(versions: TankVersion[]): TankVersion[] {
 function latestReady(versions: TankVersion[]): TankVersion | undefined {
   return sortedByAge(versions).find((v) => v.compileStatus === 'ready');
 }
+
+const STDLIB_IMPORTS = ['fmt', 'math', 'math/rand', 'sort'] as const;
 
 // ── sub-components ───────────────────────────────────────────────────────────
 
@@ -193,20 +199,26 @@ function ConfigPanel({
   );
 }
 
-function PreambleBanner({ cfg }: { cfg: TankConfig }) {
+function PreambleBanner({
+  cfg, imports, onImportsChange,
+}: {
+  cfg: TankConfig;
+  imports: string[];
+  onImportsChange: (i: string[]) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
-  const preamble = `package tank
 
-import . "github.com/tankmaze/sdk"
+  function toggleImport(pkg: string) {
+    onImportsChange(imports.includes(pkg)
+      ? imports.filter(i => i !== pkg)
+      : [...imports, pkg]);
+  }
 
-var Config = TankConfig{
-\tName:        ${JSON.stringify(cfg.name)},
-\tSpeed:       ${cfg.speed},
-\tSensorRange: ${cfg.sensorRange},
-\tDamage:      ${cfg.damage},
-\tArmor:       ${cfg.armor},
-\tFireRate:    ${cfg.fireRate},
-}`;
+  const sdkLine = '. "github.com/tankmaze/sdk"';
+  const importBlock = imports.length === 0
+    ? `import ${sdkLine}`
+    : `import (\n\t${sdkLine}\n${imports.map(p => `\t"${p}"`).join('\n')}\n)`;
+  const preamble = `package tank\n\n${importBlock}\n\nvar Config = TankConfig{\n\tName:        ${JSON.stringify(cfg.name)},\n\tSpeed:       ${cfg.speed},\n\tSensorRange: ${cfg.sensorRange},\n\tDamage:      ${cfg.damage},\n\tArmor:       ${cfg.armor},\n\tFireRate:    ${cfg.fireRate},\n}`;
 
   return (
     <div style={{ marginBottom: 8, border: '1px solid #2d2d4e', borderRadius: 6, overflow: 'hidden' }}>
@@ -220,28 +232,65 @@ var Config = TankConfig{
       >
         <span>{expanded ? '▾' : '▸'}</span>
         <span>Preamble (read-only) — package, imports, Config</span>
+        {imports.length > 0 && (
+          <span style={{ marginLeft: 'auto', fontSize: 11, color: '#60a5fa' }}>
+            +{imports.length} stdlib import{imports.length > 1 ? 's' : ''}
+          </span>
+        )}
       </button>
       {expanded && (
-        <pre style={{
-          margin: 0, padding: '10px 14px', background: '#0d0d1a',
-          color: '#64748b', fontSize: 12, overflowX: 'auto', userSelect: 'none',
-        }}>{preamble}</pre>
+        <>
+          <div style={{
+            padding: '8px 12px', background: '#0d0d1a', borderTop: '1px solid #1e1e3a',
+            display: 'flex', gap: 16, flexWrap: 'wrap',
+          }}>
+            <span style={{ fontSize: 11, color: '#64748b', alignSelf: 'center' }}>stdlib:</span>
+            {STDLIB_IMPORTS.map(pkg => (
+              <label key={pkg} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 12, color: '#94a3b8' }}>
+                <input
+                  type="checkbox"
+                  checked={imports.includes(pkg)}
+                  onChange={() => toggleImport(pkg)}
+                />
+                {pkg}
+              </label>
+            ))}
+          </div>
+          <pre style={{
+            margin: 0, padding: '10px 14px', background: '#0d0d1a', borderTop: '1px solid #1e1e3a',
+            color: '#64748b', fontSize: 12, overflowX: 'auto', userSelect: 'none',
+          }}>{preamble}</pre>
+        </>
       )}
     </div>
   );
 }
 
 function StatusBar({
-  status, error, version,
-}: { status: string; error: string | null; version?: string }) {
+  status, error, version, pollingPhase, elapsedSecs,
+}: {
+  status: string;
+  error: string | null;
+  version?: string;
+  pollingPhase?: 'queued' | 'compiling' | null;
+  elapsedSecs?: number;
+}) {
   if (status === 'idle') return null;
 
-  const { dot, label } = {
-    submitting: { dot: '#94a3b8', label: 'Uploading…' },
-    polling:    { dot: '#fbbf24', label: 'Compiling… (15–30 s)' },
-    ready:      { dot: '#4ade80', label: `Compiled OK${version ? ` · ${version}` : ''}` },
-    failed:     { dot: '#f87171', label: 'Compile failed' },
-  }[status] ?? { dot: '#94a3b8', label: status };
+  let dot: string;
+  let label: string;
+  if (status === 'submitting') {
+    dot = '#94a3b8'; label = 'Uploading…';
+  } else if (status === 'polling') {
+    dot = '#fbbf24';
+    label = (!pollingPhase || pollingPhase === 'queued') ? 'Queued…' : `Compiling… ${elapsedSecs ?? 0}s`;
+  } else if (status === 'ready') {
+    dot = '#4ade80'; label = `Compiled OK${version ? ` · ${version}` : ''}`;
+  } else if (status === 'failed') {
+    dot = '#f87171'; label = 'Compile failed';
+  } else {
+    dot = '#94a3b8'; label = status;
+  }
 
   return (
     <div style={{ marginTop: 8 }}>
@@ -449,9 +498,12 @@ export default function TankEditor() {
   const [versions, setVersions] = useState<TankVersion[]>([]);
   const [source, setSource] = useState('');
   const [config, setConfig] = useState<TankConfig>(DEFAULT_CONFIG);
+  const [extraImports, setExtraImports] = useState<string[]>([]);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [pendingVersion, setPendingVersion] = useState<string | null>(null);
+  const [pollingPhase, setPollingPhase] = useState<'queued' | 'compiling' | null>(null);
+  const [elapsedSecs, setElapsedSecs] = useState(0);
   const [showTestDialog, setShowTestDialog] = useState(false);
   const [maps, setMaps] = useState<GameMap[]>([]);
   const [loadingMaps, setLoadingMaps] = useState(false);
@@ -464,6 +516,9 @@ export default function TankEditor() {
   const [loadingGameDays, setLoadingGameDays] = useState(false);
 
   const pollCancelRef = useRef(false);
+  const pollingStartRef = useRef<number | null>(null);
+  const editorRef = useRef<MonacoType.editor.IStandaloneCodeEditor | null>(null);
+  const monacoRef = useRef<typeof MonacoType | null>(null);
   // Prevents the config persistence effect from writing DEFAULT_CONFIG to
   // localStorage before getTank resolves and loads the real config.
   const configLoadedRef = useRef(false);
@@ -495,6 +550,7 @@ export default function TankEditor() {
         // Source: localStorage → own version → fork origin → default.
         // Always strip preamble — old localStorage/S3 values may include it.
         let srcToSet: string;
+        let fetchedRaw = '';
         const savedSrc = localStorage.getItem(`tankmaze-src-${tankId}`);
         if (savedSrc) {
           srcToSet = stripPreamble(savedSrc);
@@ -509,6 +565,7 @@ export default function TankEditor() {
           for (const [tid, ver] of attempts) {
             try {
               const { source: fetched } = await getVersionSource(tid, ver);
+              fetchedRaw = fetched;
               srcToSet = stripPreamble(fetched);
               loaded = true;
               break;
@@ -517,6 +574,14 @@ export default function TankEditor() {
           if (!loaded) srcToSet = defaultSource();
         }
         setSource(srcToSet);
+
+        // Extra imports: prefer localStorage, then parse from S3 preamble.
+        const savedImports = localStorage.getItem(`tankmaze-imports-${tankId}`);
+        if (savedImports) {
+          setExtraImports(JSON.parse(savedImports) as string[]);
+        } else if (fetchedRaw) {
+          setExtraImports(parseExtraImports(fetchedRaw));
+        }
 
         // Config: prefer localStorage, then seed from API (tank name + version stats).
         // Always override name from the API — localStorage name can be stale or empty.
@@ -561,6 +626,15 @@ export default function TankEditor() {
   useEffect(() => {
     if (saveStatus !== 'polling' || !pendingVersion || !tankId) return;
     pollCancelRef.current = false;
+    pollingStartRef.current = Date.now();
+    setPollingPhase('queued');
+    setElapsedSecs(0);
+
+    const timer = setInterval(() => {
+      if (pollingStartRef.current) {
+        setElapsedSecs(Math.floor((Date.now() - pollingStartRef.current) / 1000));
+      }
+    }, 1000);
 
     async function poll() {
       while (!pollCancelRef.current) {
@@ -568,15 +642,18 @@ export default function TankEditor() {
         if (pollCancelRef.current) break;
         try {
           const s = await getVersionStatus(tankId!, pendingVersion!);
+          if (s.compileStatus === 'compiling') setPollingPhase('compiling');
           if (s.compileStatus === 'ready') {
+            setPollingPhase(null);
             setSaveStatus('ready');
             setSaveError(null);
+            clearSyntaxMarkers();
             if (submittedStateRef.current) savedStateRef.current = submittedStateRef.current;
-            // Refresh versions list
             getTank(tankId!).then(({ versions: v }) => setVersions(v ?? []));
             break;
           }
           if (s.compileStatus === 'failed') {
+            setPollingPhase(null);
             setSaveStatus('failed');
             setSaveError(s.compileError ?? 'Compile failed');
             getTank(tankId!).then(({ versions: v }) => setVersions(v ?? []));
@@ -589,12 +666,17 @@ export default function TankEditor() {
     }
 
     poll();
-    return () => { pollCancelRef.current = true; };
+    return () => {
+      pollCancelRef.current = true;
+      clearInterval(timer);
+    };
   }, [saveStatus, pendingVersion, tankId]);
 
   // Persist source to localStorage on change (skip while in new-tank mode)
   useEffect(() => {
-    if (tankId && tankId !== 'new' && source) localStorage.setItem(`tankmaze-src-${tankId}`, source);
+    if (configLoadedRef.current && tankId && tankId !== 'new' && source) {
+      localStorage.setItem(`tankmaze-src-${tankId}`, source);
+    }
   }, [tankId, source]);
 
   useEffect(() => {
@@ -603,6 +685,21 @@ export default function TankEditor() {
     }
   }, [tankId, config]);
 
+  useEffect(() => {
+    if (configLoadedRef.current && tankId && tankId !== 'new') {
+      localStorage.setItem(`tankmaze-imports-${tankId}`, JSON.stringify(extraImports));
+    }
+  }, [tankId, extraImports]);
+
+  function clearSyntaxMarkers() {
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    if (editor && monaco) {
+      const model = editor.getModel();
+      if (model) monaco.editor.setModelMarkers(model, 'go-syntax', []);
+    }
+  }
+
   async function handleSave() {
     const statSum = STAT_NAMES.reduce((acc, k) => acc + config[k], 0);
     if (statSum !== STAT_SUM_TARGET) {
@@ -610,6 +707,41 @@ export default function TankEditor() {
       setSaveStatus('failed');
       return;
     }
+
+    // Browser-side syntax pre-check — abort before uploading if there are parse errors.
+    clearSyntaxMarkers();
+    try {
+      const fullSrc = buildSource(source, config, extraImports);
+      const errors = await syntaxCheck(fullSrc);
+      if (errors.length > 0) {
+        // Map error lines from full-source positions to body-only Monaco positions.
+        const closeIdx = fullSrc.lastIndexOf('\n}\n\n');
+        const preambleLines = closeIdx >= 0
+          ? fullSrc.slice(0, closeIdx + '\n}\n\n'.length).split('\n').length - 1
+          : 0;
+        const editor = editorRef.current;
+        const monaco = monacoRef.current;
+        if (editor && monaco) {
+          const model = editor.getModel();
+          if (model) {
+            monaco.editor.setModelMarkers(model, 'go-syntax', errors.map(e => ({
+              startLineNumber: Math.max(1, e.line - preambleLines),
+              startColumn: e.col,
+              endLineNumber: Math.max(1, e.line - preambleLines),
+              endColumn: e.col + 80,
+              message: e.message,
+              severity: monaco.MarkerSeverity.Error,
+            })));
+          }
+        }
+        setSaveStatus('failed');
+        setSaveError('Syntax errors:\n' + errors.map(e => `line ${e.line - preambleLines}: ${e.message}`).join('\n'));
+        return;
+      }
+    } catch {
+      // WASM unavailable — skip pre-check, let CodeBuild catch syntax errors
+    }
+
     setSaveStatus('submitting');
     setSaveError(null);
     submittedStateRef.current = { source, config };
@@ -623,7 +755,7 @@ export default function TankEditor() {
         await updateTank(id, { name: config.name.trim() });
         setTank({ ...tank, name: config.name.trim() });
       }
-      const v = await submitVersion(id, buildSource(source, config), config);
+      const v = await submitVersion(id, buildSource(source, config, extraImports), config);
       setPendingVersion(v.version);
       setSaveStatus('polling');
     } catch (e) {
@@ -809,10 +941,12 @@ export default function TankEditor() {
         status={saveStatus}
         error={saveError}
         version={pendingVersion ?? latestVersion?.version}
+        pollingPhase={pollingPhase}
+        elapsedSecs={elapsedSecs}
       />
 
       {/* Preamble banner */}
-      <PreambleBanner cfg={config} />
+      <PreambleBanner cfg={config} imports={extraImports} onImportsChange={setExtraImports} />
 
       {/* Monaco */}
       <div style={{ border: '1px solid #2d2d4e', borderRadius: 8, overflow: 'hidden' }}>
@@ -822,6 +956,10 @@ export default function TankEditor() {
           theme="vs-dark"
           value={source}
           onChange={(v) => setSource(v ?? '')}
+          onMount={(editor, monaco) => {
+            editorRef.current = editor;
+            monacoRef.current = monaco;
+          }}
           options={{
             minimap: { enabled: false },
             fontSize: 14,

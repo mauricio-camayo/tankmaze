@@ -26,7 +26,11 @@ export class ReplayController {
       const { ticks, currentTick } = getState();
       const idx = ticks.findIndex((t) => t.tick === currentTick);
 
-      if (idx < 0) return; // currentTick not in buffer yet
+      if (idx < 0) {
+        // currentTick not found — snap to first tick to start replay
+        if (ticks.length > 0) onAdvance(ticks[0].tick);
+        return;
+      }
       if (idx >= ticks.length - 1) {
         onEnd();
         return;

@@ -53,14 +53,22 @@ export class BuildStack extends Stack {
     // no external module downloads are needed and no replace directives are required.
     const buildSpec = codebuild.BuildSpec.fromObject({
       version: '0.2',
+      cache: {
+        // Persist the Go build cache and module proxy between builds.
+        // CodeBuild restores this from S3 before pre_build and saves it after post_build.
+        paths: [
+          '/root/.cache/go-build/**/*',
+          '/tmp/goproxy/**/*',
+        ],
+      },
       phases: {
         install: {
           'runtime-versions': { golang: '1.21' },
         },
         pre_build: {
           commands: [
-            // Seed the local GOPROXY from S3
-            'aws s3 cp s3://$WASM_BUCKET/goproxy/ /tmp/goproxy/ --recursive',
+            // Seed the local GOPROXY from S3, but skip if a prior build cached it locally.
+            'if [ ! -f /tmp/goproxy/github.com/tankmaze/sdk/@v/list ]; then aws s3 cp s3://$WASM_BUCKET/goproxy/ /tmp/goproxy/ --recursive; fi',
 
             // Download tank source
             'mkdir -p /tmp/build',
@@ -109,6 +117,9 @@ export class BuildStack extends Stack {
       vpc,
       subnetSelection: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
       buildSpec,
+      // S3-backed build cache — persists Go build artifacts and the module proxy
+      // between runs so warm compiles skip recompiling unchanged packages.
+      cache: codebuild.Cache.bucket(props.wasmBucket, { prefix: 'codebuild-cache' }),
       environment: {
         buildImage: codebuild.LinuxBuildImage.STANDARD_7_0,
         computeType: codebuild.ComputeType.SMALL,

@@ -446,23 +446,23 @@ At the end of each Game Day, every participating tank receives placement points 
 | Placement | Points |
 |---|---|
 | 1st | n |
-| 2nd | n − 2 |
-| 3rd | n − 4 |
-| 4th | n − 8 |
-| kth (k ≥ 2) | max(0,  n − 2^(k−1)) |
+| 2nd | n / 2 |
+| 3rd | n / 4 |
+| 4th | n / 8 |
+| kth (k ≥ 2) | floor(n / 2^(k−1)) |
 
-The subtraction doubles with each successive placement. Points are floored at 0 — no placement ever yields negative points.
+Each successive placement halves the points of the previous one. Points are floored to the nearest integer — no placement ever yields negative points.
 
 **Example — n = 32 competitors:**
 
 | Placement | Points |
 |---|---|
 | 1st (Champion) | 32 |
-| 2nd (Runner-up) | 30 |
-| 3rd–4th (Semifinalists) | 28 |
-| 5th–8th (Quarterfinalists) | 24 |
-| 9th–16th (R1 losers) | 16 |
-| 17th–32nd (Round-robin eliminated) | 0 |
+| 2nd (Runner-up) | 16 |
+| 3rd–4th (Semifinalists) | 8 |
+| 5th–8th (Quarterfinalists) | 4 |
+| 9th–16th (R1 losers) | 2 |
+| 17th–32nd (Round-robin eliminated) | 1 |
 
 **Shared placements:** tanks eliminated at the same round share the highest placement available to that group. Both semifinal losers receive 3rd-place points; all quarterfinal losers receive 5th-place points, and so on. Ties within a shared placement tier do not subdivide further — all tanks in the group receive the same points.
 

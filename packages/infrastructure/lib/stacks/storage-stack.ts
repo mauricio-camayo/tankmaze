@@ -147,13 +147,8 @@ export class StorageStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN,
       lifecycleRules: [
         {
-          id: 'archive-to-glacier',
-          transitions: [
-            {
-              storageClass: s3.StorageClass.GLACIER,
-              transitionAfter: Duration.days(365),
-            },
-          ],
+          id: 'expire-match-logs',
+          expiration: Duration.days(7),
         },
       ],
     });

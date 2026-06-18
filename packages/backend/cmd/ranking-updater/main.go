@@ -27,7 +27,7 @@ type handler struct {
 
 // tankTier holds the computed tier (k) and ordinal placement for one tank.
 // Tier k: 1=champion, 2=runner-up / final both-lose, 3=semi-final loser, …
-// Points formula: k=1→n; k≥2→max(0, n−2^(k−1)).
+// Points formula: k=1→n; k≥2→floor(n/2^(k−1)).
 type tankTier struct {
 	k         int
 	placement int // ordinal: 1, 2, 3, 5, 9, …
@@ -158,6 +158,27 @@ func bracketTiers(bracket map[string][]db.BracketSlot) (map[string]tankTier, boo
 			// "bye" and "playing" slots need no action.
 		}
 	}
+
+	// The "final" key is not parsed by the Atoi loop above (Atoi("final")=0 maps
+	// to bracket["r0"] which never exists). Process it explicitly so the actual
+	// championship result — whether a real match or a bye — overrides whatever
+	// the last numeric round may have provisionally assigned.
+	for _, slot := range bracket["final"] {
+		if slot.TankID == "" {
+			continue // bye slot
+		}
+		switch slot.Status {
+		case "won":
+			tiers[slot.TankID] = tankTier{k: 1, placement: 1}
+			championNull = false
+		case "lost":
+			tiers[slot.TankID] = tankTier{k: 2, placement: 2}
+		case "both_lose":
+			tiers[slot.TankID] = tankTier{k: 2, placement: 2}
+			championNull = true
+		}
+	}
+
 	return tiers, championNull
 }
 
@@ -178,16 +199,12 @@ func tierPlacement(k int) int {
 }
 
 // placementPoints computes the points earned by a tank at tier k out of n total
-// participants. Champion (k=1) earns n; every other tier earns max(0, n−2^(k−1)).
+// participants. Champion (k=1) earns n; every other tier earns floor(n/2^(k−1)).
 func placementPoints(n, k int) int {
 	if k == 1 {
 		return n
 	}
-	p := n - (1 << (k - 1))
-	if p < 0 {
-		return 0
-	}
-	return p
+	return n / (1 << (k - 1))
 }
 
 // recomputeTankStats fetches all ranking records for tankID and writes the

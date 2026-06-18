@@ -103,8 +103,8 @@ export default function Watch() {
           break;
         case 'TICK_UPDATE':
           applyTickUpdate(event.payload);
-          // In live mode advance the display tick with the stream
-          if (!isPlayingRef.current || useMatchStore.getState().snapshot?.status === 'active') {
+          // For live matches, advance the display tick with the stream
+          if (useMatchStore.getState().snapshot?.status === 'active') {
             setCurrentTick(event.payload.tick);
           }
           break;
@@ -185,12 +185,8 @@ export default function Watch() {
 
   function handleSpeed(s: PlaybackSpeed) {
     setSpeed(s);
-    if (s === 'step') {
-      setPlaying(false);
-      socketRef.current?.setSpeed('step');
-    } else {
-      socketRef.current?.setSpeed(isPlaying ? s : 0);
-    }
+    if (s === 'step') setPlaying(false);
+    socketRef.current?.setSpeed(s);
   }
 
   // ── Render ─────────────────────────────────────────────────────────────
