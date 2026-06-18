@@ -128,6 +128,7 @@ export class ApiStack extends Stack {
     // dependency on the Lambda resource itself.
     const tournamentSchedulerFunctionName = 'tankmaze-tournament-scheduler';
     const tournamentSchedulerArn = `arn:aws:lambda:${this.region}:${this.account}:function:${tournamentSchedulerFunctionName}`;
+    const matchRunnerFunctionName = 'tankmaze-match-runner';
 
     // match-runner — needs WebSocket APIGW endpoint added after API is created
     // 300s: cold-start WASM JIT compilation can take 60-120s per module × 2;
@@ -165,7 +166,8 @@ export class ApiStack extends Stack {
       BRUISER_VERSION:           'v1',
       MATCH_TTL_DAYS:            '7',
     }, 330);
-    // Pin the actual function to the name we referenced above.
+    // Pin functions to stable names so they can be invoked by name from scripts.
+    (matchRunner.node.defaultChild as lambda.CfnFunction).functionName = matchRunnerFunctionName;
     (tournamentScheduler.node.defaultChild as lambda.CfnFunction).functionName = tournamentSchedulerFunctionName;
     tables.gamedays.grantReadWriteData(tournamentScheduler);
     tables.matches.grantReadWriteData(tournamentScheduler);
