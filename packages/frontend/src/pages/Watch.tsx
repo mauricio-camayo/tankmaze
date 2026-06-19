@@ -68,8 +68,12 @@ export default function Watch() {
     gameRef.current = game;
 
     game.events.once('ready', () => {
-      sceneRef.current = game.scene.getScene('ObserverScene') as ObserverScene;
-      setSceneReady(true);
+      const scene = game.scene.getScene('ObserverScene') as ObserverScene;
+      sceneRef.current = scene;
+      // Wait for scene create() — which only fires after preload() finishes loading
+      // all avatar textures. Listening here avoids the race where initMaze() is
+      // called before mazeGfx/tankA/tankB are initialized (cold cache = first visit).
+      scene.events.once('create', () => setSceneReady(true));
     });
 
     return () => {
