@@ -5,6 +5,7 @@ import { listTanks, listAiTanks, forkTank, listGameDays } from '../services/api'
 import { useAuthStore } from '../store/authStore';
 import type { Tank, TankVersion, GameDay } from '../types';
 import { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
+import { avatarSrc } from '../components/AvatarPicker';
 
 function relativeTime(ts: number | null): string {
   if (!ts) return '—';
@@ -203,7 +204,14 @@ function AiTankInfoModal({ aiTank, onFork, onClose, forking }: {
     }} onClick={onClose}>
       <div style={{ ...cardStyle, width: 340, maxWidth: '90vw' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-          <div style={{ fontWeight: 700, fontSize: 17, color: '#e2e8f0' }}>{aiTank.name}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <img
+              src={avatarSrc(aiTank.tankId, aiTank.avatarUrl)}
+              alt=""
+              style={{ width: 40, height: 40, borderRadius: 6, imageRendering: 'pixelated', border: '1px solid #2d2d4e', flexShrink: 0 }}
+            />
+            <div style={{ fontWeight: 700, fontSize: 17, color: '#e2e8f0' }}>{aiTank.name}</div>
+          </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
         </div>
         <p style={{ margin: '0 0 16px', fontSize: 13, color: '#94a3b8', lineHeight: 1.5 }}>
@@ -267,10 +275,16 @@ function AiTemplateRow({ aiTanks, onForked }: { aiTanks: AiTank[]; onForked: () 
                   border: `1px solid ${isSelected ? '#7c6af7' : '#2d2d4e'}`,
                   borderRadius: '6px 0 0 6px',
                   color: isSelected ? '#a78bfa' : '#cbd5e1',
-                  padding: '6px 12px',
+                  padding: '4px 12px 4px 6px',
                   fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 6,
                 }}
               >
+                <img
+                  src={avatarSrc(ai.tankId, ai.avatarUrl)}
+                  alt=""
+                  style={{ width: 22, height: 22, borderRadius: 3, imageRendering: 'pixelated', flexShrink: 0 }}
+                />
                 {ai.name}
               </button>
               <button

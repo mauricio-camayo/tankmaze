@@ -21,6 +21,7 @@ import {
 } from '../services/api';
 import type { Tank, TankVersion, TankConfig, GameDay, GameMap } from '../types';
 import { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
+import { AvatarPicker, avatarSrc } from '../components/AvatarPicker';
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -482,6 +483,7 @@ export default function TankEditor() {
 
   const [tank, setTank] = useState<Tank | null>(null);
   const [versions, setVersions] = useState<TankVersion[]>([]);
+  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
   const [source, setSource] = useState('');
   const [config, setConfig] = useState<TankConfig>(DEFAULT_CONFIG);
   const [extraImports, setExtraImports] = useState<string[]>([]);
@@ -529,6 +531,7 @@ export default function TankEditor() {
     getTank(tankId)
       .then(async ({ versions: v, ...t }) => {
         setTank(t);
+        setAvatarUrl(t.avatarUrl);
         setVersions(v ?? []);
 
         const latestVer = sortedByAge(v ?? [])[0];
@@ -868,6 +871,13 @@ export default function TankEditor() {
           <Link to="/dashboard" style={{ color: '#64748b', textDecoration: 'none', fontSize: 13 }}>
             ← My Tanks
           </Link>
+          {tankId && tankId !== 'new' && tank && (
+            <img
+              src={avatarSrc(tankId, avatarUrl)}
+              alt=""
+              style={{ width: 36, height: 36, borderRadius: 6, imageRendering: 'pixelated', border: '1px solid #2d2d4e' }}
+            />
+          )}
           <h2 style={{ margin: 0, fontSize: 18, color: '#e2e8f0' }}>
             {tank?.name || 'Unnamed Tank'}
           </h2>
@@ -921,6 +931,22 @@ export default function TankEditor() {
 
       {/* Config */}
       <ConfigPanel config={config} onChange={setConfig} />
+
+      {/* Avatar picker — only for existing tanks (not /tanks/new) */}
+      {tankId && tankId !== 'new' && tank && (
+        <details style={{ ...cardStyle, marginBottom: 12 }}>
+          <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#94a3b8', userSelect: 'none' }}>
+            Avatar
+          </summary>
+          <div style={{ marginTop: 12 }}>
+            <AvatarPicker
+              tankId={tankId}
+              current={avatarUrl}
+              onSaved={setAvatarUrl}
+            />
+          </div>
+        </details>
+      )}
 
       {/* Status — shown between config and editor so it's always visible */}
       <StatusBar

@@ -4,6 +4,7 @@ import Layout, { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../comp
 import { getTank, deleteTank, withdrawRegistration, getRankings, listGameDays, registerForGameDay, startMatch, listMaps, type OpponentSpec } from '../services/api';
 import type { Tank, TankVersion, GameDay, GameMap } from '../types';
 import ForkDialog from '../components/ForkDialog';
+import { AvatarPicker, avatarSrc } from '../components/AvatarPicker';
 import { useAuthStore } from '../store/authStore';
 
 function majorOf(version: string): string {
@@ -370,6 +371,7 @@ export default function TankDetail() {
   const navigate = useNavigate();
   const currentUser = useAuthStore((s) => s.user);
   const [tank, setTank] = useState<(Tank & { versions: TankVersion[] }) | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rank, setRank] = useState<number | null>(null);
@@ -393,7 +395,7 @@ export default function TankDetail() {
   useEffect(() => {
     if (!tankId) return;
     getTank(tankId)
-      .then(setTank)
+      .then((t) => { setTank(t); setAvatarUrl(t.avatarUrl); })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
     getRankings()
@@ -520,9 +522,16 @@ export default function TankDetail() {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28 }}>
         <div>
-          <h1 style={{ margin: '0 0 6px', color: '#e2e8f0', fontSize: 26, fontWeight: 700 }}>
-            {tank.name}
-          </h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 6 }}>
+            <img
+              src={avatarSrc(tankId!, avatarUrl)}
+              alt=""
+              style={{ width: 52, height: 52, borderRadius: 8, imageRendering: 'pixelated', border: '2px solid #2d2d4e', flexShrink: 0 }}
+            />
+            <h1 style={{ margin: 0, color: '#e2e8f0', fontSize: 26, fontWeight: 700 }}>
+              {tank.name}
+            </h1>
+          </div>
           <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
             <span style={{ color: '#fbbf24', fontSize: 13, fontWeight: 600 }}>
               {rank !== null ? `#${rank}` : '#—'}
@@ -673,6 +682,22 @@ export default function TankDetail() {
           )}
         </div>
       </div>
+
+      {/* Avatar picker — owner only */}
+      {isOwner && tankId && (
+        <details style={{ ...cardStyle, marginBottom: 16 }}>
+          <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#94a3b8', userSelect: 'none' }}>
+            Avatar
+          </summary>
+          <div style={{ marginTop: 12 }}>
+            <AvatarPicker
+              tankId={tankId}
+              current={avatarUrl}
+              onSaved={setAvatarUrl}
+            />
+          </div>
+        </details>
+      )}
 
       {majors.length === 0 ? (
         <div style={{ ...cardStyle, color: '#64748b', textAlign: 'center', padding: '40px 24px' }}>

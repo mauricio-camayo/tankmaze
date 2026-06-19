@@ -14,36 +14,40 @@ const s3client = new S3Client({});
 
 const AI_TANKS = [
   {
-    tankId:  'builtin-scout',
-    name:    'Scout',
-    version: 'v1',
-    config:  { speed: 5, sensorRange: 3, damage: 2, armor: 2, fireRate: 3 },
-    wasmKey: 'ai/scout/v1/tank.wasm',
-    srcKey:  'ai/scout/v1/source.go',
+    tankId:    'builtin-scout',
+    name:      'Scout',
+    version:   'v1',
+    config:    { speed: 5, sensorRange: 3, damage: 2, armor: 2, fireRate: 3 },
+    wasmKey:   'ai/scout/v1/tank.wasm',
+    srcKey:    'ai/scout/v1/source.go',
+    avatarUrl: '/avatars/tank-14.png',
   },
   {
-    tankId:  'builtin-bruiser',
-    name:    'Bruiser',
-    version: 'v1',
-    config:  { speed: 2, sensorRange: 2, damage: 5, armor: 5, fireRate: 1 },
-    wasmKey: 'ai/bruiser/v1/tank.wasm',
-    srcKey:  'ai/bruiser/v1/source.go',
+    tankId:    'builtin-bruiser',
+    name:      'Bruiser',
+    version:   'v1',
+    config:    { speed: 2, sensorRange: 2, damage: 5, armor: 5, fireRate: 1 },
+    wasmKey:   'ai/bruiser/v1/tank.wasm',
+    srcKey:    'ai/bruiser/v1/source.go',
+    avatarUrl: '/avatars/tank-9.png',
   },
   {
-    tankId:  'builtin-ranger',
-    name:    'Ranger',
-    version: 'v1',
-    config:  { speed: 3, sensorRange: 5, damage: 3, armor: 2, fireRate: 2 },
-    wasmKey: 'ai/ranger/v1/tank.wasm',
-    srcKey:  'ai/ranger/v1/source.go',
+    tankId:    'builtin-ranger',
+    name:      'Ranger',
+    version:   'v1',
+    config:    { speed: 3, sensorRange: 5, damage: 3, armor: 2, fireRate: 2 },
+    wasmKey:   'ai/ranger/v1/tank.wasm',
+    srcKey:    'ai/ranger/v1/source.go',
+    avatarUrl: '/avatars/tank-15.png',
   },
   {
-    tankId:  'builtin-randy',
-    name:    'Randy',
-    version: 'v1',
-    config:  { speed: 3, sensorRange: 3, damage: 3, armor: 3, fireRate: 3 },
-    wasmKey: 'ai/randy/v1/tank.wasm',
-    srcKey:  'ai/randy/v1/source.go',
+    tankId:    'builtin-randy',
+    name:      'Randy',
+    version:   'v1',
+    config:    { speed: 3, sensorRange: 3, damage: 3, armor: 3, fireRate: 3 },
+    wasmKey:   'ai/randy/v1/tank.wasm',
+    srcKey:    'ai/randy/v1/source.go',
+    avatarUrl: '/avatars/tank-11.png',
   },
 ];
 
@@ -77,11 +81,24 @@ exports.handler = async () => {
           gameDaysCount: { N: '0' },
           lastActiveAt:  { N: String(NOW) },
           createdAt:     { N: String(NOW) },
+          avatarUrl:     { S: t.avatarUrl },
         },
       }));
       console.log(`created tank ${t.tankId}`);
     } else {
-      console.log(`tank ${t.tankId} already exists, skipping`);
+      // Update avatarUrl if it drifted or was never set.
+      const storedAvatar = existingTank.Item.avatarUrl?.S;
+      if (storedAvatar !== t.avatarUrl) {
+        await dynamo.send(new UpdateItemCommand({
+          TableName: tanksTable,
+          Key: { tankId: { S: t.tankId } },
+          UpdateExpression: 'SET avatarUrl = :a',
+          ExpressionAttributeValues: { ':a': { S: t.avatarUrl } },
+        }));
+        console.log(`updated avatarUrl for ${t.tankId}: ${storedAvatar||'none'} → ${t.avatarUrl}`);
+      } else {
+        console.log(`tank ${t.tankId} avatar up to date`);
+      }
     }
 
     // TankVersion record — always re-hash from S3 so a CDK redeploy that

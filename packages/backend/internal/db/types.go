@@ -15,6 +15,7 @@ type Tank struct {
 	ForkedFromVersion    string `dynamodbav:"forkedFromVersion,omitempty"    json:"forkedFromVersion,omitempty"`
 	ScoreTransferredTo   string `dynamodbav:"scoreTransferredTo,omitempty"   json:"scoreTransferredTo,omitempty"`
 	ScoreTransferredFrom string `dynamodbav:"scoreTransferredFrom,omitempty" json:"scoreTransferredFrom,omitempty"`
+	AvatarURL            string `dynamodbav:"avatarUrl,omitempty"            json:"avatarUrl,omitempty"`
 }
 
 // TankStats holds the mutable aggregate fields updated by the ranking-updater.

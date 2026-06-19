@@ -8,7 +8,7 @@ const TANK_B = 0xf97316; // orange
 const PROJ_A = 0x93c5fd;
 const PROJ_B = 0xfed7aa;
 
-// Rotation angle for each facing direction (East = 0)
+// Rotation angle for each facing direction (East = 0; sprites face right by default)
 const DIR_ROT: Record<string, number> = {
   E: 0,
   S: Math.PI / 2,
@@ -25,16 +25,22 @@ const DIR_VEC: Record<string, [number, number]> = {
 
 // Canvas fits inside this square; maze is centered within it
 const CANVAS_SIZE = 560;
-const BASE_CELL   = 28; // cell size tank sprites are drawn at
+const BASE_CELL   = 28;
 
-function makeTankSprite(
+// All built-in avatar texture keys (preloaded once)
+const AVATAR_KEYS = Array.from({ length: 16 }, (_, i) => `avatar-tank-${i}`);
+
+function avatarKey(url: string): string | null {
+  const m = url.match(/tank-(\d+)\.png$/);
+  return m ? `avatar-tank-${m[1]}` : null;
+}
+
+function makeFallbackSprite(
   scene: Phaser.Scene,
   color: number,
 ): Phaser.GameObjects.Container {
-  // Body square
   const s = BASE_CELL;
   const body = scene.add.rectangle(0, 0, s * 0.72, s * 0.72, color);
-  // Arrow pointing right (East) by default; rotated with the container
   const tip = s * 0.32, half = s * 0.18;
   const arrow = scene.add.triangle(
     0, 0,
@@ -46,6 +52,10 @@ function makeTankSprite(
   return scene.add.container(0, 0, [body, arrow]).setVisible(false);
 }
 
+type TankObject =
+  | { kind: 'sprite'; obj: Phaser.GameObjects.Image }
+  | { kind: 'fallback'; obj: Phaser.GameObjects.Container };
+
 export class ObserverScene extends Phaser.Scene {
   private cell    = BASE_CELL;
   private offsetX = 0;
@@ -53,20 +63,72 @@ export class ObserverScene extends Phaser.Scene {
 
   private mazeGfx!: Phaser.GameObjects.Graphics;
   private projGfx!: Phaser.GameObjects.Graphics;
-  private spA!: Phaser.GameObjects.Container;
-  private spB!: Phaser.GameObjects.Container;
+
+  private tankA!: TankObject;
+  private tankB!: TankObject;
   private tankAId = '';
 
   constructor() {
     super({ key: 'ObserverScene' });
   }
 
+  preload() {
+    for (let i = 0; i < 16; i++) {
+      this.load.image(`avatar-tank-${i}`, `/avatars/tank-${i}.png`);
+    }
+  }
+
   create() {
     this.cameras.main.setBackgroundColor(WALL);
     this.mazeGfx = this.add.graphics().setDepth(0);
     this.projGfx = this.add.graphics().setDepth(1);
-    this.spA = makeTankSprite(this, TANK_A).setDepth(2);
-    this.spB = makeTankSprite(this, TANK_B).setDepth(2);
+    this.tankA = { kind: 'fallback', obj: makeFallbackSprite(this, TANK_A).setDepth(2) };
+    this.tankB = { kind: 'fallback', obj: makeFallbackSprite(this, TANK_B).setDepth(2) };
+  }
+
+  /** Called from Watch.tsx after the MATCH_SNAPSHOT arrives with avatarUrls. */
+  setAvatarURLs(urlA: string | undefined, urlB: string | undefined) {
+    this.tankA = this.buildTankObject(urlA, TANK_A, this.tankA);
+    this.tankB = this.buildTankObject(urlB, TANK_B, this.tankB);
+    // Re-scale to current cell size
+    const sc = this.cell / BASE_CELL;
+    this.scaleTank(this.tankA, sc);
+    this.scaleTank(this.tankB, sc);
+  }
+
+  private buildTankObject(
+    url: string | undefined,
+    fallbackColor: number,
+    existing: TankObject,
+  ): TankObject {
+    const key = url ? avatarKey(url) : null;
+    if (key && this.textures.exists(key)) {
+      // Reuse existing sprite if key matches, otherwise swap
+      if (existing.kind === 'sprite') {
+        existing.obj.setTexture(key);
+        return existing;
+      }
+      existing.obj.destroy();
+      const img = this.add.image(0, 0, key)
+        .setVisible(false)
+        .setDepth(2);
+      return { kind: 'sprite', obj: img };
+    }
+    // Fallback: keep or create container
+    if (existing.kind === 'fallback') return existing;
+    existing.obj.destroy();
+    return { kind: 'fallback', obj: makeFallbackSprite(this, fallbackColor).setDepth(2) };
+  }
+
+  private scaleTank(t: TankObject, sc: number) {
+    if (t.kind === 'sprite') {
+      // Scale sprite so it fills ~72% of a cell (same visual size as the rectangle)
+      const targetPx = BASE_CELL * 0.72 * sc;
+      const texW = t.obj.width || 96;
+      t.obj.setScale(targetPx / texW);
+    } else {
+      t.obj.setScale(sc);
+    }
   }
 
   initMaze(maze: boolean[][]) {
@@ -81,7 +143,6 @@ export class ObserverScene extends Phaser.Scene {
     this.offsetY = Math.floor((CANVAS_SIZE - mazeH) / 2);
 
     this.mazeGfx.clear();
-    // Fill canvas background
     this.mazeGfx.fillStyle(WALL, 1);
     this.mazeGfx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
@@ -98,8 +159,8 @@ export class ObserverScene extends Phaser.Scene {
     }
 
     const sc = this.cell / BASE_CELL;
-    this.spA.setScale(sc);
-    this.spB.setScale(sc);
+    this.scaleTank(this.tankA, sc);
+    this.scaleTank(this.tankB, sc);
   }
 
   render(
@@ -109,19 +170,21 @@ export class ObserverScene extends Phaser.Scene {
     tankAId: string,
   ) {
     this.tankAId = tankAId;
-    this.placeTank(this.spA, stateA);
-    this.placeTank(this.spB, stateB);
+    this.placeTank(this.tankA, stateA);
+    this.placeTank(this.tankB, stateB);
     this.drawProjectiles(projectiles);
   }
 
-  private placeTank(c: Phaser.GameObjects.Container, s: TankState) {
-    c.setPosition(
-      this.offsetX + (s.position.x + 0.5) * this.cell,
-      this.offsetY + (s.position.y + 0.5) * this.cell,
-    );
-    c.setRotation(DIR_ROT[s.facing] ?? 0);
-    c.setAlpha(0.3 + (s.hp / 100) * 0.7);
-    c.setVisible(true);
+  private placeTank(t: TankObject, s: TankState) {
+    const cx = this.offsetX + (s.position.x + 0.5) * this.cell;
+    const cy = this.offsetY + (s.position.y + 0.5) * this.cell;
+    const rot = DIR_ROT[s.facing] ?? 0;
+    const alpha = 0.3 + (s.hp / 100) * 0.7;
+    if (t.kind === 'sprite') {
+      t.obj.setPosition(cx, cy).setRotation(rot).setAlpha(alpha).setVisible(true);
+    } else {
+      t.obj.setPosition(cx, cy).setRotation(rot).setAlpha(alpha).setVisible(true);
+    }
   }
 
   private drawProjectiles(projs: Projectile[]) {
@@ -144,12 +207,16 @@ export class ObserverScene extends Phaser.Scene {
   }
 
   flashHit(side: 'a' | 'b') {
-    const sprite = side === 'a' ? this.spA : this.spB;
+    const t = side === 'a' ? this.tankA : this.tankB;
+    const target = t.kind === 'sprite' ? t.obj : t.obj;
     this.tweens.add({
-      targets: sprite,
-      alpha: { from: sprite.alpha, to: 0.05 },
+      targets: target,
+      alpha: { from: target.alpha, to: 0.05 },
       duration: 60,
       yoyo: true,
     });
   }
 }
+
+// Keep this exported so Watch.tsx can import it unchanged
+export { AVATAR_KEYS };

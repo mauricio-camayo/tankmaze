@@ -79,12 +79,13 @@ type snapshotPayload struct {
 
 // tankStateWS matches the frontend TankState interface.
 type tankStateWS struct {
-	TankID   string   `json:"tankId"`
-	Version  string   `json:"version"`
-	Position pointWS  `json:"position"`
-	Facing   string   `json:"facing"`
-	HP       int      `json:"hp"`
-	Config   configWS `json:"config"`
+	TankID    string   `json:"tankId"`
+	Version   string   `json:"version"`
+	Position  pointWS  `json:"position"`
+	Facing    string   `json:"facing"`
+	HP        int      `json:"hp"`
+	Config    configWS `json:"config"`
+	AvatarURL string   `json:"avatarUrl,omitempty"`
 }
 
 type pointWS struct {
@@ -362,14 +363,14 @@ func (h *handler) handleObserve(ctx context.Context, connID string, raw json.Raw
 			_ = h.sendErr(ctx, connID, "internal_error", "failed to load match maze — try refreshing")
 			return resp(200), nil
 		}
-		tankNameA := h.lookupTankName(ctx, match.TankA)
-		tankNameB := h.lookupTankName(ctx, match.TankB)
+		infoA := h.lookupTankInfo(ctx, match.TankA)
+		infoB := h.lookupTankInfo(ctx, match.TankB)
 		snap := snapshotPayload{
 			MatchID:     match.MatchID,
 			Status:      "ended",
 			Maze:        mazeGrid,
-			TankA:       makeTankStateWS(match.TankA.TankID, match.TankA.Version, pointWS{0, 0}, "N", 100, verA.Config, tankNameA),
-			TankB:       makeTankStateWS(match.TankB.TankID, match.TankB.Version, pointWS{0, 0}, "N", 100, verB.Config, tankNameB),
+			TankA:       makeTankStateWS(match.TankA.TankID, match.TankA.Version, pointWS{0, 0}, "N", 100, verA.Config, infoA),
+			TankB:       makeTankStateWS(match.TankB.TankID, match.TankB.Version, pointWS{0, 0}, "N", 100, verB.Config, infoB),
 			Projectiles: []projWS{},
 			Tick:        0,
 			TotalTicks:  0,
@@ -409,15 +410,15 @@ func (h *handler) handleObserve(ctx context.Context, connID string, raw json.Raw
 		return resp(200), nil
 	}
 
-	tankNameA := h.lookupTankName(ctx, match.TankA)
-	tankNameB := h.lookupTankName(ctx, match.TankB)
+	infoA := h.lookupTankInfo(ctx, match.TankA)
+	infoB := h.lookupTankInfo(ctx, match.TankB)
 
 	snap := snapshotPayload{
 		MatchID:     match.MatchID,
 		Status:      match.Status,
 		Maze:        mazeGrid,
-		TankA:       makeTankStateWS(match.TankA.TankID, match.TankA.Version, pointWS{0, 0}, "N", 100, verA.Config, tankNameA),
-		TankB:       makeTankStateWS(match.TankB.TankID, match.TankB.Version, pointWS{0, 0}, "N", 100, verB.Config, tankNameB),
+		TankA:       makeTankStateWS(match.TankA.TankID, match.TankA.Version, pointWS{0, 0}, "N", 100, verA.Config, infoA),
+		TankB:       makeTankStateWS(match.TankB.TankID, match.TankB.Version, pointWS{0, 0}, "N", 100, verB.Config, infoB),
 		Projectiles: []projWS{},
 		Tick:        0,
 	}
@@ -499,13 +500,26 @@ func (h *handler) streamReplayWithSnapshot(ctx context.Context, connID, s3Key st
 		return fmt.Errorf("decode tick log: %w", err)
 	}
 
-	nameA := tl.Tanks.A.Name
-	if nameA == "" {
-		nameA = tl.Tanks.A.TankID
+	// Resolve display metadata from the tick log + DB (for avatarUrl).
+	replayInfoA := tankInfoWS{Name: tl.Tanks.A.Name}
+	replayInfoB := tankInfoWS{Name: tl.Tanks.B.Name}
+	if t, err := h.store.GetTank(ctx, tl.Tanks.A.TankID); err == nil {
+		replayInfoA.AvatarURL = t.AvatarURL
+		if replayInfoA.Name == "" {
+			replayInfoA.Name = t.Name
+		}
 	}
-	nameB := tl.Tanks.B.Name
-	if nameB == "" {
-		nameB = tl.Tanks.B.TankID
+	if replayInfoA.Name == "" {
+		replayInfoA.Name = tl.Tanks.A.TankID
+	}
+	if t, err := h.store.GetTank(ctx, tl.Tanks.B.TankID); err == nil {
+		replayInfoB.AvatarURL = t.AvatarURL
+		if replayInfoB.Name == "" {
+			replayInfoB.Name = t.Name
+		}
+	}
+	if replayInfoB.Name == "" {
+		replayInfoB.Name = tl.Tanks.B.TankID
 	}
 
 	// Build initial TankState from the first tick that is at or after fromTick.
@@ -517,12 +531,12 @@ func (h *handler) streamReplayWithSnapshot(ctx context.Context, connID, s3Key st
 		initA = makeTankStateWS(
 			tl.Tanks.A.TankID, tl.Tanks.A.Version,
 			pointWS{X: entry.A.Sensors.Position.X, Y: entry.A.Sensors.Position.Y},
-			dirA, entry.A.Sensors.HP, tl.Tanks.A.Config, nameA,
+			dirA, entry.A.Sensors.HP, tl.Tanks.A.Config, replayInfoA,
 		)
 		initB = makeTankStateWS(
 			tl.Tanks.B.TankID, tl.Tanks.B.Version,
 			pointWS{X: entry.B.Sensors.Position.X, Y: entry.B.Sensors.Position.Y},
-			dirB, entry.B.Sensors.HP, tl.Tanks.B.Config, nameB,
+			dirB, entry.B.Sensors.HP, tl.Tanks.B.Config, replayInfoB,
 		)
 		if entry.Tick >= fromTick {
 			break
@@ -575,13 +589,13 @@ func (h *handler) streamReplayWithSnapshot(ctx context.Context, connID, s3Key st
 				tl.Tanks.A.TankID, tl.Tanks.A.Version,
 				pointWS{X: entry.A.Sensors.Position.X, Y: entry.A.Sensors.Position.Y},
 				cardinalFromInt(entry.A.Sensors.Facing), entry.A.Sensors.HP,
-				tl.Tanks.A.Config, nameA,
+				tl.Tanks.A.Config, replayInfoA,
 			),
 			TankB: makeTankStateWS(
 				tl.Tanks.B.TankID, tl.Tanks.B.Version,
 				pointWS{X: entry.B.Sensors.Position.X, Y: entry.B.Sensors.Position.Y},
 				cardinalFromInt(entry.B.Sensors.Facing), entry.B.Sensors.HP,
-				tl.Tanks.B.Config, nameB,
+				tl.Tanks.B.Config, replayInfoB,
 			),
 			Projectiles: projs,
 		}
@@ -636,16 +650,38 @@ func (h *handler) sendErr(ctx context.Context, connID, code, message string) err
 	return h.send(ctx, connID, wsEnvelope{Type: "ERROR", Payload: errMsg{Code: code, Message: message}})
 }
 
+// tankInfoWS holds display metadata resolved from the DB for one match participant.
+type tankInfoWS struct {
+	Name      string
+	AvatarURL string
+}
+
+// lookupTankInfo returns the display name and avatarUrl for a match tank.
+func (h *handler) lookupTankInfo(ctx context.Context, mt db.MatchTank) tankInfoWS {
+	info := tankInfoWS{Name: mt.TankName}
+	if t, err := h.store.GetTank(ctx, mt.TankID); err == nil {
+		if info.Name == "" {
+			info.Name = t.Name
+		}
+		info.AvatarURL = t.AvatarURL
+	}
+	if info.Name == "" {
+		info.Name = mt.TankID
+	}
+	return info
+}
+
 // makeTankStateWS builds a tankStateWS from individual fields.
-func makeTankStateWS(tankID, version string, pos pointWS, facing string, hp int, cfg db.VersionConfig, name string) tankStateWS {
+func makeTankStateWS(tankID, version string, pos pointWS, facing string, hp int, cfg db.VersionConfig, info tankInfoWS) tankStateWS {
 	return tankStateWS{
-		TankID:   tankID,
-		Version:  version,
-		Position: pos,
-		Facing:   facing,
-		HP:       hp,
+		TankID:    tankID,
+		Version:   version,
+		Position:  pos,
+		Facing:    facing,
+		HP:        hp,
+		AvatarURL: info.AvatarURL,
 		Config: configWS{
-			Name:        name,
+			Name:        info.Name,
 			Speed:       cfg.Speed,
 			SensorRange: cfg.SensorRange,
 			Damage:      cfg.Damage,
@@ -678,17 +714,6 @@ func dbWinnerToString(w *int) *string {
 	return &s
 }
 
-// lookupTankName returns the display name for a match tank. Uses TankName from
-// the match record when available; falls back to GetTank, then to TankID.
-func (h *handler) lookupTankName(ctx context.Context, mt db.MatchTank) string {
-	if mt.TankName != "" {
-		return mt.TankName
-	}
-	if t, err := h.store.GetTank(ctx, mt.TankID); err == nil {
-		return t.Name
-	}
-	return mt.TankID
-}
 
 // invertMaze converts engine convention (true=open) to frontend convention (true=wall).
 func invertMaze(cells [][]bool) [][]bool {

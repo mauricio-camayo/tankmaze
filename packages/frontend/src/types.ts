@@ -28,6 +28,7 @@ export interface Tank {
   forkedFromVersion: string | null;
   scoreTransferredTo: string | null;
   scoreTransferredFrom: string | null;
+  avatarUrl?: string;
 }
 
 export interface TankVersion {
@@ -161,6 +162,7 @@ export interface TankState {
   facing: Direction;
   hp: number;
   config: TankConfig;
+  avatarUrl?: string;
 }
 
 export interface Projectile {

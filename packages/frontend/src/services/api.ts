@@ -35,7 +35,7 @@ export const forkTank = (tankId: string, version: string) =>
   request<Tank>(`/tanks?forkFrom=${tankId}&forkVersion=${encodeURIComponent(version)}`, {
     method: 'POST',
   });
-export const updateTank = (tankId: string, updates: { name: string }) =>
+export const updateTank = (tankId: string, updates: { name?: string; avatarUrl?: string }) =>
   request<{ name: string }>(`/tanks/${tankId}`, {
     method: 'PATCH',
     body: JSON.stringify(updates),

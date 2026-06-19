@@ -564,10 +564,17 @@ func (srv *server) compileAITank(name string) error {
 
 	tankID := "__" + name + "__"
 	displayName := strings.ToUpper(name[:1]) + name[1:]
+	aiAvatarURLs := map[string]string{
+		"scout":   "/avatars/tank-14.png",
+		"bruiser": "/avatars/tank-9.png",
+		"ranger":  "/avatars/tank-15.png",
+		"randy":   "/avatars/tank-11.png",
+	}
 	srv.store.putTank(db.Tank{
 		TankID:    tankID,
 		UserID:    aiUserID,
 		Name:      displayName,
+		AvatarURL: aiAvatarURLs[name],
 		CreatedAt: time.Now().Unix(),
 	})
 	srv.store.putVersion(db.TankVersion{

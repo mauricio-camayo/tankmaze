@@ -148,6 +148,23 @@ func (s *Store) UpdateAuthorName(ctx context.Context, tankID, name string) error
 	return err
 }
 
+// UpdateTankAvatarURL sets the avatarUrl field on a tank record.
+func (s *Store) UpdateTankAvatarURL(ctx context.Context, tankID, avatarURL string) error {
+	upd := expression.Set(expression.Name("avatarUrl"), expression.Value(avatarURL))
+	expr, err := expression.NewBuilder().WithUpdate(upd).Build()
+	if err != nil {
+		return fmt.Errorf("build expression: %w", err)
+	}
+	_, err = s.db.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName:                 &s.tanksTable,
+		Key:                       tankKey(tankID),
+		UpdateExpression:          expr.Update(),
+		ExpressionAttributeNames:  expr.Names(),
+		ExpressionAttributeValues: expr.Values(),
+	})
+	return err
+}
+
 // ScanTanksPage returns up to limit tanks starting after the given cursor
 // (the tankId of the last item on the previous page). nextCursor is the tankId
 // of the last item returned, or empty when there are no more pages.

@@ -86,7 +86,8 @@ type submitVersionBody struct {
 }
 
 type updateTankBody struct {
-	Name string `json:"name"`
+	Name      string  `json:"name"`
+	AvatarURL *string `json:"avatarUrl,omitempty"`
 }
 
 type registerVersionBody struct {
@@ -385,6 +386,15 @@ func (h *handler) createTank(ctx context.Context, req events.APIGatewayV2HTTPReq
 
 	tankID := newUUID()
 	now := time.Now().Unix()
+
+	// Carry avatarUrl forward from the fork source.
+	var forkAvatarURL string
+	if forkFrom != "" {
+		if srcTank, err := h.store.GetTank(ctx, forkFrom); err == nil {
+			forkAvatarURL = srcTank.AvatarURL
+		}
+	}
+
 	tank := db.Tank{
 		TankID:            tankID,
 		UserID:            uid,
@@ -394,6 +404,7 @@ func (h *handler) createTank(ctx context.Context, req events.APIGatewayV2HTTPReq
 		LastActiveAt:      now,
 		ForkedFromTankID:  forkFrom,
 		ForkedFromVersion: forkVersion,
+		AvatarURL:         forkAvatarURL,
 	}
 	if err := h.store.PutTank(ctx, tank); err != nil {
 		log.Printf("create tank: %v", err)
@@ -934,17 +945,25 @@ func (h *handler) updateTank(ctx context.Context, req events.APIGatewayV2HTTPReq
 		return errResp(http.StatusBadRequest, "invalid request body"), nil
 	}
 	body.Name = strings.TrimSpace(body.Name)
-	if body.Name == "" {
-		return errResp(http.StatusBadRequest, "name is required"), nil
+	if body.Name == "" && body.AvatarURL == nil {
+		return errResp(http.StatusBadRequest, "name or avatarUrl is required"), nil
 	}
-	if len(body.Name) > maxTankNameLen {
-		return errResp(http.StatusBadRequest, fmt.Sprintf("name must be %d characters or fewer", maxTankNameLen)), nil
+	if body.Name != "" {
+		if len(body.Name) > maxTankNameLen {
+			return errResp(http.StatusBadRequest, fmt.Sprintf("name must be %d characters or fewer", maxTankNameLen)), nil
+		}
+		if err := h.store.UpdateTankName(ctx, tankID, body.Name); err != nil {
+			log.Printf("update tank name %s: %v", tankID, err)
+			return errResp(http.StatusInternalServerError, "internal error"), nil
+		}
 	}
-	if err := h.store.UpdateTankName(ctx, tankID, body.Name); err != nil {
-		log.Printf("update tank name %s: %v", tankID, err)
-		return errResp(http.StatusInternalServerError, "internal error"), nil
+	if body.AvatarURL != nil {
+		if err := h.store.UpdateTankAvatarURL(ctx, tankID, *body.AvatarURL); err != nil {
+			log.Printf("update tank avatar %s: %v", tankID, err)
+			return errResp(http.StatusInternalServerError, "internal error"), nil
+		}
 	}
-	return jsonResp(http.StatusOK, map[string]string{"name": body.Name}), nil
+	return jsonResp(http.StatusOK, map[string]string{"name": tank.Name}), nil
 }
 
 // ---- Score transfer ---------------------------------------------------------

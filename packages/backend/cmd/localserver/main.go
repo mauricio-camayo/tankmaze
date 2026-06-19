@@ -259,6 +259,12 @@ func (srv *server) createTank(w http.ResponseWriter, r *http.Request) {
 
 	tankID := newUUID()
 	now := time.Now().Unix()
+	var forkAvatarURL string
+	if forkFrom != "" {
+		if srcTank, err := srv.store.getTank(forkFrom); err == nil {
+			forkAvatarURL = srcTank.AvatarURL
+		}
+	}
 	tank := db.Tank{
 		TankID:            tankID,
 		UserID:            localUserID,
@@ -267,6 +273,7 @@ func (srv *server) createTank(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:         now,
 		ForkedFromTankID:  forkFrom,
 		ForkedFromVersion: forkVersion,
+		AvatarURL:         forkAvatarURL,
 	}
 	srv.store.putTank(tank)
 
@@ -340,24 +347,30 @@ func (srv *server) updateTank(w http.ResponseWriter, r *http.Request, tankID str
 		return
 	}
 	var body struct {
-		Name string `json:"name"`
+		Name      string  `json:"name"`
+		AvatarURL *string `json:"avatarUrl,omitempty"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonErr(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	body.Name = strings.TrimSpace(body.Name)
-	if body.Name == "" {
-		jsonErr(w, http.StatusBadRequest, "name is required")
+	if body.Name == "" && body.AvatarURL == nil {
+		jsonErr(w, http.StatusBadRequest, "name or avatarUrl is required")
 		return
 	}
-	if len(body.Name) > maxNameLen {
-		jsonErr(w, http.StatusBadRequest, fmt.Sprintf("name must be %d chars or fewer", maxNameLen))
-		return
+	if body.Name != "" {
+		if len(body.Name) > maxNameLen {
+			jsonErr(w, http.StatusBadRequest, fmt.Sprintf("name must be %d chars or fewer", maxNameLen))
+			return
+		}
+		t.Name = body.Name
 	}
-	t.Name = body.Name
+	if body.AvatarURL != nil {
+		t.AvatarURL = *body.AvatarURL
+	}
 	srv.store.putTank(t)
-	jsonOK(w, map[string]string{"name": body.Name})
+	jsonOK(w, map[string]string{"name": t.Name})
 }
 
 func (srv *server) deleteTank(w http.ResponseWriter, _ *http.Request, tankID string) {
