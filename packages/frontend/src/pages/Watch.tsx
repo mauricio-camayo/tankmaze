@@ -143,12 +143,12 @@ export default function Watch() {
           break;
         case 'MATCH_OVER':
           setMatchOver({ winner: event.payload.winner, reason: event.payload.reason });
+          autoPlayRef.current = false;
           if (useMatchStore.getState().snapshot?.status !== 'ended') {
             // Live match ended: stop immediately
             setPlaying(false);
-          } else if (autoPlayRef.current) {
-            // Arrived via pending-poll: all ticks are buffered, start replay
-            autoPlayRef.current = false;
+          } else if (useMatchStore.getState().ticks.length > 0) {
+            // Ended match with buffered ticks: auto-play replay
             setPlaying(true);
           }
           break;
