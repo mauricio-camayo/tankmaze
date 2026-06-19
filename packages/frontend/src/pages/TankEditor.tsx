@@ -67,7 +67,7 @@ function parseExtraImports(src: string): string[] {
     .map(l => l.trim())
     .filter(l => l && !l.includes('tankmaze'))
     .map(l => l.replace(/^"(.*)"$/, '$1'))
-    .filter(Boolean);
+    .filter(pkg => (STDLIB_IMPORTS as readonly string[]).includes(pkg));
 }
 
 // Strip the locked preamble from sources loaded from S3 or old localStorage values.
@@ -92,6 +92,14 @@ function stripPreamble(src: string): string {
   // top-level declaration it's a body-only string (e.g. from localStorage);
   // return it as-is so leading var/const/type declarations are never dropped.
   if (/^(var |const |type |func )/.test(src)) return src;
+  // AI-converted source: single dot-import of SDK with no Config block.
+  // Return everything after the import line so helper functions defined
+  // before the first var block (e.g. randDir in Randy forks) are preserved.
+  const sdkImportSuffix = '\nimport . "github.com/tankmaze/sdk"\n\n';
+  const sdkImportEnd = src.indexOf(sdkImportSuffix);
+  if (sdkImportEnd >= 0) {
+    return src.slice(sdkImportEnd + sdkImportSuffix.length);
+  }
   // Otherwise strip the package/import header by finding the earliest token.
   const idx = Math.min(
     ...['\n\nfunc ', '\n\nvar ', '\n\nconst ', '\n\ntype '].map(t => {

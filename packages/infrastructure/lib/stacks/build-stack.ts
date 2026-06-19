@@ -95,7 +95,7 @@ export class BuildStack extends Stack {
         build: {
           commands: [
             'cd /tmp/build',
-            'CGO_ENABLED=0 GOOS=wasip1 GOARCH=wasm GOTOOLCHAIN=local GONOSUMDB=* GONOSUMCHECK=* GOPROXY=file:///tmp/goproxy go build -mod=mod -o /tmp/tank.wasm .',
+            'CGO_ENABLED=0 GOOS=wasip1 GOARCH=wasm GOTOOLCHAIN=local GONOSUMDB=* GONOSUMCHECK=* GOPROXY=file:///tmp/goproxy go build -mod=mod -o /tmp/tank.wasm . 2>/tmp/build_error.txt',
             'SHA256=$(sha256sum /tmp/tank.wasm | awk \'{print $1}\')',
           ],
         },
