@@ -150,6 +150,7 @@ func (e *Engine) Step(actionA, actionB tankmaze.Action, crashedA, crashedB bool)
 
 	// 2. Check destruction from projectile impacts.
 	if r := e.checkDestroyed(); r != nil {
+		e.tick++ // advance so the death tick has a unique number in the broadcast
 		r.TicksElapsed = e.tick
 		return r
 	}
@@ -165,12 +166,14 @@ func (e *Engine) Step(actionA, actionB tankmaze.Action, crashedA, crashedB bool)
 
 	// 5. Check unrecoverable crashes.
 	if r := e.checkCrashed(); r != nil {
+		e.tick++ // advance so the crash tick has a unique number in the broadcast
 		r.TicksElapsed = e.tick
 		return r
 	}
 
 	// 6. Check destruction from collision damage.
 	if r := e.checkDestroyed(); r != nil {
+		e.tick++ // advance so the death tick has a unique number in the broadcast
 		r.TicksElapsed = e.tick
 		return r
 	}

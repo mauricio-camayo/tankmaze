@@ -26,7 +26,15 @@ export const useMatchStore = create<MatchStore>((set) => ({
   speed: 1,
 
   setSnapshot: (snapshot) => set({ snapshot, currentTick: snapshot.tick, ticks: [] }),
-  applyTickUpdate: (t) => set((s) => ({ ticks: [...s.ticks, t] })),
+  applyTickUpdate: (t) => set((s) => {
+    const idx = s.ticks.findIndex((x) => x.tick === t.tick);
+    if (idx >= 0) {
+      const updated = [...s.ticks];
+      updated[idx] = t;
+      return { ticks: updated };
+    }
+    return { ticks: [...s.ticks, t] };
+  }),
   setCurrentTick: (tick) => set({ currentTick: tick }),
   setPlaying: (isPlaying) => set({ isPlaying }),
   setSpeed: (speed) => set({ speed }),
