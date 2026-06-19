@@ -16,6 +16,13 @@ const DIR_ROT: Record<string, number> = {
   N: -Math.PI / 2,
 };
 
+const DIR_VEC: Record<string, [number, number]> = {
+  N: [0, -1],
+  S: [0,  1],
+  E: [1,  0],
+  W: [-1, 0],
+};
+
 // Canvas fits inside this square; maze is centered within it
 const CANVAS_SIZE = 560;
 const BASE_CELL   = 28; // cell size tank sprites are drawn at
@@ -120,13 +127,19 @@ export class ObserverScene extends Phaser.Scene {
   private drawProjectiles(projs: Projectile[]) {
     this.projGfx.clear();
     const r = this.cell * 0.15;
+    const tracerLen = this.cell * 0.4;
     for (const p of projs) {
-      this.projGfx.fillStyle(p.ownerTankId === this.tankAId ? PROJ_A : PROJ_B, 1);
-      this.projGfx.fillCircle(
-        this.offsetX + (p.position.x + 0.5) * this.cell,
-        this.offsetY + (p.position.y + 0.5) * this.cell,
-        r,
-      );
+      const color = p.ownerTankId === this.tankAId ? PROJ_A : PROJ_B;
+      const cx = this.offsetX + (p.position.x + 0.5) * this.cell;
+      const cy = this.offsetY + (p.position.y + 0.5) * this.cell;
+      this.projGfx.fillStyle(color, 1);
+      this.projGfx.fillCircle(cx, cy, r);
+      const [dx, dy] = DIR_VEC[p.direction] ?? [0, -1];
+      this.projGfx.lineStyle(2, color, 0.7);
+      this.projGfx.beginPath();
+      this.projGfx.moveTo(cx, cy);
+      this.projGfx.lineTo(cx + dx * tracerLen, cy + dy * tracerLen);
+      this.projGfx.strokePath();
     }
   }
 
