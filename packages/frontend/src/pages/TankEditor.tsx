@@ -118,7 +118,7 @@ function latestReady(versions: TankVersion[]): TankVersion | undefined {
   return sortedByAge(versions).find((v) => v.compileStatus === 'ready');
 }
 
-const STDLIB_IMPORTS = ['fmt', 'math', 'math/rand', 'sort'] as const;
+const STDLIB_IMPORTS = ['fmt', 'log', 'math', 'math/rand', 'sort'] as const;
 
 // ── sub-components ───────────────────────────────────────────────────────────
 
@@ -302,7 +302,8 @@ function StatusBar({
       {error && (
         <pre style={{
           background: '#1c0a0a', border: '1px solid #7f1d1d', color: '#fca5a5',
-          borderRadius: 6, padding: '12px 16px', fontSize: 12, overflowX: 'auto',
+          borderRadius: 6, padding: '12px 16px', fontSize: 12,
+          overflowX: 'auto', overflowY: 'auto', maxHeight: '200px',
           margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
         }}>{error}</pre>
       )}

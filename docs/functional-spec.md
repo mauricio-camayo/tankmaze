@@ -125,7 +125,7 @@ Tank code is compiled to WASM and executed by **Wazero** (a pure-Go WASM runtime
 | Go source code size | 200 KB |
 | Filesystem access | None (WASM default) |
 | Network access | None (WASM default) |
-| Allowed imports | `tankmaze` SDK only; `fmt` for log output (capped at 10 lines/tick) |
+| Allowed imports | `tankmaze` SDK (required); optional: `fmt`, `log`, `math`, `math/rand`, `sort` (capped at 10 log lines/tick) |
 | Syscall access | None — WASI syscalls are blocked by Wazero host configuration |
 
 Violations (timeout, panic) are logged and result in an `Idle` action for that tick. Repeated timeouts (>20% of ticks in a match) disqualify the tank from ranked Game Days until the Author submits a fixed version.
@@ -221,7 +221,7 @@ Only one tank per Author can hold a given score lineage. The platform enforces t
    |---|---|---|
    | Static | `Config` stat points sum to 15 | Rejected immediately; no compilation |
    | Static | `Tick` function signature matches SDK | Rejected immediately |
-   | Static | No imports other than `tankmaze` SDK and `fmt` | Rejected immediately |
+   | Static | No imports other than `tankmaze` SDK and approved optional stdlib (`fmt`, `log`, `math`, `math/rand`, `sort`) | Rejected immediately |
    | Compile | `go build` → WASM (`GOOS=wasip1 GOARCH=wasm`) | Compilation error shown in editor |
    | Runtime | Wazero dry-run: 5 ticks of simulated sensor data | Panic / timeout shown in editor |
 
