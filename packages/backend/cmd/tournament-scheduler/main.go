@@ -846,7 +846,21 @@ func updateSlotsFromMatches(slots []db.BracketSlot, matches []db.Match) ([]db.Br
 		}
 
 		// Both real — look up the match result.
-		m := findMatchForPair(matches, a.TankID, b.TankID)
+		// Prefer MatchID lookup: findMatchForPair would match any prior RR game
+		// between the same two tanks (which may have a different result) and
+		// return the wrong record. Slots written by createElimMatches always
+		// carry a MatchID; the pair-search is only a fallback for legacy data.
+		var m *db.Match
+		if a.MatchID != "" {
+			for j := range matches {
+				if matches[j].MatchID == a.MatchID {
+					m = &matches[j]
+					break
+				}
+			}
+		} else {
+			m = findMatchForPair(matches, a.TankID, b.TankID)
+		}
 		if m == nil || m.Status != "ended" || m.Result == nil {
 			allDone = false
 			continue
