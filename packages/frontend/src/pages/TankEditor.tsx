@@ -565,9 +565,22 @@ export default function TankEditor() {
         setSource(srcToSet);
 
         // Extra imports: prefer localStorage, then parse from S3 preamble.
+        // Forks of AI tanks have their own converted source that has stdlib imports
+        // stripped during the AI-to-tank conversion — fall back to parsing from the
+        // fork origin source when own source has no detected stdlib imports.
         const savedImports = localStorage.getItem(`tankmaze-imports-${tankId}`);
         if (savedImports) {
           setExtraImports(JSON.parse(savedImports) as string[]);
+        } else if (t.forkedFromTankId && t.forkedFromVersion) {
+          const fromOwn = parseExtraImports(fetchedRaw);
+          if (fromOwn.length > 0) {
+            setExtraImports(fromOwn);
+          } else {
+            try {
+              const { source: originSrc } = await getVersionSource(t.forkedFromTankId, t.forkedFromVersion);
+              setExtraImports(parseExtraImports(originSrc));
+            } catch { /* no stdlib imports in origin */ }
+          }
         } else if (fetchedRaw) {
           setExtraImports(parseExtraImports(fetchedRaw));
         }

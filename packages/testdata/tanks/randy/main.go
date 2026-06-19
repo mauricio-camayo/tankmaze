@@ -5,6 +5,7 @@ package main
 
 import (
 	"encoding/json"
+	"math/rand"
 	"unsafe"
 
 	tankmaze "github.com/tankmaze/sdk"
@@ -39,20 +40,9 @@ func actionPut(encoded int32)
 
 func encode(a tankmaze.Action) int32 { return int32(a.Type)*10 + int32(a.Direction) }
 
-// Wander state — a simple LCG so Randy has deterministic-but-varied behaviour
-// without importing math/rand (which requires extra SDK stdlib support).
-var seed uint32 = 0xdeadbeef
-
-func nextRand() uint32 {
-	seed ^= seed << 13
-	seed ^= seed >> 17
-	seed ^= seed << 5
-	return seed
-}
-
 // randDir returns a pseudo-random cardinal direction.
 func randDir() tankmaze.Direction {
-	return clockwiseOrder[nextRand()%4]
+	return clockwiseOrder[rand.Intn(4)]
 }
 
 var (
