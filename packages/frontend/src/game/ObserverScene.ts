@@ -62,6 +62,7 @@ export class ObserverScene extends Phaser.Scene {
   private offsetY = 0;
 
   private mazeGfx!: Phaser.GameObjects.Graphics;
+  private sensorGfx!: Phaser.GameObjects.Graphics;
   private projGfx!: Phaser.GameObjects.Graphics;
 
   private tankA!: TankObject;
@@ -81,9 +82,10 @@ export class ObserverScene extends Phaser.Scene {
   create() {
     this.cameras.main.setBackgroundColor(WALL);
     this.mazeGfx = this.add.graphics().setDepth(0);
-    this.projGfx = this.add.graphics().setDepth(1);
-    this.tankA = { kind: 'fallback', obj: makeFallbackSprite(this, TANK_A).setDepth(2) };
-    this.tankB = { kind: 'fallback', obj: makeFallbackSprite(this, TANK_B).setDepth(2) };
+    this.sensorGfx = this.add.graphics().setDepth(1);
+    this.projGfx = this.add.graphics().setDepth(2);
+    this.tankA = { kind: 'fallback', obj: makeFallbackSprite(this, TANK_A).setDepth(3) };
+    this.tankB = { kind: 'fallback', obj: makeFallbackSprite(this, TANK_B).setDepth(3) };
   }
 
   /** Called from Watch.tsx after the MATCH_SNAPSHOT arrives with avatarUrls. */
@@ -111,13 +113,13 @@ export class ObserverScene extends Phaser.Scene {
       existing.obj.destroy();
       const img = this.add.image(0, 0, key)
         .setVisible(false)
-        .setDepth(2);
+        .setDepth(3);
       return { kind: 'sprite', obj: img };
     }
     // Fallback: keep or create container
     if (existing.kind === 'fallback') return existing;
     existing.obj.destroy();
-    return { kind: 'fallback', obj: makeFallbackSprite(this, fallbackColor).setDepth(2) };
+    return { kind: 'fallback', obj: makeFallbackSprite(this, fallbackColor).setDepth(3) };
   }
 
   private scaleTank(t: TankObject, sc: number) {
@@ -170,9 +172,23 @@ export class ObserverScene extends Phaser.Scene {
     tankAId: string,
   ) {
     this.tankAId = tankAId;
+    this.drawSensorRanges(stateA, stateB);
     this.placeTank(this.tankA, stateA);
     this.placeTank(this.tankB, stateB);
     this.drawProjectiles(projectiles);
+  }
+
+  private drawSensorRanges(stateA: TankState, stateB: TankState) {
+    this.sensorGfx.clear();
+    const draw = (s: TankState, color: number) => {
+      const r = s.config.sensorRange * this.cell;
+      const cx = this.offsetX + (s.position.x + 0.5) * this.cell;
+      const cy = this.offsetY + (s.position.y + 0.5) * this.cell;
+      this.sensorGfx.fillStyle(color, 0.12);
+      this.sensorGfx.fillCircle(cx, cy, r);
+    };
+    draw(stateA, TANK_A);
+    draw(stateB, TANK_B);
   }
 
   private placeTank(t: TankObject, s: TankState) {

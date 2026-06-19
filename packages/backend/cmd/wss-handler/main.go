@@ -111,10 +111,58 @@ type projWS struct {
 
 // tickPayload matches the frontend TickUpdate interface.
 type tickPayload struct {
-	Tick        int       `json:"tick"`
-	TankA       tankStateWS `json:"tankA"`
-	TankB       tankStateWS `json:"tankB"`
-	Projectiles []projWS  `json:"projectiles"`
+	Tick        int               `json:"tick"`
+	TankA       tickTankStateWS   `json:"tankA"`
+	TankB       tickTankStateWS   `json:"tankB"`
+	Projectiles []projWS          `json:"projectiles"`
+}
+
+// tickTankStateWS extends tankStateWS with per-tick debug fields (action, sensors, log).
+type tickTankStateWS struct {
+	tankStateWS
+	Action     *actionWS       `json:"action,omitempty"`
+	Sensors    json.RawMessage `json:"sensors,omitempty"`
+	Log        []string        `json:"log,omitempty"`
+	DurationMs int64           `json:"durationMs,omitempty"`
+	Violation  bool            `json:"violation,omitempty"`
+}
+
+type actionWS struct {
+	Type      string `json:"type"`
+	Direction string `json:"direction,omitempty"`
+}
+
+var actionTypeNames = []string{"idle", "move", "rotate", "fire"}
+var moveDirNames = []string{"forward", "left", "right", "backward"}
+
+func buildTickTankStateWS(tankID, version string, e logTankEntry, cfg db.VersionConfig, info tankInfoWS) tickTankStateWS {
+	s := parseSensors(e.Sensors)
+	base := makeTankStateWS(tankID, version,
+		pointWS{X: s.Position.X, Y: s.Position.Y},
+		cardinalFromInt(s.Facing), s.HP, cfg, info,
+	)
+	t := tickTankStateWS{tankStateWS: base}
+	if len(e.Log) > 0 {
+		t.Log = e.Log
+	}
+	if e.DurationMs > 0 {
+		t.DurationMs = e.DurationMs
+	}
+	if e.Violation {
+		t.Violation = true
+	}
+	if len(e.Sensors) > 0 {
+		t.Sensors = e.Sensors
+	}
+	// Convert int ActionType to human-readable string; omit idle actions.
+	if e.Action.Type > 0 && e.Action.Type < len(actionTypeNames) {
+		dir := ""
+		if e.Action.Direction < len(moveDirNames) {
+			dir = moveDirNames[e.Action.Direction]
+		}
+		t.Action = &actionWS{Type: actionTypeNames[e.Action.Type], Direction: dir}
+	}
+	return t
 }
 
 type matchOverStats struct {
@@ -185,14 +233,22 @@ type logProjEntry struct {
 	Owner int    `json:"owner"`
 }
 
-// logTankEntry holds only the fields wss-handler needs from each tank per tick.
-// The match-runner writes the full sensors struct; we decode just what we need.
+// logTankEntry holds one tank's data per tick as written by match-runner.
 type logTankEntry struct {
-	Sensors logSensors `json:"sensors"`
+	Sensors    json.RawMessage `json:"sensors"`   // raw pass-through to frontend
+	Action     logAction       `json:"action"`
+	DurationMs int64           `json:"durationMs"`
+	Violation  bool            `json:"violation"`
+	Log        []string        `json:"log"`
 }
 
-// logSensors mirrors the JSON serialisation of tankmaze.Sensors.
-// Field names are capitalised (no json tags on the SDK struct).
+type logAction struct {
+	Type      int `json:"Type"`      // tankmaze.ActionType: 0=Idle,1=Move,2=Rotate,3=Fire
+	Direction int `json:"Direction"` // tankmaze.MoveDirection: 0=Forward,1=Left,2=Right,3=Backward
+}
+
+// logSensors is a minimal decode of tankmaze.Sensors used only for position/facing/HP.
+// Field names are capitalised to match Go's default JSON serialisation (no json tags on SDK struct).
 type logSensors struct {
 	Facing   int `json:"Facing"`
 	Position struct {
@@ -200,6 +256,13 @@ type logSensors struct {
 		Y int `json:"Y"` // row
 	} `json:"Position"`
 	HP int `json:"HP"`
+}
+
+// parseSensors decodes only the position/facing/HP subset of a raw sensors blob.
+func parseSensors(raw json.RawMessage) logSensors {
+	var s logSensors
+	_ = json.Unmarshal(raw, &s)
+	return s
 }
 
 // logResult mirrors the match result as written by match-runner.
@@ -526,17 +589,17 @@ func (h *handler) streamReplayWithSnapshot(ctx context.Context, connID, s3Key st
 	// Falls back to tick 0 when seeking.
 	var initA, initB tankStateWS
 	for _, entry := range tl.Ticks {
-		dirA := cardinalFromInt(entry.A.Sensors.Facing)
-		dirB := cardinalFromInt(entry.B.Sensors.Facing)
+		sA := parseSensors(entry.A.Sensors)
+		sB := parseSensors(entry.B.Sensors)
 		initA = makeTankStateWS(
 			tl.Tanks.A.TankID, tl.Tanks.A.Version,
-			pointWS{X: entry.A.Sensors.Position.X, Y: entry.A.Sensors.Position.Y},
-			dirA, entry.A.Sensors.HP, tl.Tanks.A.Config, replayInfoA,
+			pointWS{X: sA.Position.X, Y: sA.Position.Y},
+			cardinalFromInt(sA.Facing), sA.HP, tl.Tanks.A.Config, replayInfoA,
 		)
 		initB = makeTankStateWS(
 			tl.Tanks.B.TankID, tl.Tanks.B.Version,
-			pointWS{X: entry.B.Sensors.Position.X, Y: entry.B.Sensors.Position.Y},
-			dirB, entry.B.Sensors.HP, tl.Tanks.B.Config, replayInfoB,
+			pointWS{X: sB.Position.X, Y: sB.Position.Y},
+			cardinalFromInt(sB.Facing), sB.HP, tl.Tanks.B.Config, replayInfoB,
 		)
 		if entry.Tick >= fromTick {
 			break
@@ -584,19 +647,9 @@ func (h *handler) streamReplayWithSnapshot(ctx context.Context, connID, s3Key st
 			}
 		}
 		tick := tickPayload{
-			Tick: entry.Tick,
-			TankA: makeTankStateWS(
-				tl.Tanks.A.TankID, tl.Tanks.A.Version,
-				pointWS{X: entry.A.Sensors.Position.X, Y: entry.A.Sensors.Position.Y},
-				cardinalFromInt(entry.A.Sensors.Facing), entry.A.Sensors.HP,
-				tl.Tanks.A.Config, replayInfoA,
-			),
-			TankB: makeTankStateWS(
-				tl.Tanks.B.TankID, tl.Tanks.B.Version,
-				pointWS{X: entry.B.Sensors.Position.X, Y: entry.B.Sensors.Position.Y},
-				cardinalFromInt(entry.B.Sensors.Facing), entry.B.Sensors.HP,
-				tl.Tanks.B.Config, replayInfoB,
-			),
+			Tick:        entry.Tick,
+			TankA:       buildTickTankStateWS(tl.Tanks.A.TankID, tl.Tanks.A.Version, entry.A, tl.Tanks.A.Config, replayInfoA),
+			TankB:       buildTickTankStateWS(tl.Tanks.B.TankID, tl.Tanks.B.Version, entry.B, tl.Tanks.B.Config, replayInfoB),
 			Projectiles: projs,
 		}
 		if err := h.send(ctx, connID, wsEnvelope{Type: "TICK_UPDATE", Payload: tick}); err != nil {

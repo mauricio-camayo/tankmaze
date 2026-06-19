@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { ObserverScene } from '../game/ObserverScene';
@@ -35,6 +35,16 @@ export default function Watch() {
   const [wsError,   setWsError]   = useState<string | null>(null);
   const [sceneReady, setSceneReady] = useState(false);
   const [matchPending, setMatchPending] = useState(false);
+
+  // §9.6: 'both' for test matches (one side is a builtin AI); null for ranked matches
+  // where ownership requires a userId field not yet in the snapshot payload.
+  const myTankSide = useMemo((): 'a' | 'b' | 'both' | null => {
+    if (!snapshot) return null;
+    const aIsAI = snapshot.tankA.tankId.startsWith('builtin-');
+    const bIsAI = snapshot.tankB.tankId.startsWith('builtin-');
+    if (aIsAI || bIsAI) return 'both';
+    return null;
+  }, [snapshot]);
   const matchPendingRef = useRef(false);
   const snapshotTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollRef        = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -279,6 +289,7 @@ export default function Watch() {
                 isPlaying={isPlaying}
                 speed={speed}
                 matchOver={matchOver}
+                myTankSide={myTankSide}
                 onPlay={() => setPlaying(true)}
                 onPause={() => setPlaying(false)}
                 onStep={handleStep}
