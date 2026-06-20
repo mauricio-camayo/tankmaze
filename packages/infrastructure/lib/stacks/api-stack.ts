@@ -11,6 +11,7 @@ import * as apigwv2authorizers from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import * as scheduler from 'aws-cdk-lib/aws-scheduler';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 import { TableSet, tableEnvVars } from './storage-stack';
 
@@ -21,6 +22,8 @@ interface ApiStackProps extends StackProps {
   codebuildProject: codebuild.Project;
   userPoolId: string;
   userPoolClientId: string;
+  /** CloudFront domain to restrict CORS origins (SEC-CORS). Defaults to '*' when not provided. */
+  frontendDomain?: string;
 }
 
 export class ApiStack extends Stack {
@@ -30,7 +33,7 @@ export class ApiStack extends Stack {
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
-    const { tables, wasmBucket, matchLogsBucket, codebuildProject, userPoolId, userPoolClientId } = props;
+    const { tables, wasmBucket, matchLogsBucket, codebuildProject, userPoolId, userPoolClientId, frontendDomain } = props;
     const backendDir = path.join(__dirname, '../../../backend');
 
     // ---- Helper: build a Go Lambda from cmd/<name> ----------------------
@@ -83,9 +86,11 @@ export class ApiStack extends Stack {
 
     // DLQ for EventBridge Scheduler — failed invocations land here so they are
     // immediately visible via the alarm below (closes the observability gap from bug #119).
+    // INFRA-SQS-ENC: encrypt DLQ at rest using AWS-managed KMS key.
     const schedulerDLQ = new sqs.Queue(this, 'SchedulerDLQ', {
       queueName: 'tankmaze-scheduler-dlq',
       retentionPeriod: Duration.days(14),
+      encryption: sqs.QueueEncryption.KMS_MANAGED,
     });
     schedulerDLQ.addToResourcePolicy(new iam.PolicyStatement({
       principals: [new iam.ServicePrincipal('scheduler.amazonaws.com')],
@@ -333,11 +338,23 @@ export class ApiStack extends Stack {
       },
     });
 
+    // INFRA-APIGW-LOG: access logging for the WebSocket API stage.
+    const wssAccessLogGroup = new logs.LogGroup(this, 'WssAccessLogs', {
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
     const wssStage = new apigwv2.WebSocketStage(this, 'WssStage', {
       webSocketApi: wssApi,
       stageName: 'prod',
       autoDeploy: true,
     });
+    // CDK L2 for WebSocketStage does not expose accessLogSettings natively;
+    // use the underlying CfnStage to wire it.
+    const wssL1 = wssStage.node.defaultChild as apigwv2.CfnStage;
+    (wssL1 as any).accessLogSettings = {
+      destinationArn: wssAccessLogGroup.logGroupArn,
+    };
 
     const apigwEndpoint = `https://${wssApi.apiId}.execute-api.${this.region}.amazonaws.com/${wssStage.stageName}`;
     wssHandler.addEnvironment('APIGW_ENDPOINT', apigwEndpoint);
@@ -356,14 +373,38 @@ export class ApiStack extends Stack {
 
     // ---- HTTP API (REST) -----------------------------------------------
 
+    // INFRA-APIGW-LOG: access logging for the HTTP API stage.
+    const httpAccessLogGroup = new logs.LogGroup(this, 'HttpAccessLogs', {
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    // SEC-CORS: restrict allowed origins to the production CloudFront domain.
+    // Falls back to '*' when frontendDomain is not provided (first deploy before
+    // frontend stack exists). Set props.frontendDomain once the domain is known.
+    const allowOrigins = frontendDomain ? [`https://${frontendDomain}`] : ['*'];
+
     const httpApi = new apigwv2.HttpApi(this, 'HttpApi', {
       apiName: 'tankmaze-http',
       corsPreflight: {
-        allowOrigins: ['*'],
+        allowOrigins,
         allowMethods: [apigwv2.CorsHttpMethod.ANY],
         allowHeaders: ['Content-Type', 'Authorization'],
       },
+      createDefaultStage: false,
     });
+
+    // INFRA-APIGW-LOG: create the $default stage explicitly so we can attach
+    // access log settings.
+    const httpDefaultStage = new apigwv2.HttpStage(this, 'HttpDefaultStage', {
+      httpApi,
+      stageName: '$default',
+      autoDeploy: true,
+    });
+    const httpL1 = httpDefaultStage.node.defaultChild as any;
+    httpL1.accessLogSettings = {
+      destinationArn: httpAccessLogGroup.logGroupArn,
+    };
 
     const tankApiIntegration = new apigwv2integrations.HttpLambdaIntegration(
       'TankApiInteg',
@@ -408,7 +449,7 @@ export class ApiStack extends Stack {
       authorizer: jwtAuthorizer,
     });
 
-    this.httpEndpoint = httpApi.apiEndpoint;
+    this.httpEndpoint = httpDefaultStage.url;
 
     // ---- Outputs -------------------------------------------------------
 

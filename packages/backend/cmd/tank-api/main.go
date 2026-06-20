@@ -68,7 +68,8 @@ import (
 )
 
 const (
-	maxSourceBytes   = 1 * 1024 * 1024 // 1 MiB
+	maxSourceBytes   = 1 * 1024 * 1024  // 1 MiB
+	maxWASMBytes     = 10 * 1024 * 1024 // 10 MiB (SEC-WASM-SIZE)
 	maxTankNameLen   = 64
 	testMatchTTLDays = 7
 	tickLogPresignTTL = 15 * time.Minute
@@ -777,6 +778,22 @@ func (h *handler) promoteVersion(ctx context.Context, req events.APIGatewayV2HTT
 	}
 	if ver.CompileStatus != "ready" {
 		return errResp(http.StatusBadRequest, "version must be compiled (ready) before promotion"), nil
+	}
+
+	// SEC-WASM-SIZE: reject oversized binaries before they enter the major
+	// version track and get loaded by Wazero at match time.
+	if ver.WasmS3Key != "" {
+		headOut, headErr := h.s3.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: aws.String(h.wasmBucket),
+			Key:    aws.String(ver.WasmS3Key),
+		})
+		if headErr != nil {
+			log.Printf("promote: head wasm %s: %v", ver.WasmS3Key, headErr)
+			return errResp(http.StatusInternalServerError, "internal error"), nil
+		}
+		if headOut.ContentLength != nil && *headOut.ContentLength > maxWASMBytes {
+			return errResp(http.StatusUnprocessableEntity, "compiled WASM binary exceeds 10 MiB size limit"), nil
+		}
 	}
 
 	versions, err := h.store.ListVersionsByTank(ctx, tankID)

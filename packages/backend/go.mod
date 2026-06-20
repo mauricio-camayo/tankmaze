@@ -1,6 +1,6 @@
 module github.com/tankmaze/backend
 
-go 1.22
+go 1.22.12
 
 replace github.com/tankmaze/sdk => ../sdk
 

@@ -135,24 +135,31 @@ type actionWS struct {
 var actionTypeNames = []string{"idle", "move", "rotate", "fire"}
 var moveDirNames = []string{"forward", "left", "right", "backward"}
 
-func buildTickTankStateWS(tankID, version string, e logTankEntry, cfg db.VersionConfig, info tankInfoWS) tickTankStateWS {
+// buildTickTankStateWS converts a logTankEntry into the WebSocket payload for one
+// tank. When ranked is true, sensors, memory (embedded in sensors blob), and log
+// lines are omitted — they contain private per-tank state that must not be sent
+// to unauthenticated observers (WS-1 server-side data stripping).
+func buildTickTankStateWS(tankID, version string, e logTankEntry, cfg db.VersionConfig, info tankInfoWS, ranked bool) tickTankStateWS {
 	s := parseSensors(e.Sensors)
 	base := makeTankStateWS(tankID, version,
 		pointWS{X: s.Position.X, Y: s.Position.Y},
 		cardinalFromInt(s.Facing), s.HP, cfg, info,
 	)
 	t := tickTankStateWS{tankStateWS: base}
-	if len(e.Log) > 0 {
-		t.Log = e.Log
-	}
 	if e.DurationMs > 0 {
 		t.DurationMs = e.DurationMs
 	}
 	if e.Violation {
 		t.Violation = true
 	}
-	if len(e.Sensors) > 0 {
-		t.Sensors = e.Sensors
+	// Omit sensors and log for ranked matches — private opponent data (WS-1).
+	if !ranked {
+		if len(e.Log) > 0 {
+			t.Log = e.Log
+		}
+		if len(e.Sensors) > 0 {
+			t.Sensors = e.Sensors
+		}
 	}
 	// Convert int ActionType to human-readable string; omit idle actions.
 	if e.Action.Type > 0 && e.Action.Type < len(actionTypeNames) {
@@ -404,7 +411,8 @@ func (h *handler) handleObserve(ctx context.Context, connID string, raw json.Raw
 		if speed == "" {
 			speed = "1"
 		}
-		if err := h.streamReplayWithSnapshot(ctx, connID, match.TickLogS3Key, fromTick, speed); err != nil {
+		isRanked := match.MatchType == "ranked"
+		if err := h.streamReplayWithSnapshot(ctx, connID, match.TickLogS3Key, fromTick, speed, isRanked); err != nil {
 			log.Printf("observe: stream replay for match %s: %v", match.MatchID, err)
 		}
 		return resp(200), nil
@@ -542,7 +550,9 @@ func (h *handler) handleReplaySpeed(ctx context.Context, connID string, msg clie
 // streamReplayWithSnapshot downloads the gzip tick log from S3, sends a
 // MATCH_SNAPSHOT (with maze from the log), then streams TICK_UPDATE events
 // sleeping between ticks according to speed. Sends MATCH_OVER at the end.
-func (h *handler) streamReplayWithSnapshot(ctx context.Context, connID, s3Key string, fromTick int, speed string) error {
+// ranked controls whether private per-tank fields (sensors, log) are stripped
+// from TICK_UPDATE payloads (WS-1).
+func (h *handler) streamReplayWithSnapshot(ctx context.Context, connID, s3Key string, fromTick int, speed string, ranked bool) error {
 	out, err := h.s3.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(h.matchLogsBucket),
 		Key:    aws.String(s3Key),
@@ -648,8 +658,8 @@ func (h *handler) streamReplayWithSnapshot(ctx context.Context, connID, s3Key st
 		}
 		tick := tickPayload{
 			Tick:        entry.Tick,
-			TankA:       buildTickTankStateWS(tl.Tanks.A.TankID, tl.Tanks.A.Version, entry.A, tl.Tanks.A.Config, replayInfoA),
-			TankB:       buildTickTankStateWS(tl.Tanks.B.TankID, tl.Tanks.B.Version, entry.B, tl.Tanks.B.Config, replayInfoB),
+			TankA:       buildTickTankStateWS(tl.Tanks.A.TankID, tl.Tanks.A.Version, entry.A, tl.Tanks.A.Config, replayInfoA, ranked),
+			TankB:       buildTickTankStateWS(tl.Tanks.B.TankID, tl.Tanks.B.Version, entry.B, tl.Tanks.B.Config, replayInfoB, ranked),
 			Projectiles: projs,
 		}
 		if err := h.send(ctx, connID, wsEnvelope{Type: "TICK_UPDATE", Payload: tick}); err != nil {

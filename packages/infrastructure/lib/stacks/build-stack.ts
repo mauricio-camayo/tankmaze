@@ -32,6 +32,13 @@ export class BuildStack extends Stack {
       ],
     });
 
+    // INFRA-VPC-FLOW: flow logs provide forensic evidence of unexpected traffic
+    // from the isolated build VPC (Trivy AWS-0178).
+    vpc.addFlowLog('FlowLog', {
+      destination: ec2.FlowLogDestination.toCloudWatchLogs(),
+      trafficType: ec2.FlowLogTrafficType.ALL,
+    });
+
     // Gateway endpoints allow the build container to reach S3 and DynamoDB
     // without traversing the public internet.
     vpc.addGatewayEndpoint('S3Endpoint', {
