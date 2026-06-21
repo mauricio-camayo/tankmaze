@@ -921,7 +921,7 @@ export default function GameDayPage() {
         const pageEnd = Math.min(pageStart + PAGE_SIZE, totalRounds);
         const visibleRounds = bracketRounds.slice(pageStart, pageEnd);
         return (
-          <div style={{ ...cardStyle, marginBottom: 20 }}>
+          <div style={{ ...cardStyle, marginBottom: 20, overflowX: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <div style={{ color: '#64748b', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Bracket
