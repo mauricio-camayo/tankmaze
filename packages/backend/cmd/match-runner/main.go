@@ -138,6 +138,7 @@ type tankStateWS struct {
 	Facing   string   `json:"facing"`
 	HP       int      `json:"hp"`
 	Config   configWS `json:"config"`
+	Log      []string `json:"log,omitempty"`
 }
 
 type pointWS struct {
@@ -381,7 +382,7 @@ func (h *handler) handle(ctx context.Context, evt matchEvent) error {
 			Projectiles: logProjs,
 		})
 
-		h.broadcast(ctx, match, verA, verB, state)
+		h.broadcast(ctx, match, verA, verB, state, logsA, logsB)
 
 		if elapsed := time.Since(tickStart); elapsed < tickBudget {
 			select {
@@ -592,7 +593,7 @@ func (h *handler) recordLoadForfeit(ctx context.Context, match db.Match, errA, e
 }
 
 // broadcast sends a TICK_UPDATE event to all live observers for the match.
-func (h *handler) broadcast(ctx context.Context, match db.Match, verA, verB db.TankVersion, state engine.State) {
+func (h *handler) broadcast(ctx context.Context, match db.Match, verA, verB db.TankVersion, state engine.State, logsA, logsB []string) {
 	conns, err := h.store.ListConnectionsByMatch(ctx, match.MatchID)
 	if err != nil {
 		log.Printf("list connections for match %s: %v", match.MatchID, err)
@@ -623,6 +624,7 @@ func (h *handler) broadcast(ctx context.Context, match db.Match, verA, verB db.T
 			Facing:   cardinalStr[state.Tanks[0].Facing],
 			HP:       state.Tanks[0].HP,
 			Config:   versionToConfigWS(verA),
+			Log:      logsA,
 		},
 		TankB: tankStateWS{
 			TankID:   match.TankB.TankID,
@@ -631,6 +633,7 @@ func (h *handler) broadcast(ctx context.Context, match db.Match, verA, verB db.T
 			Facing:   cardinalStr[state.Tanks[1].Facing],
 			HP:       state.Tanks[1].HP,
 			Config:   versionToConfigWS(verB),
+			Log:      logsB,
 		},
 		Projectiles: projs,
 	}

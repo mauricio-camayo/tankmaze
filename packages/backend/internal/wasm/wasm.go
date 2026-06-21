@@ -196,8 +196,8 @@ func LoadBytes(ctx context.Context, wasmBytes []byte) (*Module, error) {
 	modCfg := wazero.NewModuleConfig().
 		WithName("tank").
 		WithStartFunctions().
-		WithStdout(io.Discard).
-		WithStderr(io.Discard)
+		WithStdout(&stderrCapturer{m}).  // capture fmt.Println / os.Stdout
+		WithStderr(&stderrCapturer{m})   // capture log.Println / os.Stderr
 
 	mod, err := m.rt.InstantiateModule(ctx, compiled, modCfg)
 	if err != nil {
@@ -412,6 +412,23 @@ func (m *Module) hostActionPut(_ context.Context, encoded uint32) {
 		logs:   append([]string(nil), m.curLogs...),
 	}
 	m.curReq = nil
+}
+
+// stderrCapturer routes WASM stdout/stderr (e.g. log.Println, fmt.Println) into
+// the per-tick curLogs slice so they appear in TICK_UPDATE log lines.
+// Write is always called from the background WASM goroutine, so no lock is needed.
+type stderrCapturer struct{ m *Module }
+
+func (c *stderrCapturer) Write(p []byte) (n int, err error) {
+	s := string(p)
+	// Trim a single trailing newline that log.Println appends
+	if len(s) > 0 && s[len(s)-1] == '\n' {
+		s = s[:len(s)-1]
+	}
+	if s != "" {
+		c.m.curLogs = append(c.m.curLogs, s)
+	}
+	return len(p), nil
 }
 
 // VerifyChecksum returns an error if the file at path does not match the given
