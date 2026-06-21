@@ -33,6 +33,9 @@ const build   = new BuildStack(app, 'TankmAzeBuild', {
   wasmBucket: storage.wasmBucket,
   tables: storage.tables,
 });
+const frontendDomain = app.node.tryGetContext('frontendDomain') as string | undefined
+  ?? 'dganagmx2mq50.cloudfront.net';
+
 const api = new ApiStack(app, 'TankmAzeApi', {
   env,
   tables: storage.tables,
@@ -41,6 +44,7 @@ const api = new ApiStack(app, 'TankmAzeApi', {
   codebuildProject: build.project,
   userPoolId,
   userPoolClientId,
+  frontendDomain,
 });
 const frontend = new FrontendStack(app, 'TankmAzeFrontend', {
   env,
