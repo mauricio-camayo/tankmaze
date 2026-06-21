@@ -51,13 +51,21 @@ function PhaseRow({ label, phase, scheduledAt }: { label: string; phase: GameDay
   );
 }
 
+function wrapName(raw: string): React.ReactNode {
+  if (raw.length <= 40) return raw;
+  const line1 = raw.slice(0, 40);
+  const rest = raw.slice(40, 80);
+  const line2 = raw.length > 80 ? rest + '…' : rest;
+  return <>{line1}<br />{line2}</>;
+}
+
 function SlotCell({ slot }: { slot: BracketSlot }) {
   const statusColor: Record<string, string> = {
     won: '#4ade80', lost: '#475569', both_lose: '#f87171', playing: '#fbbf24', bye: '#2d2d4e',
   };
   const color = statusColor[slot.status] ?? '#94a3b8';
   const rawName = slot.tankId ? (slot.tankName ?? slot.tankId) : null;
-  const displayName = rawName && rawName.length > 80 ? rawName.slice(0, 80) + '…' : rawName;
+  const displayName = rawName ? wrapName(rawName) : null;
 
   return (
     <div style={{
@@ -66,7 +74,6 @@ function SlotCell({ slot }: { slot: BracketSlot }) {
       background: `${color}08`,
       fontSize: 12, minWidth: 140,
       lineHeight: '16px',
-      wordBreak: 'break-word',
     }}>
       {slot.tankId ? (
         <Link to={`/tanks/${slot.tankId}`} style={{ color, textDecoration: 'none' }}>
@@ -279,7 +286,7 @@ function RRStandingsTable({ group, gi }: {
                   </td>
                   <td style={{ ...tdStyle, textAlign: 'left', padding: '5px 8px' }}>
                     <Link to={`/tanks/${s.tankId}`} style={{ color: '#e2e8f0', textDecoration: 'none' }}>
-                      {name}
+                      {wrapName(name)}
                     </Link>
                   </td>
                   {rows.map((opp, ci) => {
