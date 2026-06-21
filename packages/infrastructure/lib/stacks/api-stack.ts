@@ -391,20 +391,16 @@ export class ApiStack extends Stack {
         allowMethods: [apigwv2.CorsHttpMethod.ANY],
         allowHeaders: ['Content-Type', 'Authorization'],
       },
-      createDefaultStage: false,
     });
 
-    // INFRA-APIGW-LOG: create the $default stage explicitly so we can attach
-    // access log settings.
-    const httpDefaultStage = new apigwv2.HttpStage(this, 'HttpDefaultStage', {
-      httpApi,
-      stageName: '$default',
-      autoDeploy: true,
-    });
-    const httpL1 = httpDefaultStage.node.defaultChild as any;
+    // INFRA-APIGW-LOG: attach access log settings to the auto-created $default
+    // stage via L1 escape hatch (createDefaultStage stays true so we don't
+    // conflict with the existing stage resource in CloudFormation).
+    const httpL1 = httpApi.defaultStage!.node.defaultChild as any;
     httpL1.accessLogSettings = {
       destinationArn: httpAccessLogGroup.logGroupArn,
     };
+    const httpDefaultStage = httpApi.defaultStage!;
 
     const tankApiIntegration = new apigwv2integrations.HttpLambdaIntegration(
       'TankApiInteg',
