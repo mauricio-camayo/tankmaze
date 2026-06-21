@@ -188,7 +188,7 @@ export default function Watch() {
       return;
     }
     sceneRef.current.initMaze(snapshot.maze);
-    sceneRef.current.setAvatarURLs(snapshot.tankA.avatarUrl, snapshot.tankB.avatarUrl);
+    sceneRef.current.setAvatarURLs(snapshot.tankA.avatarUrl, snapshot.tankB.avatarUrl, snapshot.tankA.tankId, snapshot.tankB.tankId);
     sceneRef.current.render(snapshot.tankA, snapshot.tankB, snapshot.projectiles, snapshot.tankA.tankId);
   }, [snapshot, sceneReady]);
 

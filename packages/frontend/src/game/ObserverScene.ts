@@ -35,6 +35,16 @@ function avatarKey(url: string): string | null {
   return m ? `avatar-tank-${m[1]}` : null;
 }
 
+// Deterministic default: same hash as AvatarPicker.tsx's defaultAvatarUrl.
+function defaultAvatarKey(tankId: string): string {
+  const idx = tankId.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % 16;
+  return `avatar-tank-${idx}`;
+}
+
+type TankObject =
+  | { kind: 'sprite'; obj: Phaser.GameObjects.Image }
+  | { kind: 'fallback'; obj: Phaser.GameObjects.Container };
+
 function makeFallbackSprite(
   scene: Phaser.Scene,
   color: number,
@@ -51,10 +61,6 @@ function makeFallbackSprite(
   );
   return scene.add.container(0, 0, [body, arrow]).setVisible(false);
 }
-
-type TankObject =
-  | { kind: 'sprite'; obj: Phaser.GameObjects.Image }
-  | { kind: 'fallback'; obj: Phaser.GameObjects.Container };
 
 export class ObserverScene extends Phaser.Scene {
   private cell    = BASE_CELL;
@@ -88,10 +94,13 @@ export class ObserverScene extends Phaser.Scene {
     this.tankB = { kind: 'fallback', obj: makeFallbackSprite(this, TANK_B).setDepth(3) };
   }
 
-  /** Called from Watch.tsx after the MATCH_SNAPSHOT arrives with avatarUrls. */
-  setAvatarURLs(urlA: string | undefined, urlB: string | undefined) {
-    this.tankA = this.buildTankObject(urlA, TANK_A, this.tankA);
-    this.tankB = this.buildTankObject(urlB, TANK_B, this.tankB);
+  /** Called from Watch.tsx after the MATCH_SNAPSHOT arrives with avatarUrls and tankIds. */
+  setAvatarURLs(
+    urlA: string | undefined, urlB: string | undefined,
+    tankIdA?: string, tankIdB?: string,
+  ) {
+    this.tankA = this.buildTankObject(urlA, tankIdA, TANK_A, this.tankA);
+    this.tankB = this.buildTankObject(urlB, tankIdB, TANK_B, this.tankB);
     // Re-scale to current cell size
     const sc = this.cell / BASE_CELL;
     this.scaleTank(this.tankA, sc);
@@ -100,12 +109,13 @@ export class ObserverScene extends Phaser.Scene {
 
   private buildTankObject(
     url: string | undefined,
+    tankId: string | undefined,
     fallbackColor: number,
     existing: TankObject,
   ): TankObject {
-    const key = url ? avatarKey(url) : null;
+    // Resolve texture key: explicit avatar URL → hash-derived default → rectangle fallback
+    const key = url ? avatarKey(url) : (tankId ? defaultAvatarKey(tankId) : null);
     if (key && this.textures.exists(key)) {
-      // Reuse existing sprite if key matches, otherwise swap
       if (existing.kind === 'sprite') {
         existing.obj.setTexture(key);
         return existing;
@@ -116,7 +126,7 @@ export class ObserverScene extends Phaser.Scene {
         .setDepth(3);
       return { kind: 'sprite', obj: img };
     }
-    // Fallback: keep or create container
+    // Rectangle fallback (only reached if textures somehow not loaded)
     if (existing.kind === 'fallback') return existing;
     existing.obj.destroy();
     return { kind: 'fallback', obj: makeFallbackSprite(this, fallbackColor).setDepth(3) };
