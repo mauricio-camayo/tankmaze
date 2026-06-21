@@ -1225,15 +1225,22 @@ func (h *handler) invokeMatchRunner(ctx context.Context, matchID string, sync bo
 	}
 }
 
+// maxPreCreatedElimRounds must match the maxElimRounds constant in tank-api/main.go.
+// createGameDay always pre-creates exactly this many elimination rules (r1…r5).
+// Any rule numbered higher than the actual round count must be deleted here.
+const maxPreCreatedElimRounds = 5
+
 // rescheduleElimRounds upserts EventBridge Scheduler rules for elimination
-// rounds fromRound+1 through len(gd.Schedule.Elimination). Called after
-// handleEliminationR1 has locked in the actual per-round times so that
-// fallback schedules fire at the right moment even if match-runner callbacks
-// are delayed.
+// rounds fromRound+1 through len(gd.Schedule.Elimination), then deletes any
+// stale pre-created rules (r{N+1}…r5) that are no longer needed. Called after
+// handleEliminationR1 has locked in the actual per-round times.
 func (h *handler) rescheduleElimRounds(ctx context.Context, gd db.GameDay, fromRound int) {
 	if h.schedulerSvc == nil || h.schedulerRoleArn == "" || h.selfArn == "" {
 		return
 	}
+	numRounds := len(gd.Schedule.Elimination)
+
+	// Upsert rules for rounds that are actually needed.
 	for i, ts := range gd.Schedule.Elimination {
 		rn := i + 1
 		if rn <= fromRound {
@@ -1266,7 +1273,48 @@ func (h *handler) rescheduleElimRounds(ctx context.Context, gd db.GameDay, fromR
 			ActionAfterCompletion:      schedulertypes.ActionAfterCompletionDelete,
 		})
 		if err != nil {
-			log.Printf("rescheduleElimRounds %s: %v (ignored)", scheduleName, err)
+			// Rule doesn't exist yet (rounds beyond maxPreCreatedElimRounds for large
+			// tournaments) — create it so it still fires at the right time.
+			var notFound *schedulertypes.ResourceNotFoundException
+			if errors.As(err, &notFound) {
+				_, createErr := h.schedulerSvc.CreateSchedule(ctx, &schedulersvc.CreateScheduleInput{
+					Name:                       aws.String(scheduleName),
+					GroupName:                  aws.String("tankmaze-gamedays"),
+					ScheduleExpression:         aws.String(atExpr),
+					ScheduleExpressionTimezone: aws.String("UTC"),
+					FlexibleTimeWindow:         ftw,
+					Target:                     target,
+					ActionAfterCompletion:      schedulertypes.ActionAfterCompletionDelete,
+				})
+				if createErr != nil {
+					log.Printf("rescheduleElimRounds create %s: %v (ignored)", scheduleName, createErr)
+				}
+			} else {
+				log.Printf("rescheduleElimRounds update %s: %v (ignored)", scheduleName, err)
+			}
+		}
+	}
+
+	// Delete pre-created rules that are no longer needed (stale r{N+1}…r{max}).
+	// These were created unconditionally by createGameDay and would otherwise fire
+	// and incorrectly advance the bracket past the intended final round.
+	maxToDelete := maxPreCreatedElimRounds
+	if numRounds > maxToDelete {
+		maxToDelete = numRounds // nothing to delete beyond what we just upserted
+	}
+	for rn := numRounds + 1; rn <= maxToDelete; rn++ {
+		scheduleName := fmt.Sprintf("%s-elim-r%d", gd.GameDayID, rn)
+		_, err := h.schedulerSvc.DeleteSchedule(ctx, &schedulersvc.DeleteScheduleInput{
+			Name:      aws.String(scheduleName),
+			GroupName: aws.String("tankmaze-gamedays"),
+		})
+		if err != nil {
+			var notFound *schedulertypes.ResourceNotFoundException
+			if !errors.As(err, &notFound) {
+				log.Printf("rescheduleElimRounds delete stale %s: %v (ignored)", scheduleName, err)
+			}
+		} else {
+			log.Printf("rescheduleElimRounds: deleted stale rule %s", scheduleName)
 		}
 	}
 }
