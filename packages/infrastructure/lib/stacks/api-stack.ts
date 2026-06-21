@@ -5,6 +5,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as codebuild from 'aws-cdk-lib/aws-codebuild';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as apigw from 'aws-cdk-lib/aws-apigateway';
 import * as apigwv2 from 'aws-cdk-lib/aws-apigatewayv2';
 import * as apigwv2integrations from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import * as apigwv2authorizers from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
@@ -338,6 +339,18 @@ export class ApiStack extends Stack {
       },
     });
 
+    // INFRA-APIGW-LOG: account-level CloudWatch role required by API Gateway
+    // before any stage can write access logs. This is a one-time account setting.
+    const apigwCwRole = new iam.Role(this, 'ApiGwCwRole', {
+      assumedBy: new iam.ServicePrincipal('apigateway.amazonaws.com'),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonAPIGatewayPushToCloudWatchLogs'),
+      ],
+    });
+    const apigwAccount = new apigw.CfnAccount(this, 'ApiGwAccount', {
+      cloudWatchRoleArn: apigwCwRole.roleArn,
+    });
+
     // INFRA-APIGW-LOG: access logging for the WebSocket API stage.
     const wssAccessLogGroup = new logs.LogGroup(this, 'WssAccessLogs', {
       retention: logs.RetentionDays.ONE_MONTH,
@@ -356,6 +369,7 @@ export class ApiStack extends Stack {
       destinationArn: wssAccessLogGroup.logGroupArn,
       format: JSON.stringify({ requestId: '$context.requestId', ip: '$context.identity.sourceIp', routeKey: '$context.routeKey', status: '$context.status', connectionId: '$context.connectionId', requestTime: '$context.requestTime' }),
     };
+    wssStage.node.addDependency(apigwAccount);
 
     const apigwEndpoint = `https://${wssApi.apiId}.execute-api.${this.region}.amazonaws.com/${wssStage.stageName}`;
     wssHandler.addEnvironment('APIGW_ENDPOINT', apigwEndpoint);
@@ -402,6 +416,7 @@ export class ApiStack extends Stack {
       destinationArn: httpAccessLogGroup.logGroupArn,
       format: JSON.stringify({ requestId: '$context.requestId', ip: '$context.identity.sourceIp', routeKey: '$context.routeKey', status: '$context.status', responseLength: '$context.responseLength', requestTime: '$context.requestTime' }),
     };
+    httpApi.defaultStage!.node.addDependency(apigwAccount);
     const httpDefaultStage = httpApi.defaultStage!;
 
     const tankApiIntegration = new apigwv2integrations.HttpLambdaIntegration(
