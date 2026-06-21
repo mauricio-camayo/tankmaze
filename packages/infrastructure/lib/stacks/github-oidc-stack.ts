@@ -16,6 +16,11 @@ interface GithubOidcStackProps extends StackProps {
  *   pnpm cdk deploy TankmAzeGithubOidc --context githubRepo=<org/repo>
  *
  * Then set the output role ARN as the AWS_DEPLOY_ROLE_ARN GitHub secret.
+ *
+ * Permission model:
+ *   - This role assumes the CDK bootstrap roles (deploy, file-publishing, lookup).
+ *   - The CDK CFN execution role (AdministratorAccess) creates all stack resources.
+ *   - Only the S3 sync and CloudFront invalidation CI steps run under this role directly.
  */
 export class GithubOidcStack extends Stack {
   constructor(scope: Construct, id: string, props: GithubOidcStackProps) {
@@ -48,206 +53,43 @@ export class GithubOidcStack extends Stack {
       description: 'Assumed by GitHub Actions to deploy TankMaze infrastructure',
     });
 
-    // CDK deploy needs broad CloudFormation + resource creation permissions.
-    // Scoped to resources with the tankmaze prefix where possible.
-    deployRole.addManagedPolicy(
-      iam.ManagedPolicy.fromAwsManagedPolicyName('AWSCloudFormationFullAccess'),
-    );
-
+    // CDK bootstrap roles handle all CloudFormation and resource-creation operations.
+    // The CFN execution role (cdk-hnb659fds-cfn-exec-role-*) carries AdministratorAccess
+    // so no service-specific permissions (Lambda, DynamoDB, etc.) are needed here.
+    const cdkQualifier = 'hnb659fds';
     deployRole.addToPolicy(new iam.PolicyStatement({
-      sid: 'LambdaAccess',
-      actions: [
-        'lambda:CreateFunction',
-        'lambda:UpdateFunctionCode',
-        'lambda:UpdateFunctionConfiguration',
-        'lambda:DeleteFunction',
-        'lambda:GetFunction',
-        'lambda:ListFunctions',
-        'lambda:AddPermission',
-        'lambda:RemovePermission',
-        'lambda:TagResource',
-        'lambda:PublishLayerVersion',
+      sid: 'CdkBootstrapRoles',
+      actions: ['sts:AssumeRole'],
+      resources: [
+        `arn:aws:iam::${this.account}:role/cdk-${cdkQualifier}-deploy-role-${this.account}-${this.region}`,
+        `arn:aws:iam::${this.account}:role/cdk-${cdkQualifier}-file-publishing-role-${this.account}-${this.region}`,
+        `arn:aws:iam::${this.account}:role/cdk-${cdkQualifier}-lookup-role-${this.account}-${this.region}`,
       ],
-      resources: ['*'],
     }));
 
+    // Direct S3 access for `aws s3 sync packages/frontend/dist s3://$FRONTEND_BUCKET`
+    // (runs outside CDK, using the deploy role directly).
     deployRole.addToPolicy(new iam.PolicyStatement({
-      sid: 'S3Access',
+      sid: 'FrontendBucketSync',
       actions: [
-        's3:CreateBucket',
-        's3:DeleteBucket',
-        's3:PutBucketPolicy',
-        's3:DeleteBucketPolicy',
-        's3:PutBucketVersioning',
-        's3:PutLifecycleConfiguration',
-        's3:PutBucketTagging',
-        's3:PutBucketCORS',
-        's3:PutBucketWebsite',
-        's3:PutBucketPublicAccessBlock',
-        's3:GetBucketPublicAccessBlock',
-        's3:PutEncryptionConfiguration',
-        's3:GetEncryptionConfiguration',
-        's3:GetBucketLocation',
-        's3:ListBucket',
         's3:PutObject',
         's3:GetObject',
         's3:DeleteObject',
-        's3:GetBucketPolicy',
+        's3:ListBucket',
+        's3:GetBucketLocation',
       ],
-      resources: ['*'],
+      resources: [
+        `arn:aws:s3:::tankmaze*`,
+        `arn:aws:s3:::tankmaze*/*`,
+      ],
     }));
 
+    // Direct CloudFront access for `aws cloudfront create-invalidation`
+    // (runs outside CDK, using the deploy role directly).
     deployRole.addToPolicy(new iam.PolicyStatement({
-      sid: 'DynamoDBAccess',
-      actions: [
-        'dynamodb:CreateTable',
-        'dynamodb:DeleteTable',
-        'dynamodb:DescribeTable',
-        'dynamodb:UpdateTable',
-        'dynamodb:UpdateTimeToLive',
-        'dynamodb:DescribeTimeToLive',
-        'dynamodb:TagResource',
-        'dynamodb:ListTagsOfResource',
-        'dynamodb:DescribeContinuousBackups',
-        'dynamodb:UpdateContinuousBackups',
-      ],
-      resources: ['*'],
-    }));
-
-    deployRole.addToPolicy(new iam.PolicyStatement({
-      sid: 'CognitoAccess',
-      actions: [
-        'cognito-idp:CreateUserPool',
-        'cognito-idp:DeleteUserPool',
-        'cognito-idp:UpdateUserPool',
-        'cognito-idp:DescribeUserPool',
-        'cognito-idp:CreateUserPoolClient',
-        'cognito-idp:DeleteUserPoolClient',
-        'cognito-idp:UpdateUserPoolClient',
-        'cognito-idp:DescribeUserPoolClient',
-        'cognito-idp:CreateGroup',
-        'cognito-idp:DeleteGroup',
-        'cognito-idp:GetGroup',
-        'cognito-idp:ListGroups',
-      ],
-      resources: ['*'],
-    }));
-
-    deployRole.addToPolicy(new iam.PolicyStatement({
-      sid: 'ApiGatewayAccess',
-      actions: ['apigateway:*'],
-      resources: ['*'],
-    }));
-
-    deployRole.addToPolicy(new iam.PolicyStatement({
-      sid: 'CloudFrontAccess',
-      actions: [
-        'cloudfront:CreateDistribution',
-        'cloudfront:UpdateDistribution',
-        'cloudfront:DeleteDistribution',
-        'cloudfront:GetDistribution',
-        'cloudfront:GetDistributionConfig',
-        'cloudfront:CreateInvalidation',
-        'cloudfront:CreateOriginAccessControl',
-        'cloudfront:DeleteOriginAccessControl',
-        'cloudfront:GetOriginAccessControl',
-        'cloudfront:TagResource',
-      ],
-      resources: ['*'],
-    }));
-
-    deployRole.addToPolicy(new iam.PolicyStatement({
-      sid: 'CodeBuildAccess',
-      actions: [
-        'codebuild:CreateProject',
-        'codebuild:UpdateProject',
-        'codebuild:DeleteProject',
-        'codebuild:BatchGetProjects',
-      ],
-      resources: ['*'],
-    }));
-
-    deployRole.addToPolicy(new iam.PolicyStatement({
-      sid: 'EventBridgeSchedulerAccess',
-      actions: [
-        'scheduler:CreateScheduleGroup',
-        'scheduler:DeleteScheduleGroup',
-        'scheduler:GetScheduleGroup',
-        'scheduler:ListScheduleGroups',
-      ],
-      resources: ['*'],
-    }));
-
-    deployRole.addToPolicy(new iam.PolicyStatement({
-      sid: 'IAMAccess',
-      actions: [
-        'iam:CreateRole',
-        'iam:DeleteRole',
-        'iam:GetRole',
-        'iam:UpdateRole',
-        'iam:AttachRolePolicy',
-        'iam:DetachRolePolicy',
-        'iam:PutRolePolicy',
-        'iam:DeleteRolePolicy',
-        'iam:GetRolePolicy',
-        'iam:PassRole',
-        'iam:CreateOpenIDConnectProvider',
-        'iam:DeleteOpenIDConnectProvider',
-        'iam:GetOpenIDConnectProvider',
-        'iam:TagOpenIDConnectProvider',
-        'iam:TagRole',
-      ],
-      resources: ['*'],
-    }));
-
-    deployRole.addToPolicy(new iam.PolicyStatement({
-      sid: 'EC2VpcAccess',
-      actions: [
-        'ec2:CreateVpc',
-        'ec2:DeleteVpc',
-        'ec2:DescribeVpcs',
-        'ec2:ModifyVpcAttribute',
-        'ec2:CreateSubnet',
-        'ec2:DeleteSubnet',
-        'ec2:DescribeSubnets',
-        'ec2:CreateSecurityGroup',
-        'ec2:DeleteSecurityGroup',
-        'ec2:DescribeSecurityGroups',
-        'ec2:AuthorizeSecurityGroupEgress',
-        'ec2:RevokeSecurityGroupEgress',
-        'ec2:CreateVpcEndpoint',
-        'ec2:DeleteVpcEndpoints',
-        'ec2:DescribeVpcEndpoints',
-        'ec2:ModifyVpcEndpoint',
-        'ec2:DescribeRouteTables',
-        'ec2:DescribeAvailabilityZones',
-        'ec2:DescribeAccountAttributes',
-        'ec2:DescribeDhcpOptions',
-        'ec2:CreateTags',
-        'ec2:DeleteTags',
-      ],
-      resources: ['*'],
-    }));
-
-    deployRole.addToPolicy(new iam.PolicyStatement({
-      sid: 'SsmAccess',
-      actions: [
-        'ssm:GetParameter',
-        'ssm:PutParameter',
-        'ssm:DeleteParameter',
-      ],
-      resources: [`arn:aws:ssm:*:${this.account}:parameter/cdk-bootstrap/*`],
-    }));
-
-    deployRole.addToPolicy(new iam.PolicyStatement({
-      sid: 'Route53Access',
-      actions: [
-        'route53:ChangeResourceRecordSets',
-        'route53:GetHostedZone',
-        'route53:ListHostedZones',
-        'route53:ListResourceRecordSets',
-      ],
-      resources: ['*'],
+      sid: 'CloudFrontInvalidation',
+      actions: ['cloudfront:CreateInvalidation'],
+      resources: [`arn:aws:cloudfront::${this.account}:distribution/*`],
     }));
 
     new CfnOutput(this, 'DeployRoleArn', {
