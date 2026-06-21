@@ -1083,7 +1083,7 @@ func (srv *server) addRosterEntry(w http.ResponseWriter, r *http.Request, gameDa
 		jsonErr(w, http.StatusUnprocessableEntity, "version must be a major version (e.g. v1)")
 		return
 	}
-	// AI tanks (builtin-* in production, __scout__/__bruiser__ in localserver)
+	// AI tanks (builtin-* in production, __scout__/__bruiser__/__ranger__/__randy__ in localserver)
 	// may be added more than once so the bracket can be padded with multiple
 	// instances of the same bot.
 	if !isAITankID(body.TankID) {

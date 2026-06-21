@@ -437,10 +437,11 @@ func (s *memStore) deleteGameDay(gameDayID string) {
 }
 
 // isAITankID reports whether tankID belongs to a built-in AI tank.
-// Production tanks use the "builtin-" prefix; localserver uses "__scout__" / "__bruiser__".
+// Production tanks use the "builtin-" prefix; localserver uses "__scout__" / "__bruiser__" / "__ranger__" / "__randy__".
 func isAITankID(tankID string) bool {
 	return strings.HasPrefix(tankID, "builtin-") ||
-		tankID == "__scout__" || tankID == "__bruiser__"
+		tankID == "__scout__" || tankID == "__bruiser__" ||
+		tankID == "__ranger__" || tankID == "__randy__"
 }
 
 func (s *memStore) addRosterEntry(gameDayID, tankID, version, tankName string) {
@@ -450,7 +451,7 @@ func (s *memStore) addRosterEntry(gameDayID, tankID, version, tankName string) {
 	if !ok {
 		return
 	}
-	// AI tanks (builtin-* in production, __scout__/__bruiser__ in localserver)
+	// AI tanks (builtin-* in production, __scout__/__bruiser__/__ranger__/__randy__ in localserver)
 	// may be added more than once; user tanks are deduplicated.
 	if !isAITankID(tankID) {
 		for _, t := range gd.RegisteredTanks {

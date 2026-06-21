@@ -58,6 +58,10 @@ type handler struct {
 	scoutVersion        string
 	bruiserTankID       string
 	bruiserVersion      string
+	rangerTankID        string
+	rangerVersion       string
+	randyTankID         string
+	randyVersion        string
 	schedulerSvc        *schedulersvc.Client
 	schedulerRoleArn    string
 	schedulerDLQArn     string
@@ -88,6 +92,10 @@ func main() {
 		scoutVersion:       os.Getenv("SCOUT_VERSION"),
 		bruiserTankID:      os.Getenv("BRUISER_TANK_ID"),
 		bruiserVersion:     os.Getenv("BRUISER_VERSION"),
+		rangerTankID:       os.Getenv("RANGER_TANK_ID"),
+		rangerVersion:      os.Getenv("RANGER_VERSION"),
+		randyTankID:        os.Getenv("RANDY_TANK_ID"),
+		randyVersion:       os.Getenv("RANDY_VERSION"),
 		schedulerSvc:       schedulersvc.NewFromConfig(cfg),
 		schedulerRoleArn:   os.Getenv("SCHEDULER_INVOKE_ROLE_ARN"),
 		schedulerDLQArn:    os.Getenv("SCHEDULER_DLQ_ARN"),
@@ -230,21 +238,29 @@ func (h *handler) handleRegistrationClose(ctx context.Context, gd db.GameDay) er
 		tanks[i] = db.MatchTank{TankID: e.tank.TankID, Version: e.version.Version, TankName: e.tank.Name}
 	}
 
-	if gd.Autofill && h.scoutTankID != "" && h.bruiserTankID != "" {
+	if gd.Autofill && (h.scoutTankID != "" || h.bruiserTankID != "" || h.rangerTankID != "" || h.randyTankID != "") {
 		target := nextPowerOf2(len(tanks))
 		if target < 8 {
 			target = 8
 		}
-		scoutName, bruiserName := "Scout", "Bruiser"
-		if t, err := h.store.GetTank(ctx, h.scoutTankID); err == nil {
-			scoutName = t.Name
+		botDefs := []struct {
+			id, ver, fallback string
+		}{
+			{h.scoutTankID, h.scoutVersion, "Scout"},
+			{h.bruiserTankID, h.bruiserVersion, "Bruiser"},
+			{h.rangerTankID, h.rangerVersion, "Ranger"},
+			{h.randyTankID, h.randyVersion, "Randy"},
 		}
-		if t, err := h.store.GetTank(ctx, h.bruiserTankID); err == nil {
-			bruiserName = t.Name
-		}
-		bots := []db.MatchTank{
-			{TankID: h.scoutTankID, Version: h.scoutVersion, TankName: scoutName},
-			{TankID: h.bruiserTankID, Version: h.bruiserVersion, TankName: bruiserName},
+		var bots []db.MatchTank
+		for _, bd := range botDefs {
+			if bd.id == "" {
+				continue
+			}
+			name := bd.fallback
+			if t, err := h.store.GetTank(ctx, bd.id); err == nil {
+				name = t.Name
+			}
+			bots = append(bots, db.MatchTank{TankID: bd.id, Version: bd.ver, TankName: name})
 		}
 		for i := 0; len(tanks) < target; i++ {
 			tanks = append(tanks, bots[i%len(bots)])
