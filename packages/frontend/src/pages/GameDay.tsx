@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import Layout, { cardStyle, ghostButtonStyle, primaryButtonStyle } from '../components/Layout';
 import { getGameDay, getTank, addRosterEntry, removeRosterEntry, listAiTanks, adminListTanks, listMaps } from '../services/api';
 import { useAuthStore } from '../store/authStore';
-import type { GameDay, BracketSlot, GameDayPhaseStatus, GameDayGroup, Tank, TankVersion, GameMap } from '../types';
+import type { GameDay, BracketSlot, GameDayPhaseStatus, GameDayGroup, GroupMatchResult, Tank, TankVersion, GameMap } from '../types';
 
 const BRACKET_LABELS: Record<string, string> = {
   r1: 'Elimination R1',
@@ -56,7 +56,8 @@ function SlotCell({ slot }: { slot: BracketSlot }) {
     won: '#4ade80', lost: '#475569', both_lose: '#f87171', playing: '#fbbf24', bye: '#2d2d4e',
   };
   const color = statusColor[slot.status] ?? '#94a3b8';
-  const displayName = slot.tankId ? (slot.tankName ?? slot.tankId) : null;
+  const rawName = slot.tankId ? (slot.tankName ?? slot.tankId) : null;
+  const displayName = rawName && rawName.length > 80 ? rawName.slice(0, 80) + '…' : rawName;
 
   return (
     <div style={{
@@ -65,6 +66,7 @@ function SlotCell({ slot }: { slot: BracketSlot }) {
       background: `${color}08`,
       fontSize: 12, minWidth: 140,
       lineHeight: '16px',
+      wordBreak: 'break-word',
     }}>
       {slot.tankId ? (
         <Link to={`/tanks/${slot.tankId}`} style={{ color, textDecoration: 'none' }}>
@@ -199,8 +201,8 @@ function BracketRound({ name, slots, roundIndex }: { name: string; slots: Bracke
   );
 }
 
-function RRStandingsTable({ group, gi, placementPoints }: {
-  group: GameDayGroup; gi: number; placementPoints: Record<string, number>;
+function RRStandingsTable({ group, gi }: {
+  group: GameDayGroup; gi: number;
 }) {
   const nameMap = new Map<string, string>();
   group.tanks.forEach(({ tankId, tankName }) => { if (tankName) nameMap.set(tankId, tankName); });
@@ -231,62 +233,91 @@ function RRStandingsTable({ group, gi, placementPoints }: {
     );
   }
 
+  // Tank order: sorted by standing rank (same as final display order).
   const rows = [...group.standings!].sort((a, b) => b.points - a.points || b.wins - a.wins);
+
+  // Build a lookup: (rowTankId, colTankId) → GroupMatchResult
+  const resultMap = new Map<string, GroupMatchResult>();
+  (group.matchResults ?? []).forEach((r) => {
+    resultMap.set(`${r.tankAId}:${r.tankBId}`, r);
+    resultMap.set(`${r.tankBId}:${r.tankAId}`, { ...r, winner: r.winner === 'a' ? 'b' : r.winner === 'b' ? 'a' : r.winner });
+  });
 
   const thStyle: React.CSSProperties = {
     color: '#64748b', fontSize: 10, fontWeight: 600, textTransform: 'uppercase',
-    letterSpacing: '0.05em', padding: '0 8px 8px', borderBottom: '1px solid #2d2d4e',
+    letterSpacing: '0.05em', padding: '0 6px 8px', borderBottom: '1px solid #2d2d4e',
+    textAlign: 'center',
   };
   const tdStyle: React.CSSProperties = {
-    padding: '6px 8px', borderBottom: '1px solid #1a1a2e', verticalAlign: 'middle',
+    padding: '5px 6px', borderBottom: '1px solid #1a1a2e', verticalAlign: 'middle', textAlign: 'center',
   };
 
   return (
     <div>
       {groupLabel}
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr>
-            <th style={{ ...thStyle, textAlign: 'center', width: 28 }}>#</th>
-            <th style={{ ...thStyle, textAlign: 'left' }}>Tank</th>
-            <th style={{ ...thStyle, textAlign: 'center', width: 40 }}>Pts</th>
-            <th style={{ ...thStyle, textAlign: 'center', width: 32 }}>W</th>
-            <th style={{ ...thStyle, textAlign: 'center', width: 32 }}>L</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((s, i) => {
-            const name = nameMap.get(s.tankId) ?? s.tankId;
-            const placement = placementPoints[s.tankId];
-            return (
-              <tr key={s.tankId}>
-                <td style={{ ...tdStyle, textAlign: 'center' }}>
-                  <span style={{ color: rankColor(i + 1), fontWeight: 700, fontSize: 13 }}>{i + 1}</span>
-                </td>
-                <td style={tdStyle}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Link to={`/tanks/${s.tankId}`} style={{ color: '#e2e8f0', fontSize: 13, textDecoration: 'none' }}>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr>
+              <th style={{ ...thStyle, textAlign: 'center', width: 24 }}>#</th>
+              <th style={{ ...thStyle, textAlign: 'left', minWidth: 120 }}>Tank</th>
+              {rows.map((_, ci) => (
+                <th key={ci} style={{ ...thStyle, width: 32 }}>{ci + 1}</th>
+              ))}
+              <th style={{ ...thStyle, width: 36 }}>W</th>
+              <th style={{ ...thStyle, width: 36 }}>L</th>
+              <th style={{ ...thStyle, width: 36 }}>PTS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((s, ri) => {
+              const name = nameMap.get(s.tankId) ?? s.tankId;
+              return (
+                <tr key={s.tankId}>
+                  <td style={{ ...tdStyle }}>
+                    <span style={{ color: rankColor(ri + 1), fontWeight: 700 }}>{ri + 1}</span>
+                  </td>
+                  <td style={{ ...tdStyle, textAlign: 'left', padding: '5px 8px' }}>
+                    <Link to={`/tanks/${s.tankId}`} style={{ color: '#e2e8f0', textDecoration: 'none' }}>
                       {name}
                     </Link>
-                    {placement !== undefined && (
-                      <span style={{ color: '#a78bfa', fontSize: 11, fontWeight: 600 }}>+{placement}</span>
-                    )}
-                  </div>
-                </td>
-                <td style={{ ...tdStyle, textAlign: 'center', color: '#a78bfa', fontWeight: 700, fontSize: 14 }}>
-                  {s.points}
-                </td>
-                <td style={{ ...tdStyle, textAlign: 'center', color: '#4ade80', fontSize: 13 }}>
-                  {s.wins}
-                </td>
-                <td style={{ ...tdStyle, textAlign: 'center', color: '#f87171', fontSize: 13 }}>
-                  {s.losses}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                  </td>
+                  {rows.map((opp, ci) => {
+                    if (ri === ci) {
+                      return (
+                        <td key={ci} style={{ ...tdStyle, background: '#0a0a12' }} />
+                      );
+                    }
+                    const r = resultMap.get(`${s.tankId}:${opp.tankId}`);
+                    if (!r || r.winner === '') {
+                      return <td key={ci} style={{ ...tdStyle, color: '#475569' }}>—</td>;
+                    }
+                    // resultMap normalises winner so 'a' always means the row tank won.
+                    const cellInfo =
+                      r.winner === 'both_lose' ? { label: 'B', bg: '#78350f', fg: '#fbbf24' } :
+                      r.winner === 'a'          ? { label: 'W', bg: '#14532d', fg: '#4ade80' } :
+                                                  { label: 'L', bg: '#1e1e2e', fg: '#f87171' };
+                    return (
+                      <td key={ci} style={{ ...tdStyle, background: cellInfo.bg }}>
+                        {r.matchId ? (
+                          <Link to={`/watch?matchId=${r.matchId}`} style={{ color: cellInfo.fg, fontWeight: 700, textDecoration: 'none' }}>
+                            {cellInfo.label}
+                          </Link>
+                        ) : (
+                          <span style={{ color: cellInfo.fg, fontWeight: 700 }}>{cellInfo.label}</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                  <td style={{ ...tdStyle, color: '#4ade80' }}>{s.wins}</td>
+                  <td style={{ ...tdStyle, color: '#f87171' }}>{s.losses}</td>
+                  <td style={{ ...tdStyle, color: '#a78bfa', fontWeight: 700 }}>{s.points}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -651,6 +682,7 @@ export default function GameDayPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [maps, setMaps] = useState<GameMap[]>([]);
+  const [bracketPage, setBracketPage] = useState(0);
   const { user } = useAuthStore();
 
   function reload() {
@@ -858,67 +890,91 @@ export default function GameDayPage() {
         </div>
       )}
 
-      {/* Groups + standings side-by-side */}
-      {(showGroups || standings.length > 0) && (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: showGroups && standings.length > 0 ? '1fr 1fr' : '1fr',
-          gap: 20, marginBottom: 20,
-        }}>
-          {showGroups && (
-            <div style={cardStyle}>
-              <div style={{ color: '#64748b', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 14 }}>
-                Groups
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {(gameDay.groups ?? []).map((group, gi) => (
-                  <RRStandingsTable key={group.groupId} group={group} gi={gi} placementPoints={gameDay.placementPoints ?? {}} />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {standings.length > 0 && (
-            <div style={cardStyle}>
-              <div style={{ color: '#64748b', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 14 }}>
-                Final standings
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {standings.map(([tankId, pts], i) => (
-                  <div key={tankId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 0' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ color: rankColor(i + 1), fontSize: 13, fontWeight: 700, width: 20 }}>{i + 1}</span>
-                      <Link to={`/tanks/${tankId}`} style={{ color: '#94a3b8', fontSize: 13, textDecoration: 'none' }}>
-                        {tankNameMap.get(tankId) ?? tankId}
-                      </Link>
-                    </div>
-                    <span style={{ color: '#a78bfa', fontWeight: 600, fontSize: 13 }}>+{pts} pts</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+      {/* Groups cross-tables */}
+      {showGroups && (
+        <div style={{ ...cardStyle, marginBottom: 20 }}>
+          <div style={{ color: '#64748b', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 14 }}>
+            Groups
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            {(gameDay.groups ?? []).map((group, gi) => (
+              <RRStandingsTable key={group.groupId} group={group} gi={gi} />
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Bracket */}
-      {showBracket && (
-        <div style={{ ...cardStyle, marginBottom: 20 }}>
-          <div style={{ color: '#64748b', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 16 }}>
-            Bracket
+      {/* Bracket with 3-round pagination */}
+      {showBracket && (() => {
+        const totalRounds = bracketRounds.length;
+        const PAGE_SIZE = 3;
+        const maxPage = Math.max(0, totalRounds - PAGE_SIZE + 1 - 1);
+        const clampedPage = Math.min(bracketPage, maxPage);
+        const pageStart = clampedPage;
+        const pageEnd = Math.min(pageStart + PAGE_SIZE, totalRounds);
+        const visibleRounds = bracketRounds.slice(pageStart, pageEnd);
+        return (
+          <div style={{ ...cardStyle, marginBottom: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ color: '#64748b', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Bracket
+              </div>
+              {totalRounds > PAGE_SIZE && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    onClick={() => setBracketPage(Math.max(0, clampedPage - 1))}
+                    disabled={clampedPage === 0}
+                    style={{ ...ghostButtonStyle, padding: '2px 10px', fontSize: 14, opacity: clampedPage === 0 ? 0.3 : 1 }}
+                  >‹</button>
+                  <span style={{ color: '#475569', fontSize: 11 }}>
+                    R{pageStart + 1}–R{pageEnd}
+                  </span>
+                  <button
+                    onClick={() => setBracketPage(Math.min(maxPage, clampedPage + 1))}
+                    disabled={clampedPage >= maxPage}
+                    style={{ ...ghostButtonStyle, padding: '2px 10px', fontSize: 14, opacity: clampedPage >= maxPage ? 0.3 : 1 }}
+                  >›</button>
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', overflow: 'hidden', paddingBottom: 4 }}>
+              {visibleRounds.map(([name, slots], vi) => {
+                const globalIndex = pageStart + vi;
+                return (
+                  <React.Fragment key={name}>
+                    {vi > 0 && (
+                      <BracketConnector
+                        fromRoundIndex={globalIndex - 1}
+                        fromSlots={bracketRounds[globalIndex - 1][1]}
+                        toSlots={slots}
+                      />
+                    )}
+                    <BracketRound name={name} slots={slots} roundIndex={globalIndex} />
+                  </React.Fragment>
+                );
+              })}
+            </div>
           </div>
-          <div style={{ display: 'flex', overflowX: 'auto', paddingBottom: 4 }}>
-            {bracketRounds.map(([name, slots], i) => (
-              <React.Fragment key={name}>
-                {i > 0 && (
-                  <BracketConnector
-                    fromRoundIndex={i - 1}
-                    fromSlots={bracketRounds[i - 1][1]}
-                    toSlots={slots}
-                  />
-                )}
-                <BracketRound name={name} slots={slots} roundIndex={i} />
-              </React.Fragment>
+        );
+      })()}
+
+      {/* Final standings — below all group cross-tables and bracket */}
+      {standings.length > 0 && (
+        <div style={{ ...cardStyle, marginBottom: 20 }}>
+          <div style={{ color: '#64748b', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 14 }}>
+            Final standings
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {standings.map(([tankId, pts], i) => (
+              <div key={tankId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: rankColor(i + 1), fontSize: 13, fontWeight: 700, width: 20 }}>{i + 1}</span>
+                  <Link to={`/tanks/${tankId}`} style={{ color: '#94a3b8', fontSize: 13, textDecoration: 'none' }}>
+                    {tankNameMap.get(tankId) ?? tankId}
+                  </Link>
+                </div>
+                <span style={{ color: '#a78bfa', fontWeight: 600, fontSize: 13 }}>+{pts} pts</span>
+              </div>
             ))}
           </div>
         </div>

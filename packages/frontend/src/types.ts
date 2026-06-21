@@ -114,10 +114,18 @@ export interface GroupStanding {
   points: number;
 }
 
+export interface GroupMatchResult {
+  tankAId: string;
+  tankBId: string;
+  matchId: string;
+  winner: 'a' | 'b' | 'both_lose' | '';
+}
+
 export interface GameDayGroup {
   groupId: string;
   tanks: Array<{ tankId: string; version: string; tankName?: string }>;
   standings?: GroupStanding[];
+  matchResults?: GroupMatchResult[];
 }
 
 export interface GameDay {

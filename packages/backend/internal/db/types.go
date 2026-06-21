@@ -161,11 +161,21 @@ type GroupStanding struct {
 	Points   int    `dynamodbav:"points"             json:"points"`
 }
 
+// GroupMatchResult holds the outcome of one RR match for the cross-table UI.
+type GroupMatchResult struct {
+	TankAID string `dynamodbav:"tankAId" json:"tankAId"`
+	TankBID string `dynamodbav:"tankBId" json:"tankBId"`
+	MatchID string `dynamodbav:"matchId" json:"matchId"`
+	// Winner is "a", "b", "both_lose", or "" (pending/unplayed).
+	Winner string `dynamodbav:"winner" json:"winner"`
+}
+
 // Group is one round-robin group within a Game Day.
 type Group struct {
-	GroupID   string          `dynamodbav:"groupId"             json:"groupId"`
-	Tanks     []MatchTank     `dynamodbav:"tanks"               json:"tanks"`
-	Standings []GroupStanding `dynamodbav:"standings,omitempty" json:"standings,omitempty"`
+	GroupID      string             `dynamodbav:"groupId"               json:"groupId"`
+	Tanks        []MatchTank        `dynamodbav:"tanks"                 json:"tanks"`
+	Standings    []GroupStanding    `dynamodbav:"standings,omitempty"   json:"standings,omitempty"`
+	MatchResults []GroupMatchResult `dynamodbav:"matchResults,omitempty" json:"matchResults,omitempty"`
 }
 
 // GameDay is the item stored in tankmaze-gamedays.

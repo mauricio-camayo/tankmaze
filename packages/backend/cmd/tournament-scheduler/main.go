@@ -385,9 +385,9 @@ func (h *handler) handleEliminationR1(ctx context.Context, gd db.GameDay) error 
 	// Compute standings and qualify tanks.
 	qualifiers := qualifyTanks(gd.Groups, matches, len(gd.RegisteredTanks))
 
-	// Update group standings in the game day record.
+	// Update group standings and match results in the game day record.
 	for i, grp := range gd.Groups {
-		gd.Groups[i].Standings = computeGroupStandings(grp.Tanks, matches)
+		gd.Groups[i].Standings, gd.Groups[i].MatchResults = computeGroupStandings(grp.Tanks, matches)
 	}
 
 	// Globally re-rank qualifiers.
@@ -959,8 +959,9 @@ func lastEliminationRound(gd db.GameDay) (string, db.PhaseStatus, []db.BracketSl
 // ---- Round-robin helpers ----------------------------------------------------
 
 // computeGroupStandings derives wins, losses, and points for each tank in a
-// group from the set of all game day matches.
-func computeGroupStandings(tanks []db.MatchTank, matches []db.Match) []db.GroupStanding {
+// group from the set of all game day matches. It also returns a GroupMatchResult
+// for every intra-group match (including pending ones) for the cross-table UI.
+func computeGroupStandings(tanks []db.MatchTank, matches []db.Match) ([]db.GroupStanding, []db.GroupMatchResult) {
 	// points: win=1, flawless win=2, both_lose=0, loss=0
 	type stats struct{ wins, losses, points int }
 	sm := make(map[string]*stats, len(tanks))
@@ -968,37 +969,48 @@ func computeGroupStandings(tanks []db.MatchTank, matches []db.Match) []db.GroupS
 		sm[t.TankID] = &stats{}
 	}
 
+	var matchResults []db.GroupMatchResult
 	for i := range matches {
 		m := &matches[i]
-		if m.Result == nil {
-			continue
-		}
 		aInGroup := sm[m.TankA.TankID] != nil
 		bInGroup := sm[m.TankB.TankID] != nil
 		if !aInGroup || !bInGroup {
 			continue
 		}
-		switch {
-		case m.Result.Reason == "both_lose":
-			sm[m.TankA.TankID].losses++
-			sm[m.TankB.TankID].losses++
-		case m.Result.Winner != nil && *m.Result.Winner == 0:
-			sm[m.TankA.TankID].wins++
-			pts := 1
-			if m.Result.Flawless {
-				pts = 2
-			}
-			sm[m.TankA.TankID].points += pts
-			sm[m.TankB.TankID].losses++
-		case m.Result.Winner != nil && *m.Result.Winner == 1:
-			sm[m.TankB.TankID].wins++
-			pts := 1
-			if m.Result.Flawless {
-				pts = 2
-			}
-			sm[m.TankB.TankID].points += pts
-			sm[m.TankA.TankID].losses++
+
+		gmr := db.GroupMatchResult{
+			TankAID: m.TankA.TankID,
+			TankBID: m.TankB.TankID,
+			MatchID: m.MatchID,
 		}
+
+		if m.Result != nil {
+			switch {
+			case m.Result.Reason == "both_lose":
+				sm[m.TankA.TankID].losses++
+				sm[m.TankB.TankID].losses++
+				gmr.Winner = "both_lose"
+			case m.Result.Winner != nil && *m.Result.Winner == 0:
+				sm[m.TankA.TankID].wins++
+				pts := 1
+				if m.Result.Flawless {
+					pts = 2
+				}
+				sm[m.TankA.TankID].points += pts
+				sm[m.TankB.TankID].losses++
+				gmr.Winner = "a"
+			case m.Result.Winner != nil && *m.Result.Winner == 1:
+				sm[m.TankB.TankID].wins++
+				pts := 1
+				if m.Result.Flawless {
+					pts = 2
+				}
+				sm[m.TankB.TankID].points += pts
+				sm[m.TankA.TankID].losses++
+				gmr.Winner = "b"
+			}
+		}
+		matchResults = append(matchResults, gmr)
 	}
 
 	standings := make([]db.GroupStanding, len(tanks))
@@ -1013,7 +1025,7 @@ func computeGroupStandings(tanks []db.MatchTank, matches []db.Match) []db.GroupS
 			Points:   s.points,
 		}
 	}
-	return standings
+	return standings, matchResults
 }
 
 // qualifyTanks determines which tanks advance to the elimination bracket from
@@ -1021,7 +1033,7 @@ func computeGroupStandings(tanks []db.MatchTank, matches []db.Match) []db.GroupS
 func qualifyTanks(groups []db.Group, matches []db.Match, totalTanks int) []db.MatchTank {
 	var qualified []db.MatchTank
 	for _, grp := range groups {
-		standings := computeGroupStandings(grp.Tanks, matches)
+		standings, _ := computeGroupStandings(grp.Tanks, matches)
 		// Compute aggregate stats for tiebreaking.
 		type augmented struct {
 			db.GroupStanding
@@ -1079,7 +1091,7 @@ func globalRerank(qualifiers []db.MatchTank, groups []db.Group, matches []db.Mat
 	type totals struct{ pts, dmg, moves int }
 	tm := make(map[string]totals, len(qualifiers))
 	for _, grp := range groups {
-		standings := computeGroupStandings(grp.Tanks, matches)
+		standings, _ := computeGroupStandings(grp.Tanks, matches)
 		for _, s := range standings {
 			tm[s.TankID] = totals{pts: s.Points}
 		}
