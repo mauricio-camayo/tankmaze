@@ -35,6 +35,9 @@ export default function Watch() {
   const [wsError,   setWsError]   = useState<string | null>(null);
   const [sceneReady, setSceneReady] = useState(false);
   const [matchPending, setMatchPending] = useState(false);
+  // Set to true when MATCH_OVER triggers auto-play but sceneReady is still false.
+  // Cleared once sceneReady fires and setPlaying(true) is dispatched.
+  const [pendingAutoPlay, setPendingAutoPlay] = useState(false);
 
   // §9.6: 'both' for test matches (one side is a builtin AI); null for ranked matches
   // where ownership requires a userId field not yet in the snapshot payload.
@@ -101,6 +104,7 @@ export default function Watch() {
     setMatchOver(null);
     setWsError(null);
     setPending(false);
+    setPendingAutoPlay(false);
     autoPlayRef.current = false;
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
 
@@ -162,8 +166,11 @@ export default function Watch() {
             // Live match ended: stop immediately
             setPlaying(false);
           } else if (useMatchStore.getState().ticks.length > 0) {
-            // Ended match with buffered ticks: auto-play replay
-            setPlaying(true);
+            // Ended match with buffered ticks: defer auto-play until the Phaser scene
+            // has finished its create() cycle (sceneReady). Calling setPlaying(true)
+            // here races with preload() still loading avatar images — the render effect
+            // fires before initMaze() is called, so tanks render with default 0,0 offsets.
+            setPendingAutoPlay(true);
           }
           break;
         case 'ERROR':
@@ -217,6 +224,15 @@ export default function Watch() {
 
     return () => ctrl.stop();
   }, [isPlaying, speed]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Deferred auto-play: wait for scene ready ──────────────────────────
+  // Fires when MATCH_OVER set pendingAutoPlay AND sceneReady becomes true.
+  // Works regardless of which condition arrives first.
+  useEffect(() => {
+    if (!sceneReady || !pendingAutoPlay || ticksRef.current.length === 0) return;
+    setPendingAutoPlay(false);
+    setPlaying(true);
+  }, [sceneReady, pendingAutoPlay]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── HUD handlers ───────────────────────────────────────────────────────
   function handleStep() {
