@@ -354,6 +354,7 @@ export class ApiStack extends Stack {
     const wssL1 = wssStage.node.defaultChild as apigwv2.CfnStage;
     (wssL1 as any).accessLogSettings = {
       destinationArn: wssAccessLogGroup.logGroupArn,
+      format: JSON.stringify({ requestId: '$context.requestId', ip: '$context.identity.sourceIp', routeKey: '$context.routeKey', status: '$context.status', connectionId: '$context.connectionId', requestTime: '$context.requestTime' }),
     };
 
     const apigwEndpoint = `https://${wssApi.apiId}.execute-api.${this.region}.amazonaws.com/${wssStage.stageName}`;
@@ -399,6 +400,7 @@ export class ApiStack extends Stack {
     const httpL1 = httpApi.defaultStage!.node.defaultChild as any;
     httpL1.accessLogSettings = {
       destinationArn: httpAccessLogGroup.logGroupArn,
+      format: JSON.stringify({ requestId: '$context.requestId', ip: '$context.identity.sourceIp', routeKey: '$context.routeKey', status: '$context.status', responseLength: '$context.responseLength', requestTime: '$context.requestTime' }),
     };
     const httpDefaultStage = httpApi.defaultStage!;
 
