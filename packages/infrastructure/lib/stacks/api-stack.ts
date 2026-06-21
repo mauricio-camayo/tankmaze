@@ -445,7 +445,7 @@ export class ApiStack extends Stack {
       authorizer: jwtAuthorizer,
     });
 
-    this.httpEndpoint = httpDefaultStage.url;
+    this.httpEndpoint = httpApi.apiEndpoint;
 
     // ---- Outputs -------------------------------------------------------
 
