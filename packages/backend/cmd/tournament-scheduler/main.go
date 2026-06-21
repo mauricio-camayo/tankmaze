@@ -439,7 +439,9 @@ func (h *handler) handleEliminationR1(ctx context.Context, gd db.GameDay) error 
 		}
 
 		// Upsert EventBridge schedules for r2-rN now that we know actual round times.
-		h.rescheduleElimRounds(ctx, gd, 1)
+		// rescheduleElimRounds also updates gd.Schedule.Final if the last elim round
+		// would fire after the final, so gd must be passed by pointer.
+		h.rescheduleElimRounds(ctx, &gd, 1)
 	}
 
 	// Seed the bracket.
@@ -1231,10 +1233,12 @@ func (h *handler) invokeMatchRunner(ctx context.Context, matchID string, sync bo
 const maxPreCreatedElimRounds = 5
 
 // rescheduleElimRounds upserts EventBridge Scheduler rules for elimination
-// rounds fromRound+1 through len(gd.Schedule.Elimination), then deletes any
-// stale pre-created rules (r{N+1}…r5) that are no longer needed. Called after
-// handleEliminationR1 has locked in the actual per-round times.
-func (h *handler) rescheduleElimRounds(ctx context.Context, gd db.GameDay, fromRound int) {
+// rounds fromRound+1 through len(gd.Schedule.Elimination), deletes any stale
+// pre-created rules (r{N+1}…r5) that are no longer needed, and pushes the
+// final EventBridge rule forward if the last elimination round + 5 min buffer
+// would fire after the currently-scheduled final. gd is taken by pointer so
+// that any finalAt update is visible to the caller for persistence.
+func (h *handler) rescheduleElimRounds(ctx context.Context, gd *db.GameDay, fromRound int) {
 	if h.schedulerSvc == nil || h.schedulerRoleArn == "" || h.selfArn == "" {
 		return
 	}
@@ -1315,6 +1319,24 @@ func (h *handler) rescheduleElimRounds(ctx context.Context, gd db.GameDay, fromR
 			}
 		} else {
 			log.Printf("rescheduleElimRounds: deleted stale rule %s", scheduleName)
+		}
+	}
+
+	// Ensure the final fires after the last elimination round + 5 min buffer.
+	// This catches any case where the stored finalAt is earlier than the last
+	// elim round (e.g. an admin patch that moved finalAt without updating elim
+	// times, or a stale schedule from a previous run).
+	if numRounds > 0 {
+		if lastElimAt, parseErr := time.Parse(time.RFC3339, gd.Schedule.Elimination[numRounds-1]); parseErr == nil {
+			candidate := lastElimAt.Add(5 * time.Minute)
+			if finalAt, parseErr2 := time.Parse(time.RFC3339, gd.Schedule.Final); parseErr2 == nil {
+				if candidate.After(finalAt) {
+					log.Printf("rescheduleElimRounds: final at %s is before last elim round + buffer (%s) — rescheduling final for %s",
+						gd.Schedule.Final, candidate.UTC().Format(time.RFC3339), gd.GameDayID)
+					gd.Schedule.Final = candidate.UTC().Format(time.RFC3339)
+					h.rescheduleFinal(ctx, *gd)
+				}
+			}
 		}
 	}
 }
