@@ -79,26 +79,73 @@ func tick(s tankmaze.Sensors) tankmaze.Action {
 		hasLastKnown = true
 	}
 
-	// ---- Priority 1: fire when aimed and ready ----
-	if s.ProximityAlert && s.FireCooldown == 0 && s.OpponentBearing != nil {
+	// ---- Enemy visible: maintain 4-5 cell engagement distance ----
+	//
+	// WallDistances[toward] gives open cells in the enemy's cardinal direction.
+	// When the corridor toward the enemy is short the enemy is close (retreat);
+	// when it is long they are far (advance); 4-5 cells is the ideal standoff.
+	if s.OpponentBearing != nil {
 		toward := cardinalFromBearing(*s.OpponentBearing)
-		if s.Facing == toward {
-			return tankmaze.Action{Type: tankmaze.Fire}
+		away := oppositeDir(toward)
+		clearPath := s.WallDistances[toward]
+
+		switch {
+		case clearPath < 4:
+			// Too close — retreat while shooting opportunistically.
+			if s.FireCooldown == 0 && s.Facing == toward {
+				return tankmaze.Action{Type: tankmaze.Fire}
+			}
+			retreatDir := pickDir(s, away)
+			if s.MoveCooldown == 0 {
+				if s.Facing != retreatDir {
+					return rotateToward(s.Facing, retreatDir)
+				}
+				return tankmaze.Action{Type: tankmaze.Move, Direction: tankmaze.Forward}
+			}
+			// Move on cooldown: face enemy and fire if ready.
+			if s.FireCooldown == 0 {
+				if s.Facing != toward {
+					return rotateToward(s.Facing, toward)
+				}
+				return tankmaze.Action{Type: tankmaze.Fire}
+			}
+			return tankmaze.Action{Type: tankmaze.Idle}
+
+		case clearPath > 5:
+			// Too far — close the gap; fire en route if already aimed.
+			chosen := pickDir(s, toward)
+			if s.Facing == chosen {
+				if s.FireCooldown == 0 {
+					return tankmaze.Action{Type: tankmaze.Fire}
+				}
+				if s.MoveCooldown == 0 {
+					return tankmaze.Action{Type: tankmaze.Move, Direction: tankmaze.Forward}
+				}
+				return tankmaze.Action{Type: tankmaze.Idle}
+			}
+			return rotateToward(s.Facing, chosen)
+
+		default:
+			// 4 ≤ clearPath ≤ 5: ideal standoff — aim and fire; strafe on reload.
+			if s.FireCooldown == 0 {
+				if s.Facing == toward {
+					return tankmaze.Action{Type: tankmaze.Fire}
+				}
+				return rotateToward(s.Facing, toward)
+			}
+			// Strafe perpendicular while reloading to make Ranger harder to hit.
+			strafeDir := pickDir(s, cwDir(toward))
+			if s.MoveCooldown == 0 && strafeDir != away {
+				if s.Facing != strafeDir {
+					return rotateToward(s.Facing, strafeDir)
+				}
+				return tankmaze.Action{Type: tankmaze.Move, Direction: tankmaze.Forward}
+			}
+			return tankmaze.Action{Type: tankmaze.Idle}
 		}
-		return rotateToward(s.Facing, toward)
 	}
 
-	// ---- Priority 2: aim at long-range opponent ----
-	// Ranger's sensor range lets it target opponents before ProximityAlert fires.
-	if s.OpponentBearing != nil && s.FireCooldown == 0 {
-		toward := cardinalFromBearing(*s.OpponentBearing)
-		if s.Facing == toward {
-			return tankmaze.Action{Type: tankmaze.Fire}
-		}
-		return rotateToward(s.Facing, toward)
-	}
-
-	// ---- Priority 3: reposition toward last known location ----
+	// ---- No enemy in range: reposition toward last known location ----
 	if hasLastKnown {
 		dr := lastKnownRow - s.Position.Y
 		dc := lastKnownCol - s.Position.X
@@ -116,7 +163,6 @@ func tick(s tankmaze.Sensors) tankmaze.Action {
 	}
 
 	// ---- Fallback: systematic patrol ----
-	// Walk in a straight line; turn when hitting a wall or leg is complete.
 	patrolSteps--
 	if patrolSteps <= 0 || s.WallDistances[patrolDir] == 0 {
 		patrolDir = cwDir(patrolDir)
