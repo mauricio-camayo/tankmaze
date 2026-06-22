@@ -165,6 +165,19 @@ jobs:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: us-east-1
 
+      - name: Build AI tank WASMs
+        run: |
+          for verdir in packages/infrastructure/lib/ai-tanks/*/*/; do
+            tank=$(basename $(dirname $verdir))
+            ver=$(basename $verdir)
+            (
+              cd packages/testdata/tanks/$tank
+              GOOS=wasip1 GOARCH=wasm GOWORK=off \
+                go build -o ../../../infrastructure/lib/ai-tanks/$tank/$ver/tank.wasm .
+            )
+            echo "compiled $tank/$ver"
+          done
+
       - name: Deploy infrastructure
         working-directory: packages/infrastructure
         env:
