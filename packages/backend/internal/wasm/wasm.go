@@ -55,6 +55,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"regexp"
 	"time"
 
 	"github.com/tetratelabs/wazero"
@@ -414,6 +415,9 @@ func (m *Module) hostActionPut(_ context.Context, encoded uint32) {
 	m.curReq = nil
 }
 
+// goLogPrefix matches the default Go log timestamp: "2006/01/02 15:04:05 "
+var goLogPrefix = regexp.MustCompile(`^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} `)
+
 // stderrCapturer routes WASM stdout/stderr (e.g. log.Println, fmt.Println) into
 // the per-tick curLogs slice so they appear in TICK_UPDATE log lines.
 // Write is always called from the background WASM goroutine, so no lock is needed.
@@ -425,6 +429,8 @@ func (c *stderrCapturer) Write(p []byte) (n int, err error) {
 	if len(s) > 0 && s[len(s)-1] == '\n' {
 		s = s[:len(s)-1]
 	}
+	// Strip the default Go log timestamp prefix (tanks that call log.SetFlags(0) are unaffected)
+	s = goLogPrefix.ReplaceAllString(s, "")
 	if s != "" {
 		c.m.curLogs = append(c.m.curLogs, s)
 	}

@@ -11,7 +11,7 @@ You don't play TankMaze. You program your tank, submit it, and watch it fight.
 - **Write a tank in Go**: implement a `Tick(sensors Sensors) Action` function. It runs every 100 ms and returns one action (move, rotate, fire, scan, or idle). Package-level variables persist across ticks — that's your tank's memory.
 - **Allocate stats**: distribute exactly 15 points across speed, sensor range, damage, armor, and fire rate. Fast tanks see less; hard-hitting tanks move slowly.
 - **Develop with versions**: saves create minor versions (`v0.1`, `v0.2`, …). Promote to a major version (`v1`, `v2`, …) when the tank is competition-ready.
-- **Test freely**: pit your tank against built-in AI opponents (Scout, Ranger, Bruiser) or any of your own other tanks — no match limits, no ranking impact.
+- **Test freely**: pit your tank against built-in AI opponents (Scout, Ranger, Bruiser, Randy) or any of your own other tanks — no match limits, no ranking impact.
 - **Register for Game Day**: a configurable scheduled tournament (cron-based) where registered tanks compete in round-robin groups of 8, followed by a single-elimination bracket seeded best-vs-worst.
 - **Earn global ranking points**: Game Day placement awards points based on field size and finish position. Points remain valid for a configurable period (default: 1 year), forming a rolling global leaderboard.
 - **Replay and debug**: every match is recorded tick-by-tick. Replay at any speed (0.25× to 8×, or step-by-step), inspect sensor readings, memory state, and `fmt` output per tick. Export the full match as JSON for offline analysis.
@@ -86,7 +86,7 @@ Open **http://localhost:5173**. You are auto-logged in as `local` — no account
 - Create a tank and write its AI in the Monaco editor
 - Save & Validate — compiles your Go source to WASM (uses `package tank` + `Tick` style or full `package main`)
 - Promote a minor version to a major version
-- Test vs AI — launches a live match against Scout or Bruiser and streams it to the Phaser viewer
+- Test vs AI — launches a live match against Scout, Bruiser, Ranger, or Randy and streams it to the Phaser viewer
 - Watch the replay with speed controls (0.25×–8×, step-by-step)
 
 The `.env.local` file in `packages/frontend/` points the frontend at `localhost:8080` and sets `VITE_LOCAL_DEV=true`. Remove or rename it to restore normal Cognito auth.
@@ -113,4 +113,22 @@ npx cdk deploy --all --context domainName=tankmaze.example.com
 
 ## Status
 
-Backend, infrastructure, and local dev server complete. Game Day scheduling and CI/CD pipeline are next.
+The platform is complete and production-deployed on AWS. All core features are live:
+
+- Tank authoring: Monaco editor with hidden preamble, optional stdlib imports (`fmt`, `log`, `math`, `math/rand`, `sort`), browser-side Go syntax pre-check, and CodeBuild layer caching
+- Version lifecycle: minor/major versioning, fork flow with score transfer, unsaved-changes guard
+- AI reference tanks: Scout, Bruiser, Ranger, Randy — all seeded as real DB records and forkable
+- Static maps: Open, Donut, X, Rooms, Double Spiral — hand-crafted layouts selectable in test matches
+- Game Day scheduling: EventBridge cron triggers, round-robin pot seeding, up to 5 elimination rounds (R1–R5), single-elimination bracket with bye propagation, placement points formula
+- Global leaderboard with 1-year point validity window
+- Observer / replay: Phaser canvas, sensor range overlays, avatar sprites, bracket connector lines, Watch links per match, full debug panel (sensor indicators, memory JSON, console output)
+- Admin panel: user management (disable, role toggle, delete), tank management (edit, force-delete), game day roster management, auto-fill bracket with all four AI tanks
+- Tank avatars: 16 built-in sprites, per-tank selection, CloudFront-served uploads (API available)
+- Security: SAST (gosec, staticcheck, semgrep), vulnerability scanning (govulncheck, trivy), secrets detection (trufflehog, gitleaks), BOLA and JWT tamper testing completed
+- CI/CD: GitHub Actions with OIDC AWS auth; automated deploy on push to main; AI tank WASMs compiled from source on every deploy
+
+## Image Credits
+
+The impact and destroyed-tank sprite animations bundled in `packages/frontend/public/animations/` are derived from:
+
+> [Animation Sprite Sheet of Bomb Explosion Sequence](https://www.vecteezy.com/vector-art/13224424-animation-sprite-sheet-of-bomb-explosion-sequence) by Vecteezy

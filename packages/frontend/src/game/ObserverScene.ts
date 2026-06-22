@@ -75,6 +75,15 @@ export class ObserverScene extends Phaser.Scene {
   private tankB!: TankObject;
   private tankAId = '';
 
+  // Animation state
+  private prevProjs: Projectile[] = [];
+  private prevHpA = 100;
+  private prevHpB = 100;
+  private destroyedA: Phaser.GameObjects.Image | null = null;
+  private destroyedB: Phaser.GameObjects.Image | null = null;
+  private destroyTimerA: Phaser.Time.TimerEvent | null = null;
+  private destroyTimerB: Phaser.Time.TimerEvent | null = null;
+
   constructor() {
     super({ key: 'ObserverScene' });
   }
@@ -83,6 +92,9 @@ export class ObserverScene extends Phaser.Scene {
     for (let i = 0; i < 16; i++) {
       this.load.image(`avatar-tank-${i}`, `/avatars/tank-${i}.png`);
     }
+    this.load.image('impact',      '/animations/impact.png');
+    this.load.image('destroyed-0', '/animations/destroyed-0.png');
+    this.load.image('destroyed-1', '/animations/destroyed-1.png');
   }
 
   create() {
@@ -173,6 +185,19 @@ export class ObserverScene extends Phaser.Scene {
     const sc = this.cell / BASE_CELL;
     this.scaleTank(this.tankA, sc);
     this.scaleTank(this.tankB, sc);
+
+    // Reset animation state for the new match
+    this.destroyedA?.destroy();
+    this.destroyedB?.destroy();
+    this.destroyedA = null;
+    this.destroyedB = null;
+    this.destroyTimerA?.remove();
+    this.destroyTimerB?.remove();
+    this.destroyTimerA = null;
+    this.destroyTimerB = null;
+    this.prevProjs = [];
+    this.prevHpA = 100;
+    this.prevHpB = 100;
   }
 
   render(
@@ -182,10 +207,25 @@ export class ObserverScene extends Phaser.Scene {
     tankAId: string,
   ) {
     this.tankAId = tankAId;
+
+    // Detect destroyed tanks (HP drops to 0)
+    if (this.prevHpA > 0 && stateA.hp <= 0) {
+      this.playDestroyed(stateA.position, 'a');
+    }
+    if (this.prevHpB > 0 && stateB.hp <= 0) {
+      this.playDestroyed(stateB.position, 'b');
+    }
+    this.prevHpA = stateA.hp;
+    this.prevHpB = stateB.hp;
+
+    // Detect projectile hits (present last tick, absent this tick)
+    this.detectHits(projectiles);
+    this.prevProjs = [...projectiles];
+
     this.drawSensorRanges(stateA, stateB);
     this.placeTank(this.tankA, stateA);
     this.placeTank(this.tankB, stateB);
-    this.drawProjectiles(projectiles);
+    this.drawProjectiles(projectiles, stateA, stateB);
   }
 
   private drawSensorRanges(stateA: TankState, stateB: TankState) {
@@ -213,22 +253,118 @@ export class ObserverScene extends Phaser.Scene {
     }
   }
 
-  private drawProjectiles(projs: Projectile[]) {
+  private drawProjectiles(projs: Projectile[], stateA: TankState, stateB: TankState) {
     this.projGfx.clear();
     const r = this.cell * 0.15;
     const tracerLen = this.cell * 0.4;
     for (const p of projs) {
-      const color = p.ownerTankId === this.tankAId ? PROJ_A : PROJ_B;
+      const isA = p.ownerTankId === this.tankAId;
+      const color = isA ? PROJ_A : PROJ_B;
+      const tankColor = isA ? TANK_A : TANK_B;
       const cx = this.offsetX + (p.position.x + 0.5) * this.cell;
       const cy = this.offsetY + (p.position.y + 0.5) * this.cell;
+
+      // Trailing dash from firing tank center to projectile
+      const owner = isA ? stateA : stateB;
+      const tx = this.offsetX + (owner.position.x + 0.5) * this.cell;
+      const ty = this.offsetY + (owner.position.y + 0.5) * this.cell;
+      this.drawDashedLine(tx, ty, cx, cy, tankColor, 0.5);
+
+      // Projectile dot
       this.projGfx.fillStyle(color, 1);
       this.projGfx.fillCircle(cx, cy, r);
+
+      // Direction tracer
       const [dx, dy] = DIR_VEC[p.direction] ?? [0, -1];
       this.projGfx.lineStyle(2, color, 0.7);
       this.projGfx.beginPath();
       this.projGfx.moveTo(cx, cy);
       this.projGfx.lineTo(cx + dx * tracerLen, cy + dy * tracerLen);
       this.projGfx.strokePath();
+    }
+  }
+
+  private drawDashedLine(x1: number, y1: number, x2: number, y2: number, color: number, alpha: number) {
+    const dashLen = 3, gapLen = 3;
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 1) return;
+    const nx = dx / len, ny = dy / len;
+    this.projGfx.lineStyle(1, color, alpha);
+    let pos = 0, on = true;
+    while (pos < len) {
+      const seg = Math.min(on ? dashLen : gapLen, len - pos);
+      if (on) {
+        this.projGfx.beginPath();
+        this.projGfx.moveTo(x1 + nx * pos, y1 + ny * pos);
+        this.projGfx.lineTo(x1 + nx * (pos + seg), y1 + ny * (pos + seg));
+        this.projGfx.strokePath();
+      }
+      pos += seg;
+      on = !on;
+    }
+  }
+
+  private detectHits(projs: Projectile[]) {
+    if (this.prevProjs.length === 0) return;
+    // Build lookup of current projectile positions by owner
+    const currSet = new Set(projs.map(p => `${p.ownerTankId},${p.position.x},${p.position.y}`));
+    for (const prev of this.prevProjs) {
+      const [dx, dy] = DIR_VEC[prev.direction] ?? [0, 0];
+      const expectedKey = `${prev.ownerTankId},${prev.position.x + dx},${prev.position.y + dy}`;
+      if (!currSet.has(expectedKey)) {
+        // Projectile didn't reach expected next cell — it hit something
+        this.playImpact({ x: prev.position.x + dx, y: prev.position.y + dy });
+      }
+    }
+  }
+
+  private playImpact(pos: { x: number; y: number }) {
+    const cx = this.offsetX + (pos.x + 0.5) * this.cell;
+    const cy = this.offsetY + (pos.y + 0.5) * this.cell;
+    const img = this.add.image(cx, cy, 'impact')
+      .setDisplaySize(this.cell, this.cell)
+      .setDepth(8)
+      .setAlpha(0.9);
+    this.tweens.add({
+      targets: img,
+      displayWidth:  this.cell * 2.2,
+      displayHeight: this.cell * 2.2,
+      alpha: 0,
+      duration: 380,
+      ease: 'Power2',
+      onComplete: () => img.destroy(),
+    });
+  }
+
+  private playDestroyed(pos: { x: number; y: number }, side: 'a' | 'b') {
+    const cx = this.offsetX + (pos.x + 0.5) * this.cell;
+    const cy = this.offsetY + (pos.y + 0.5) * this.cell;
+    const sz = this.cell * 1.5;
+
+    const prev = side === 'a' ? this.destroyedA : this.destroyedB;
+    const prevTimer = side === 'a' ? this.destroyTimerA : this.destroyTimerB;
+    prev?.destroy();
+    prevTimer?.remove();
+
+    const img = this.add.image(cx, cy, 'destroyed-0')
+      .setDisplaySize(sz, sz)
+      .setDepth(9);
+    let frame = 0;
+    const timer = this.time.addEvent({
+      delay: 250,
+      callback: () => {
+        frame = 1 - frame;
+        img.setTexture(frame === 0 ? 'destroyed-0' : 'destroyed-1');
+      },
+      loop: true,
+    });
+    if (side === 'a') {
+      this.destroyedA = img;
+      this.destroyTimerA = timer;
+    } else {
+      this.destroyedB = img;
+      this.destroyTimerB = timer;
     }
   }
 

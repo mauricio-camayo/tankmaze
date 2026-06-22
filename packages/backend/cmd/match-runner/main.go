@@ -354,6 +354,12 @@ func (h *handler) handle(ctx context.Context, evt matchEvent) error {
 		result = eng.Step(actionA, actionB, crashedA, crashedB)
 
 		state := eng.State()
+		for i, line := range logsA {
+			logsA[i] = fmt.Sprintf("%d: %s", state.Tick, line)
+		}
+		for i, line := range logsB {
+			logsB[i] = fmt.Sprintf("%d: %s", state.Tick, line)
+		}
 		logProjs := make([]logProj, len(state.Projectiles))
 		for i, p := range state.Projectiles {
 			logProjs[i] = logProj{

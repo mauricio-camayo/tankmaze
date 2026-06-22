@@ -257,6 +257,15 @@ Visible to the Tank Author on their profile. Stats are split into two scopes:
 | **Test Matches** | Minor version | Count of test matches run for that minor version |
 | **Last Match** | Tank | Link to most recent replay (any type, any version) |
 
+### 5.5 Tank Avatars
+
+Each tank can display a custom avatar sprite in the Observer and Replay views. Authors choose an avatar from a built-in set of 16 sprites or upload their own image (PNG/JPEG, max 512 KB). The selected sprite is rendered in the Phaser canvas in place of the default colored rectangle, rotated to match the tank's current heading each tick.
+
+- **Default avatar**: if no avatar is selected, a deterministic sprite is chosen from the built-in set based on the tank's ID hash, so every tank always has a distinct visual identity.
+- **Built-in AI avatars**: each built-in tank (Scout, Bruiser, Ranger, Randy) has its own dedicated sprite.
+- **Fork inheritance**: forking a tank copies the source tank's avatar selection to the new tank.
+- **Upload** (via `PUT /tanks/{id}/avatar`): stored in S3 and served via CloudFront.
+
 ---
 
 ## 6. Game Day & Scheduling
@@ -417,6 +426,22 @@ Seed 6 ──┘
 
 ---
 
+#### Phase 1 — Round Robin Standings Display
+
+During and after the round-robin phase, each group's results are shown in a standings table:
+
+| Column | Description |
+|---|---|
+| Rank | Position within the group (color-coded: gold / silver / bronze for top 3) |
+| Tank | Tank name with placement-point badge |
+| Pts | Total points accumulated in the group |
+| W | Wins |
+| L | Losses |
+
+The table is sorted by points descending, with the group tiebreakers applied in order (§6.3). The page auto-refreshes every 10 seconds while the round-robin phase is running.
+
+> **Planned enhancement:** replace the aggregate table with a per-match cross-table grid (rows = tanks 1–N, columns = opponent numbers, cells show W/L/B/pending from the row-tank's perspective) to expose individual head-to-head results. Tracked as a future improvement.
+
 #### End of Game Day
 
 When all elimination matches are complete (or the scheduled window closes — whichever comes first), the platform publishes a **Game Day summary** containing full bracket, all match replays, and updated tank stats.
@@ -564,8 +589,9 @@ When a match is actively running, observers connect via a shareable link:
 
 Live observer receives in real time (WebSocket):
 - Full maze layout
-- Both tanks: position, facing direction, current HP, stat profile, version
-- Projectiles in flight
+- Both tanks: position, facing direction, current HP, stat profile, version, avatar sprite
+- Sensor range overlay: each tank's sensor range is drawn as a translucent filled circle on the canvas, redrawn every tick as the tank moves
+- Projectiles in flight with directional tracer lines
 - Game events: moves, shots, hits, match end
 
 ### 9.2 Replay Mode
@@ -611,11 +637,20 @@ Available in both live and replay mode. Shows the internal state of each tank at
 | Field | Description |
 |---|---|
 | Action returned | The exact object `tick()` returned this tick |
-| Sensor snapshot | Full `sensors` object passed to `tick()` this tick |
-| Memory snapshot | Current state of the `memory` object |
-| Console output | `console.log` lines emitted this tick (up to 10) |
+| Sensor snapshot | Full `sensors` object passed to `tick()` this tick with colored directional indicators (red = wall, green = clear; red dot = opponent in range) |
+| Memory snapshot | Current state of package-level variables as formatted JSON (collapsed by default, expandable) |
+| Console output | `log.Println` / `fmt.Println` lines emitted this tick (up to 10; scrollable) |
 | Tick duration | Time (ms) the `tick()` function took to execute |
 | Violations | Whether this tick timed out or threw an exception |
+
+### 9.4a Elimination Bracket Display
+
+The elimination bracket is displayed on the Game Day page as a multi-column grid, one column per round. Bracket slot behavior:
+
+- **Connector lines**: SVG or CSS "elbow" lines connect each pair of Round N slots to the corresponding Round N+1 winner slot, making bracket advancement visually clear.
+- **Watch links**: each elimination slot that has an associated match ID shows a "Watch" link, allowing observers to replay that match directly from the bracket. Bye slots and upcoming slots show no link.
+- **Long tank names**: names longer than 40 characters wrap to two lines within the slot; names longer than 80 characters are truncated with "…".
+- **Round navigation**: when more than 3 elimination rounds are present, the bracket shows exactly 3 rounds at a time with left/right navigation controls (one-round overlap between pages preserves context; the Final round is always reachable on the last page).
 
 ### 9.5 Data Export
 
@@ -743,8 +778,8 @@ Displayed on the match result page (accessible to both Authors and any observer)
 ## 12. Match Recording
 
 Every match (ranked, test, or informal) is recorded server-side as the maze seed plus a full tick-by-tick log of sensor inputs, memory snapshots, actions returned, and execution timing. Recordings are:
-- Stored indefinitely (or until the Author deletes their account).
-- Accessible via permanent URL immediately after the match ends.
+- Stored for **7 days** for ranked matches (DynamoDB TTL + S3 lifecycle rule on `match-logs/`); test match storage duration is configurable.
+- Accessible via permanent URL immediately after the match ends (while within the retention window).
 - The primary debugging tool for tank authors — see §9 for full replay capabilities.
 - Exportable as JSON for offline analysis (§9.5).
 
