@@ -92,6 +92,11 @@ function stripPreamble(src: string): string {
   // top-level declaration it's a body-only string (e.g. from localStorage);
   // return it as-is so leading var/const/type declarations are never dropped.
   if (/^(var |const |type |func )/.test(src)) return src;
+  // No package declaration means this is body content (e.g. a localStorage body
+  // that starts with a comment block from a Randy/AI fork). The double-newline
+  // scan below would drop everything before the first \n\nvar/func, including
+  // leading comments and helper functions. Return as-is.
+  if (!src.startsWith('package ') && !src.includes('\npackage ')) return src;
   // AI-converted source: single dot-import of SDK with no Config block.
   // Return everything after the import line so helper functions defined
   // before the first var block (e.g. randDir in Randy forks) are preserved.
