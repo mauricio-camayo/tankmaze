@@ -1,3 +1,5 @@
+import * as crypto from 'crypto';
+import * as fs from 'fs';
 import * as path from 'path';
 import { Stack, StackProps, RemovalPolicy, Duration } from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -187,6 +189,21 @@ export class StorageStack extends Stack {
     });
 
     // ---- AI tank DB seeder --------------------------------------------
+
+    // The CDK Trigger fires only when the seeder Lambda's code asset changes.
+    // Write a sentinel file containing the combined WASM hash so that when CI
+    // recompiles the non-deterministic Go WASMs the asset changes, forcing the
+    // Trigger to re-run and update wasmSha256 in DynamoDB.
+    const seederDir = path.join(__dirname, '../../lib/tank-seeder');
+    const wasmHasher = crypto.createHash('sha256');
+    for (const name of ['scout', 'bruiser', 'ranger', 'randy']) {
+      const wasmPath = path.join(__dirname, `../../lib/ai-tanks/${name}/v1/tank.wasm`);
+      if (fs.existsSync(wasmPath)) wasmHasher.update(fs.readFileSync(wasmPath));
+    }
+    fs.writeFileSync(
+      path.join(seederDir, 'wasm-hash.json'),
+      JSON.stringify({ wasmContentHash: wasmHasher.digest('hex') }),
+    );
 
     const tankSeederFn = new lambda.Function(this, 'TankSeeder', {
       runtime: lambda.Runtime.NODEJS_22_X,
