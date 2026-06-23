@@ -162,6 +162,14 @@ export default function Watch() {
         case 'MATCH_OVER':
           setMatchOver({ winner: event.payload.winner, reason: event.payload.reason });
           autoPlayRef.current = false;
+          // Fire destroyed animation if render() missed the death tick (fast playback / tick multiplier)
+          {
+            const ts = useMatchStore.getState().ticks;
+            const lastTick = ts[ts.length - 1];
+            if (lastTick && sceneRef.current) {
+              sceneRef.current.notifyMatchOver(lastTick.tankA, lastTick.tankB);
+            }
+          }
           if (useMatchStore.getState().snapshot?.status !== 'ended') {
             // Live match ended: stop immediately
             setPlaying(false);

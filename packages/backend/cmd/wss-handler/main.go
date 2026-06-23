@@ -203,8 +203,6 @@ var cardinalStr = [4]string{0: "N", 1: "S", 2: "E", 3: "W"}
 // ---- Types: S3 tick log -----------------------------------------------------
 
 // tickLog is the gzip-compressed JSON written to S3 by match-runner.
-// Only the fields needed by the wss-handler are unmarshalled; the rest
-// (actions, log lines, etc.) are intentionally ignored.
 type tickLog struct {
 	MatchID string       `json:"matchId"`
 	Maze    [][]bool     `json:"maze"`

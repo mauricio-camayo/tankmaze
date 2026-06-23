@@ -208,18 +208,31 @@ export class ObserverScene extends Phaser.Scene {
   ) {
     this.tankAId = tankAId;
 
+    // Clear destroyed animation when scrubbing backward to a tick where the tank is alive
+    if (stateA.hp > 0 && this.destroyedA) {
+      this.destroyedA.destroy(); this.destroyedA = null;
+      this.destroyTimerA?.remove(); this.destroyTimerA = null;
+    }
+    if (stateB.hp > 0 && this.destroyedB) {
+      this.destroyedB.destroy(); this.destroyedB = null;
+      this.destroyTimerB?.remove(); this.destroyTimerB = null;
+    }
+
+    const oldHpA = this.prevHpA;
+    const oldHpB = this.prevHpB;
+
     // Detect destroyed tanks (HP drops to 0)
-    if (this.prevHpA > 0 && stateA.hp <= 0) {
+    if (oldHpA > 0 && stateA.hp <= 0) {
       this.playDestroyed(stateA.position, 'a');
     }
-    if (this.prevHpB > 0 && stateB.hp <= 0) {
+    if (oldHpB > 0 && stateB.hp <= 0) {
       this.playDestroyed(stateB.position, 'b');
     }
     this.prevHpA = stateA.hp;
     this.prevHpB = stateB.hp;
 
-    // Detect projectile hits (present last tick, absent this tick)
-    this.detectHits(projectiles);
+    // Detect projectile hits — only play impact when the target tank's HP actually dropped
+    this.detectHits(projectiles, stateA.hp, stateB.hp, oldHpA, oldHpB);
     this.prevProjs = [...projectiles];
 
     this.drawSensorRanges(stateA, stateB);
@@ -305,27 +318,50 @@ export class ObserverScene extends Phaser.Scene {
     }
   }
 
-  private detectHits(projs: Projectile[]) {
+  private detectHits(
+    projs: Projectile[],
+    hpA: number, hpB: number,
+    prevHpA: number, prevHpB: number,
+  ) {
     if (this.prevProjs.length === 0) return;
-    // Build lookup of current projectile positions by owner
     const currSet = new Set(projs.map(p => `${p.ownerTankId},${p.position.x},${p.position.y}`));
     for (const prev of this.prevProjs) {
       const [dx, dy] = DIR_VEC[prev.direction] ?? [0, 0];
       const expectedKey = `${prev.ownerTankId},${prev.position.x + dx},${prev.position.y + dy}`;
       if (!currSet.has(expectedKey)) {
-        // Projectile didn't reach expected next cell — it hit something
-        this.playImpact({ x: prev.position.x + dx, y: prev.position.y + dy });
+        // Only play impact when the target tank's HP dropped — confirms a hit on a tank.
+        // Wall hits and off-board exits must NOT trigger the impact sprite.
+        const fromA = prev.ownerTankId === this.tankAId;
+        if (fromA ? prevHpB > hpB : prevHpA > hpA) {
+          this.playImpact({ x: prev.position.x + dx, y: prev.position.y + dy });
+        }
       }
+    }
+  }
+
+  /** Called by Watch.tsx on MATCH_OVER to fire the destroyed animation if render()
+   *  missed the death tick during fast playback or a tick-multiplier skip. */
+  notifyMatchOver(lastA: TankState, lastB: TankState) {
+    if (this.prevHpA > 0 && lastA.hp <= 0) {
+      this.playDestroyed(lastA.position, 'a');
+      this.prevHpA = 0;
+    }
+    if (this.prevHpB > 0 && lastB.hp <= 0) {
+      this.playDestroyed(lastB.position, 'b');
+      this.prevHpB = 0;
     }
   }
 
   private playImpact(pos: { x: number; y: number }) {
     const cx = this.offsetX + (pos.x + 0.5) * this.cell;
     const cy = this.offsetY + (pos.y + 0.5) * this.cell;
+    // ADD blend mode makes the near-black background effectively transparent
+    // (black adds nothing in additive mode) so the sprite composites cleanly over tiles.
     const img = this.add.image(cx, cy, 'impact')
       .setDisplaySize(this.cell, this.cell)
       .setDepth(8)
-      .setAlpha(0.9);
+      .setAlpha(0.9)
+      .setBlendMode('ADD');
     this.tweens.add({
       targets: img,
       displayWidth:  this.cell * 2.2,
@@ -347,9 +383,12 @@ export class ObserverScene extends Phaser.Scene {
     prev?.destroy();
     prevTimer?.remove();
 
+    // ADD blend mode: the near-black sprite background adds nothing to the canvas
+    // (black = 0,0,0 in additive blending), leaving only the bright explosion colors.
     const img = this.add.image(cx, cy, 'destroyed-0')
       .setDisplaySize(sz, sz)
-      .setDepth(9);
+      .setDepth(9)
+      .setBlendMode('ADD');
     let frame = 0;
     const timer = this.time.addEvent({
       delay: 250,

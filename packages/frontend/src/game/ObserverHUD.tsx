@@ -131,6 +131,12 @@ function TankDebugPanel({ label, data, color, obscured }: {
         </div>
       )}
 
+      {!obscured && (!data.log || data.log.length === 0) && (
+        <div style={{ color: '#1e2433', fontSize: 10, marginTop: 4, fontStyle: 'italic' }}>
+          no log output this tick
+        </div>
+      )}
+
       {obscured && (
         <div style={{ color: '#374151', fontSize: 10, marginTop: 4, fontStyle: 'italic' }}>
           memory & log hidden
