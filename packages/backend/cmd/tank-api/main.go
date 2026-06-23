@@ -30,6 +30,7 @@
 //	GET    /admin/tanks                        – list all tanks (admin only)
 //	PATCH  /admin/tanks/{id}                   – rename any tank (admin only)
 //	DELETE /admin/tanks/{id}                   – force-delete any tank (admin only)
+//	POST   /admin/tanks/{id}/versions/{v}/reset-compile – force-reset stuck "compiling" status (admin only)
 package main
 
 import (
@@ -316,6 +317,8 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 		return h.adminUpdateTank(ctx, req, parts[2])
 	case method == "DELETE" && len(parts) == 3 && parts[0] == "admin" && parts[1] == "tanks":
 		return h.adminDeleteTank(ctx, req, parts[2])
+	case method == "POST" && len(parts) == 6 && parts[0] == "admin" && parts[1] == "tanks" && parts[3] == "versions" && parts[5] == "reset-compile":
+		return h.adminResetCompile(ctx, req, parts[2], parts[4])
 
 	default:
 		return errResp(http.StatusNotFound, "not found"), nil
@@ -702,11 +705,66 @@ func (h *handler) getVersionStatus(ctx context.Context, req events.APIGatewayV2H
 	if err != nil {
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
+	// Auto-heal stuck "compiling" records: CodeBuild's post_build phase does not
+	// run on TIMED_OUT, leaving DynamoDB permanently at "compiling".
+	if ver.CompileStatus == "compiling" {
+		if ver.BuildID != "" {
+			if u := h.resolveStuckBuild(ctx, tankID, version, ver.BuildID); u != nil {
+				return jsonResp(http.StatusOK, map[string]interface{}{
+					"version":       ver.Version,
+					"compileStatus": u.Status,
+					"compileError":  u.CompileError,
+				}), nil
+			}
+		} else if ver.CompileStartedAt > 0 && time.Now().Unix()-ver.CompileStartedAt > 900 {
+			// Fallback for legacy records without a build ID: mark timed out after 15 min.
+			errMsg := "compile timed out"
+			_ = h.store.UpdateVersionCompile(ctx, tankID, version, db.CompileUpdate{
+				Status: "failed", CompileError: errMsg,
+			})
+			return jsonResp(http.StatusOK, map[string]interface{}{
+				"version":       ver.Version,
+				"compileStatus": "failed",
+				"compileError":  errMsg,
+			}), nil
+		}
+	}
+
 	return jsonResp(http.StatusOK, map[string]interface{}{
 		"version":       ver.Version,
 		"compileStatus": ver.CompileStatus,
 		"compileError":  ver.CompileError,
 	}), nil
+}
+
+// resolveStuckBuild queries CodeBuild for the given build ID and auto-heals
+// the DynamoDB record when the build is in a terminal state. Returns the
+// applied CompileUpdate, or nil if the build is still in progress.
+func (h *handler) resolveStuckBuild(ctx context.Context, tankID, version, buildID string) *db.CompileUpdate {
+	out, err := h.cb.BatchGetBuilds(ctx, &codebuild.BatchGetBuildsInput{Ids: []string{buildID}})
+	if err != nil || len(out.Builds) == 0 {
+		log.Printf("resolveStuckBuild %s/%s BatchGetBuilds: %v", tankID, version, err)
+		return nil
+	}
+	build := out.Builds[0]
+	var u db.CompileUpdate
+	switch build.BuildStatus {
+	case cbtypes.StatusTypeInProgress:
+		return nil
+	case cbtypes.StatusTypeTimedOut:
+		u = db.CompileUpdate{Status: "failed", CompileError: "compile timed out"}
+	case cbtypes.StatusTypeStopped:
+		u = db.CompileUpdate{Status: "failed", CompileError: "compile was cancelled"}
+	case cbtypes.StatusTypeSucceeded:
+		// post_build ran and should have updated DynamoDB; if we're here it didn't.
+		u = db.CompileUpdate{Status: "failed", CompileError: "compile completed but result was not recorded"}
+	default: // FAILED, FAULT
+		u = db.CompileUpdate{Status: "failed", CompileError: "build failed (see CodeBuild logs)"}
+	}
+	if updErr := h.store.UpdateVersionCompile(ctx, tankID, version, u); updErr != nil {
+		log.Printf("resolveStuckBuild update %s/%s: %v", tankID, version, updErr)
+	}
+	return &u
 }
 
 func (h *handler) getVersionSource(ctx context.Context, req events.APIGatewayV2HTTPRequest, tankID, version string) (events.APIGatewayV2HTTPResponse, error) {
@@ -1879,7 +1937,11 @@ func (h *handler) updateMap(ctx context.Context, req events.APIGatewayV2HTTPRequ
 
 // triggerBuild updates the version to "compiling" and starts a CodeBuild run.
 func (h *handler) triggerBuild(ctx context.Context, tankID, version, sourceKey, wasmKey string) {
-	if err := h.store.UpdateVersionCompile(ctx, tankID, version, db.CompileUpdate{Status: "compiling"}); err != nil {
+	now := time.Now().Unix()
+	if err := h.store.UpdateVersionCompile(ctx, tankID, version, db.CompileUpdate{
+		Status:           "compiling",
+		CompileStartedAt: now,
+	}); err != nil {
 		log.Printf("set compiling %s/%s: %v", tankID, version, err)
 	}
 	overrides := []cbtypes.EnvironmentVariable{
@@ -1889,16 +1951,29 @@ func (h *handler) triggerBuild(ctx context.Context, tankID, version, sourceKey, 
 		{Name: aws.String("OUTPUT_WASM_KEY"), Value: aws.String(wasmKey), Type: cbtypes.EnvironmentVariableTypePlaintext},
 		{Name: aws.String("TANK_VERSIONS_TABLE"), Value: aws.String(h.versionsTable), Type: cbtypes.EnvironmentVariableTypePlaintext},
 	}
-	if _, err := h.cb.StartBuild(ctx, &codebuild.StartBuildInput{
+	out, err := h.cb.StartBuild(ctx, &codebuild.StartBuildInput{
 		ProjectName:                  aws.String(h.codebuildProject),
 		EnvironmentVariablesOverride: overrides,
-	}); err != nil {
+	})
+	if err != nil {
 		log.Printf("start codebuild %s/%s: %v", tankID, version, err)
 		if updErr := h.store.UpdateVersionCompile(ctx, tankID, version, db.CompileUpdate{
 			Status:       "failed",
 			CompileError: "failed to start build",
 		}); updErr != nil {
 			log.Printf("revert compile status: %v", updErr)
+		}
+		return
+	}
+	// Store the build ID so getVersionStatus can check CodeBuild if the build
+	// times out (post_build doesn't run on TIMED_OUT, leaving status stuck at "compiling").
+	if out.Build != nil && out.Build.Id != nil {
+		if updErr := h.store.UpdateVersionCompile(ctx, tankID, version, db.CompileUpdate{
+			Status:           "compiling",
+			BuildID:          aws.ToString(out.Build.Id),
+			CompileStartedAt: now,
+		}); updErr != nil {
+			log.Printf("store build ID %s/%s: %v", tankID, version, updErr)
 		}
 	}
 }
@@ -2180,6 +2255,25 @@ func (h *handler) adminDeleteTank(ctx context.Context, req events.APIGatewayV2HT
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
 	return jsonResp(http.StatusOK, map[string]string{"status": "deleted"}), nil
+}
+
+// adminResetCompile force-sets a tank version's compileStatus to "failed" so a
+// user can re-submit. Used to unblock records stuck at "compiling" because
+// CodeBuild timed out without running post_build.
+func (h *handler) adminResetCompile(ctx context.Context, req events.APIGatewayV2HTTPRequest, tankID, version string) (events.APIGatewayV2HTTPResponse, error) {
+	if !isAdmin(req) {
+		return errResp(http.StatusForbidden, "forbidden"), nil
+	}
+	if _, err := h.store.GetVersion(ctx, tankID, version); errors.Is(err, db.ErrNotFound) {
+		return errResp(http.StatusNotFound, "version not found"), nil
+	}
+	if err := h.store.UpdateVersionCompile(ctx, tankID, version, db.CompileUpdate{
+		Status:       "failed",
+		CompileError: "reset by admin",
+	}); err != nil {
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	return jsonResp(http.StatusOK, map[string]string{"status": "reset"}), nil
 }
 
 // isAdmin returns true if the caller belongs to the "platform-admin" Cognito group.

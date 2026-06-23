@@ -1,4 +1,4 @@
-import { Stack, StackProps } from 'aws-cdk-lib';
+import { Duration, Stack, StackProps } from 'aws-cdk-lib';
 import * as codebuild from 'aws-cdk-lib/aws-codebuild';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -125,7 +125,7 @@ export class BuildStack extends Stack {
               '    --expression-attribute-values "{\\":s\\":{\\"S\\":\\"failed\\"},\\":e\\":{\\"S\\":\\"upload failed\\"}}"',
               '    --region $AWS_DEFAULT_REGION;',
               'else',
-              '  ERR=$(cat /tmp/build_error.txt 2>/dev/null || echo "build failed");',
+              '  ERR=$(cat /tmp/build_error.txt 2>/dev/null | tr \'\\n\\r\\t\' \'   \' | tr -d \'"\\\\\\\\\'  | cut -c1-500 || echo "build failed");',
               '  aws dynamodb update-item',
               '    --table-name $TANK_VERSIONS_TABLE',
               '    --key "{\\"tankId\\":{\\"S\\":\\"$TANK_ID\\"},\\"version\\":{\\"S\\":\\"$VERSION\\"}}"',
@@ -155,6 +155,9 @@ export class BuildStack extends Stack {
           WASM_BUCKET: { value: props.wasmBucket.bucketName },
         },
       },
+      // Builds typically complete in 1–3 min (warm) or 3–5 min (cold).
+      // 10-minute hard cap prevents runaway compiles from blocking the queue.
+      timeout: Duration.minutes(10),
       // TANK_ID, VERSION, SOURCE_S3_KEY, OUTPUT_WASM_KEY, TANK_VERSIONS_TABLE
       // are passed as per-build overrides by the tank-api Lambda.
     });

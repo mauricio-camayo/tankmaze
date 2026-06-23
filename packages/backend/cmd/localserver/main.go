@@ -197,6 +197,8 @@ func (srv *server) route(w http.ResponseWriter, r *http.Request) {
 		srv.adminUpdateTank(w, r, parts[2])
 	case method == "DELETE" && n == 3 && parts[0] == "admin" && parts[1] == "tanks":
 		srv.adminDeleteTank(w, r, parts[2])
+	case method == "POST" && n == 6 && parts[0] == "admin" && parts[1] == "tanks" && parts[3] == "versions" && parts[5] == "reset-compile":
+		srv.adminResetCompile(w, r, parts[2], parts[4])
 
 	default:
 		jsonErr(w, http.StatusNotFound, "not found")
@@ -1320,6 +1322,17 @@ func (srv *server) adminDeleteTank(w http.ResponseWriter, r *http.Request, tankI
 	}
 	srv.store.deleteTank(tankID)
 	jsonOK(w, map[string]string{"status": "deleted"})
+}
+
+func (srv *server) adminResetCompile(w http.ResponseWriter, r *http.Request, tankID, version string) {
+	if _, err := srv.store.getVersion(tankID, version); err != nil {
+		jsonErr(w, http.StatusNotFound, "version not found")
+		return
+	}
+	srv.store.updateVersionCompile(tankID, version, db.CompileUpdate{
+		Status: "failed", CompileError: "reset by admin",
+	})
+	jsonOK(w, map[string]string{"status": "reset"})
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────

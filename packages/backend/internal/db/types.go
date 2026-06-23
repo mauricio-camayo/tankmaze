@@ -45,9 +45,11 @@ type TankVersion struct {
 	WasmS3Key            string        `dynamodbav:"wasmS3Key,omitempty"   json:"wasmS3Key,omitempty"`
 	SourceS3Key          string        `dynamodbav:"sourceS3Key,omitempty" json:"sourceS3Key,omitempty"`
 	WasmSHA256           string        `dynamodbav:"wasmSha256,omitempty"  json:"wasmSha256,omitempty"`
-	CompileStatus        string        `dynamodbav:"compileStatus"         json:"compileStatus"`
-	CompileError         string        `dynamodbav:"compileError,omitempty" json:"compileError,omitempty"`
-	RegisteredForGameDays []string      `dynamodbav:"registeredForGameDays,omitempty" json:"registeredForGameDays,omitempty"`
+	CompileStatus        string        `dynamodbav:"compileStatus"              json:"compileStatus"`
+	CompileError         string        `dynamodbav:"compileError,omitempty"      json:"compileError,omitempty"`
+	BuildID              string        `dynamodbav:"buildId,omitempty"           json:"-"`
+	CompileStartedAt     int64         `dynamodbav:"compileStartedAt,omitempty"  json:"-"`
+	RegisteredForGameDays []string     `dynamodbav:"registeredForGameDays,omitempty" json:"registeredForGameDays,omitempty"`
 	CreatedAt            int64         `dynamodbav:"createdAt"             json:"createdAt"`
 	// Major-only stats (zero value when not set)
 	WinRate          float64 `dynamodbav:"winRate,omitempty"          json:"winRate"`
@@ -61,10 +63,12 @@ type TankVersion struct {
 
 // CompileUpdate carries the fields written after a CodeBuild tank-compiler run.
 type CompileUpdate struct {
-	Status       string // "compiling" | "ready" | "failed"
-	WasmS3Key    string // set on "ready"
-	WasmSHA256   string // set on "ready"
-	CompileError string // set on "failed"
+	Status           string // "compiling" | "ready" | "failed"
+	WasmS3Key        string // set on "ready"
+	WasmSHA256       string // set on "ready"
+	CompileError     string // set on "failed"
+	BuildID          string // CodeBuild build ARN, set when transitioning to "compiling"
+	CompileStartedAt int64  // Unix timestamp when compile was triggered
 }
 
 // VersionStats holds the performance stats updated after each ranked match.

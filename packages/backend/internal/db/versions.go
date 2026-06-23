@@ -63,6 +63,12 @@ func (s *Store) UpdateVersionCompile(ctx context.Context, tankID, version string
 	if u.CompileError != "" {
 		upd = upd.Set(expression.Name("compileError"), expression.Value(u.CompileError))
 	}
+	if u.BuildID != "" {
+		upd = upd.Set(expression.Name("buildId"), expression.Value(u.BuildID))
+	}
+	if u.CompileStartedAt != 0 {
+		upd = upd.Set(expression.Name("compileStartedAt"), expression.Value(u.CompileStartedAt))
+	}
 
 	expr, err := expression.NewBuilder().WithUpdate(upd).Build()
 	if err != nil {
