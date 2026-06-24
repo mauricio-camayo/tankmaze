@@ -785,7 +785,326 @@ Every match (ranked, test, or informal) is recorded server-side as the maze seed
 
 ---
 
-## 13. Out of Scope (v1)
+## 13. Subscription Tiers & Monetization
+
+### 13.1 Rationale
+
+Each tank compilation triggers a **CodeBuild run** (the `tank-compiler` pipeline), which has a direct, per-build AWS cost. Players who compile more consume more infrastructure. The subscription system recovers that cost proportionally — it is explicitly **not pay-to-win**: higher tiers unlock more compilations and more registered tanks, but confer **zero in-game advantage**. Stat limits, match rules, and scoring are identical across all tiers.
+
+### 13.2 Tier Definitions
+
+| Tier | Monthly Cost | Max Registered Tanks | Max Compilations / Month |
+|---|---|---|---|
+| **Free** | $0 | 2 | 10 |
+| **Builder** | $5 | 5 | 50 |
+| **Pro** | $15 | 15 | 200 |
+
+**Design notes:**
+- A **Free tier** always exists so new players can try the platform without a payment commitment.
+- Limits apply per user account, not per tank.
+- "Max Registered Tanks" is the number of tanks a user may have in their library at any time (across all versions). Deleting a tank frees a slot.
+- "Max Compilations / 30 days" counts every successful or failed CodeBuild invocation triggered by that user's **Save & Validate** action. The counter resets on a 30-day rolling window from the start of the current window (see §13.4.3).
+- Tier names and limits are platform configuration — they can be adjusted by an administrator without code changes.
+
+### 13.3 Subscription Field on User Record
+
+A `subscriptionTier` field is added to the user record. Possible values: `"free"`, `"builder"`, `"pro"`. Default for all new accounts: `"free"`.
+
+Storage options (TBD at implementation — see Open Questions §13.7):
+- Cognito custom attribute (`custom:subscriptionTier`) — simple, but requires Cognito schema change.
+- New `tankmaze-user-settings` DynamoDB table (already planned for match notifications, item 34) — preferred; avoids Cognito schema coupling.
+
+### 13.4 Enforcement
+
+#### 13.4.1 Tank Registration Limit
+
+When a user attempts to **create a new tank** (`POST /tanks`) or **fork** an existing tank, the backend checks the current tank count for that user against the tier limit:
+
+- If `userTankCount >= tierLimit.maxTanks` → respond **403** with `{ "reason": "tank_limit_reached", "limit": N, "tier": "free" }`.
+- The frontend surfaces an inline message: *"You've reached your Free tier limit of 2 tanks. Upgrade to Builder to register up to 5."*
+- The `+ New Tank` button on the Dashboard is disabled (with tooltip) when the limit is reached.
+
+#### 13.4.2 Compilation Limit
+
+When **Save & Validate** is triggered (`POST /tanks/{id}/versions`), the backend checks the user's `compilationsThisMonth` counter before invoking CodeBuild:
+
+- If `compilationsThisMonth >= tierLimit.maxCompilations` → respond **429** with `{ "reason": "compile_limit_reached", "limit": N, "resetsAt": "<ISO date of compilationsWindowStart + 30 days>" }`.
+- The frontend surfaces a banner: *"Compilation limit reached (10/10). Resets in X days. Upgrade to Builder for 50 compilations / 30 days."*
+- The **Save & Validate** button remains enabled (so the user can still see their source and potentially export it), but the submit action is blocked client-side after receiving 429, with the error banner displayed.
+
+#### 13.4.3 Compilation Counter
+
+- A `compilationsThisWindow` counter and a `compilationsWindowStart` timestamp (ISO 8601) are stored alongside the user's subscription data (same record as `subscriptionTier`).
+- On any compile request, if `now - compilationsWindowStart >= 30 days`, reset `compilationsThisWindow` to 0 and set `compilationsWindowStart = now`. This lazy check avoids a scheduled reset job.
+- The counter is incremented **when CodeBuild is successfully invoked** (not on static validation failures, which don't trigger a build).
+- **Window-start model:** the 30-day clock starts from when the current window opened (first compile after a reset), not from the calendar month boundary. This means two users can have windows that reset on different dates.
+
+### 13.5 Usage & Tier Display (Account Page)
+
+A new **Account** page (or section within the Dashboard) shows the Tank Author their current subscription status:
+
+| Field | Description |
+|---|---|
+| **Current Tier** | e.g. "Free" with a badge |
+| **Tanks** | "2 / 2 used" with a progress bar |
+| **Compilations (30-day window)** | "7 / 10 used" with a progress bar; "Resets in X days" (derived from `compilationsWindowStart + 30 days`) |
+| **Upgrade** | CTA button → payment flow (TBD) |
+
+The same limits are surfaced inline at enforcement points (Dashboard new-tank button, TankEditor Save & Validate) so the user is never surprised.
+
+### 13.6 Upgrade Path
+
+Payment integration is **TBD** (Stripe or AWS Marketplace are candidates). The upgrade flow should:
+1. Present the tier comparison table.
+2. Collect payment (external; not in scope for v1 of this spec).
+3. On successful payment confirmation, update `subscriptionTier` on the user record.
+4. The change takes effect immediately — limits are re-evaluated on the next request.
+
+Downgrade behavior: if a user downgrades and currently exceeds the new tier's tank limit, existing tanks are **not deleted** automatically. Instead, a warning is shown and new tank creation is blocked until the count falls within the new limit. Compilations already used this month are not refunded.
+
+### 13.7 Open Questions
+
+| # | Question |
+|---|---|
+| 1 | Store `subscriptionTier` + `compilationsThisMonth` in Cognito custom attributes or in the `tankmaze-user-settings` DynamoDB table (planned for item 34)? |
+| 2 | Should compilation counter increments use DynamoDB atomic counters or conditional writes to prevent double-counting under retries? |
+| 3 | Which payment provider? (Stripe, AWS Marketplace, manual invoice for Pro?) |
+| 4 | The 30-day window reset is lazy (on next request). Should a scheduled Lambda also sweep and reset stale windows for users who haven't compiled in >30 days? (Low priority — affects display accuracy only, not enforcement.) |
+| 5 | Should exceeding the tank limit block **all** new tanks (including forks from AI templates)? Currently yes — all tank creation paths share one limit. |
+
+---
+
+## 15. Responsive UI
+
+The TankMaze frontend must be usable on phone and tablet viewports in addition to desktop. This is a UI-only change — no backend or CDK modifications are required.
+
+### 15.1 Breakpoints
+
+| Name | Width range | Target devices |
+|---|---|---|
+| **Mobile** | < 640 px | Phones (portrait and landscape) |
+| **Tablet** | 640 px – 1023 px | Tablets, landscape phones |
+| **Desktop** | ≥ 1024 px | Current default experience |
+
+### 15.2 Navigation / Header
+
+- On **mobile and tablet**, the global nav bar in `components/Layout.tsx` collapses to a hamburger menu (or a bottom navigation bar). The hamburger opens a slide-in drawer or drop-down containing the same links currently shown inline: Leaderboard, live clock, username, Sign out.
+- On **desktop**, the existing inline nav is preserved unchanged.
+
+### 15.3 Pages & Views
+
+#### Dashboard (tank list) — `pages/Dashboard.tsx`
+
+- Tank cards reflow from a multi-column grid to a single-column stack on mobile.
+- The AI template chip row (`AiTemplateRow`) wraps horizontally or becomes vertically scrollable.
+- The `+ New Tank` button and GameDayCard remain full-width.
+
+#### TankDetail — `pages/TankDetail.tsx`
+
+- Stat pip section and version history collapse to a single column on mobile.
+- Action buttons (Register, Test vs AI, Delete) stack vertically on narrow viewports.
+- The Game Day History collapsible section continues to use client-side pagination.
+
+#### TankEditor — `pages/TankEditor.tsx`
+
+The code editor is the hardest surface. Two options are acceptable:
+
+| Option | When to use | Behaviour |
+|---|---|---|
+| **Full-screen mobile editor mode** | Mobile (< 640 px) | Monaco editor expands to fill the viewport; stat config panel slides in from the bottom or is accessed via a tab; the preamble banner is hidden by default (accessible via a toggle); Save & Validate button is fixed at the bottom. |
+| **View-only / read-only mode** | Mobile (< 640 px) | Editor renders as a non-editable code block; all write actions (Save & Validate, Promote, Register) are disabled with an explanatory message ("Use a desktop browser to edit tank code"). |
+
+Either option must be explicitly chosen during implementation and documented inline. On **tablet** viewports the editor may retain full functionality at reduced width; horizontal scroll within Monaco is acceptable.
+
+The stat config panel and compile status bar remain visible alongside the editor on tablet and desktop.
+
+#### Watch / ObserverHUD — `pages/Watch.tsx`, `game/ObserverHUD.tsx`
+
+- The Phaser arena canvas in `game/ObserverScene.ts` must **scale to fit** the available viewport width while preserving the maze aspect ratio. On mobile the canvas fills the full screen width; on tablet it fills the available column width.
+- The HUD overlay (HP bars, tick counter, speed controls, debug panel toggle) repositions below the canvas on mobile, rather than overlaying it. Alternatively, the HUD can be rendered as a semi-transparent floating bar that does not obscure the center of the canvas.
+- Playback control buttons (play/pause, step, speed selector) must meet the 44 × 44 px minimum touch target size (§15.5).
+- The debug panel remains collapsible; on mobile it opens in a bottom sheet or modal overlay rather than inline beside the canvas.
+
+#### Replay — same URL as Watch with `&replay=true`
+
+Same responsive rules as Watch / ObserverHUD apply. The scrubber timeline should scroll horizontally on narrow viewports rather than compress to unreadable size.
+
+#### Leaderboard — `pages/Leaderboard.tsx`
+
+- The full leaderboard table has too many columns to display on a single mobile screen. Two acceptable approaches:
+  - **Horizontal scroll**: wrap the table in a `overflow-x: auto` container so the user can swipe to see all columns.
+  - **Card layout**: on mobile, replace each table row with a card showing Tank name, Author, Score, and Rank; hide secondary columns (Best Finish, Game Days, Last Active).
+- Client-side pagination controls remain at the bottom.
+
+#### Game Day — `pages/GameDay.tsx`
+
+- The round-robin cross-table grid (item 168) should scroll horizontally on mobile (`overflow-x: auto`) rather than compress cells below readability.
+- The elimination bracket (items 169, 142) retains its existing horizontal pagination (3 rounds per page) which already limits width; each `SlotCell` shrinks to a narrower fixed width on mobile (minimum 120 px per slot).
+- The phase timeline stacks vertically on mobile (already likely a single column).
+
+#### Account — `pages/Account.tsx` (item 184)
+
+- Single-column layout on all viewports; progress bars are full-width.
+- The tier comparison table (if shown on the Upgrade path) scrolls horizontally on mobile.
+
+### 15.4 Tables — General Rule
+
+All multi-column tables throughout the app (leaderboard, round-robin standings, admin panels) must not overflow their container on narrow viewports. The default approach is `overflow-x: auto` on the table wrapper. Card layout is an acceptable alternative where it improves readability.
+
+### 15.5 Touch Targets
+
+All interactive elements — buttons, links, tab controls, checkboxes, radio buttons — must meet a minimum hit area of **44 × 44 px** on touch devices. Elements that are visually smaller (e.g. compact checkboxes in the preamble banner) must have an invisible padding zone that brings their touch target up to the minimum.
+
+### 15.6 Scope Constraints
+
+- This is a **frontend-only** change. No backend Lambda, DynamoDB schema, CDK stack, or API contract changes are required or permitted under this feature.
+- The desktop experience must be preserved unchanged at ≥ 1024 px.
+- The Monaco editor WASM bundle size is not affected; the responsive feature gates whether Monaco is shown, not whether it is loaded.
+
+---
+
+## 16. Google AdSense Integration
+
+TankMaze displays Google AdSense ad units on all public-facing pages to generate ad revenue. Ads are injected only when enabled via the admin configuration panel — no code deployment is required to change ad settings.
+
+### 16.1 Ad Placements
+
+Two ad slots appear on every public-facing page:
+
+| Slot | Position | Format |
+|---|---|---|
+| **Top bar** | Horizontal leaderboard bar, below the main navigation header | Horizontal (e.g. 728×90 or responsive leaderboard) |
+| **Right rail** | Vertical rectangle, right side of page content | Vertical (e.g. 160×600 or 300×600) |
+
+**Pages that show ads (public-facing):**
+
+| Page | Route |
+|---|---|
+| Dashboard | `/` or `/dashboard` |
+| TankDetail | `/tanks/{id}` |
+| TankEditor | `/tanks/{id}/edit` |
+| Watch / ObserverHUD | `/watch` |
+| Replay | `/watch?…&replay=true` |
+| Leaderboard | `/leaderboard` |
+| GameDay | `/gamedays/{id}` |
+| Account | `/account` |
+
+**Pages that never show ads:**
+
+- All admin routes (`/admin/*`)
+- Login page (`/login`)
+
+### 16.2 Ad Rendering
+
+Ads use the standard Google AdSense asynchronous script tag and ad unit `<div>` elements:
+
+```html
+<!-- AdSense script — injected once per page load when ads are enabled -->
+<script async
+  src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=<publisherId>"
+  crossorigin="anonymous">
+</script>
+
+<!-- Ad unit div example -->
+<ins class="adsbygoogle"
+  data-ad-client="<publisherId>"
+  data-ad-slot="<slotId>"
+  data-ad-format="auto"
+  data-full-width-responsive="true">
+</ins>
+<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+```
+
+**Enable/disable behavior:**
+
+- When the global `enabled` toggle is **on**: the AdSense `<script>` tag is injected into the document `<head>` on every public page load; both ad unit `<div>` elements are rendered in the layout.
+- When the global `enabled` toggle is **off**: **no** AdSense script is injected and **no** ad unit `<div>` elements are rendered. The page layout is unchanged (the slots collapse to zero height).
+
+The frontend reads ad configuration once at load time (or via a lightweight config endpoint) and makes a single conditional decision per page render. There is no real-time ad toggle — a page reload is required after an admin changes the setting.
+
+### 16.3 Responsive Behavior
+
+Per the responsive spec (§15):
+
+| Slot | Mobile (< 640 px) | Tablet (640–1023 px) | Desktop (≥ 1024 px) |
+|---|---|---|---|
+| **Top bar** | Shown (full width) | Shown (full width) | Shown (full width) |
+| **Right rail** | Hidden | Shown | Shown |
+| **Bottom bar** | Shown (full width) | Hidden | Hidden |
+
+On **mobile**, the right rail is replaced by two full-width horizontal units: the existing top bar (retained) and a new bottom bar rendered at the end of the page content, above the footer. The right-rail `<div>` is hidden via CSS media query (`display: none` at < 640 px); the bottom bar `<div>` is shown only on mobile (`display: none` at ≥ 640 px). The bottom bar uses a separate ad slot ID (`bottomSlotId`) configured in the admin CRUD.
+
+The right-rail ad must not cause horizontal overflow or layout shifts on narrow viewports.
+
+### 16.4 Ad Configuration (Admin CRUD)
+
+Ad settings are managed exclusively through the admin area. There is no way to change ad configuration via environment variables or code deployment.
+
+**Configuration fields:**
+
+| Field | Type | Description |
+|---|---|---|
+| `publisherId` | string | Google AdSense publisher ID (`data-ad-client`), e.g. `ca-pub-XXXXXXXXXXXXXXXX` |
+| `topSlotId` | string | Ad slot ID for the top bar unit (`data-ad-slot`) — shown on all viewports |
+| `rightSlotId` | string | Ad slot ID for the right rail unit (`data-ad-slot`) — tablet and desktop only |
+| `bottomSlotId` | string | Ad slot ID for the bottom bar unit (`data-ad-slot`) — mobile only, replaces right rail |
+| `enabled` | boolean | Global toggle — `true` renders and scripts ads; `false` suppresses all ad output |
+
+**Admin interface:**
+
+A CRUD panel in the admin area (`/admin/ads` or as a section within the admin dashboard) allows `platform-admin` users to:
+
+- **View** current ad configuration
+- **Update** any field (publisher ID, slot IDs, enabled toggle)
+- **Reset** to a disabled/blank state
+
+Non-admin users have no access to this interface.
+
+### 16.5 Storage
+
+Ad configuration is stored in a DynamoDB table. If the existing `tankmaze-admin` or `tankmaze-user-settings` table has a suitable general-purpose config key-value structure, the ad config may be stored there as a single item (key: `"ad_config"`). Otherwise, a dedicated `tankmaze-platform-config` table is used.
+
+**DynamoDB item shape:**
+
+```json
+{
+  "configKey": "ad_config",
+  "publisherId": "ca-pub-XXXXXXXXXXXXXXXX",
+  "topSlotId": "1234567890",
+  "rightSlotId": "0987654321",
+  "bottomSlotId": "1122334455",
+  "enabled": true
+}
+```
+
+### 16.6 Frontend Config Endpoint
+
+A new lightweight public endpoint `GET /config/ads` returns the ad configuration for the frontend:
+
+```json
+{
+  "enabled": true,
+  "publisherId": "ca-pub-XXXXXXXXXXXXXXXX",
+  "topSlotId": "1234567890",
+  "rightSlotId": "0987654321",
+  "bottomSlotId": "1122334455"
+}
+```
+
+The frontend fetches this endpoint at app load time (alongside auth init) and caches the result in React context or a Zustand store for the session. No subsequent refetch is performed within the same page session.
+
+When `enabled` is `false`, the endpoint still returns the full config object with `enabled: false`; the frontend simply skips rendering the ad script and slot divs.
+
+### 16.7 Scope Constraints
+
+- Ad slots appear only on public-facing pages — never on `/admin/*` or `/login`.
+- Ad slots cannot be individually toggled per-page in v1 — the global `enabled` flag controls all slots at once. On desktop, top bar and right rail render together; on mobile, top bar and bottom bar render together; the right rail is never shown on mobile.
+- Payment to Google AdSense (billing, account creation) is outside the platform's scope — this spec covers only the technical integration.
+- Ad performance analytics (click-through rates, revenue tracking) are handled entirely by the AdSense dashboard — no in-platform analytics are required.
+
+---
+
+## 14. Out of Scope (v1)
 
 - Languages other than Go (Python, Rust, TypeScript — future via WASM compilation)
 - More than 2 tanks per match
@@ -793,3 +1112,4 @@ Every match (ranked, test, or informal) is recorded server-side as the maze seed
 - Non-grid (free-movement) navigation
 - Mobile native app
 - Tank-to-tank communication (multi-tank alliances)
+- Subscription payment processing (payment integration is deferred; tier limits and enforcement are in scope, payment collection is not)
