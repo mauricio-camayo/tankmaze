@@ -409,38 +409,49 @@ func (h *handler) handleEliminationR1(ctx context.Context, gd db.GameDay) error 
 	// Globally re-rank qualifiers.
 	globalRerank(qualifiers, gd.Groups, matches)
 
-	// Store derived elimination schedule times based on actual qualifier count.
-	if finalAt, parseErr := time.Parse(time.RFC3339, gd.Schedule.Final); parseErr == nil {
-		numRounds := 0
-		for q := nextPowerOf2(len(qualifiers)); q > 2; q >>= 1 {
-			numRounds++
+	// Derive elimination schedule times based on the actual qualifier count.
+	// Use the pre-created r1 time as the anchor and compute forward: each round
+	// fires 30 min after the previous, and the final fires 30 min after the last
+	// elimination round. This ensures the final time (gd.Schedule.Final) is always
+	// updated to reflect the actual bracket size, not the admin's worst-case estimate.
+	numRounds := 0
+	for q := nextPowerOf2(len(qualifiers)); q > 2; q >>= 1 {
+		numRounds++
+	}
+	if numRounds == 0 {
+		numRounds = 1
+	}
+	var r1StartAt time.Time
+	if len(gd.Schedule.Elimination) > 0 {
+		r1StartAt, _ = time.Parse(time.RFC3339, gd.Schedule.Elimination[0])
+	}
+	if r1StartAt.IsZero() {
+		// Fallback for game days created before pre-populated elimination arrays:
+		// derive r1 start from finalAt assuming maxElimRounds slots.
+		if finalAt, parseErr := time.Parse(time.RFC3339, gd.Schedule.Final); parseErr == nil {
+			r1StartAt = finalAt.Add(-time.Duration(maxPreCreatedElimRounds) * 30 * time.Minute)
 		}
-		if numRounds == 0 {
-			numRounds = 1
-		}
+	}
+	if !r1StartAt.IsZero() {
 		elim := make([]string, numRounds)
 		for i := 0; i < numRounds; i++ {
-			elim[i] = finalAt.Add(-time.Duration(numRounds-i) * 30 * time.Minute).UTC().Format(time.RFC3339)
+			elim[i] = r1StartAt.Add(time.Duration(i) * 30 * time.Minute).UTC().Format(time.RFC3339)
 		}
 		gd.Schedule.Elimination = elim
 
-		// Push the final forward if the last elimination round + 5 min buffer
-		// would overlap it. Admin-set finalAt is a floor, never a ceiling.
-		if len(elim) > 0 {
-			if lastElimAt, lerr := time.Parse(time.RFC3339, elim[len(elim)-1]); lerr == nil {
-				candidate := lastElimAt.Add(5 * time.Minute)
-				if candidate.After(finalAt) {
-					log.Printf("auto-advancing finalAt %s → %s for game day %s",
-						finalAt.Format(time.RFC3339), candidate.UTC().Format(time.RFC3339), gd.GameDayID)
-					gd.Schedule.Final = candidate.UTC().Format(time.RFC3339)
-					h.rescheduleFinal(ctx, gd)
-				}
-			}
+		// Update the final to fire 30 min after the last elimination round.
+		newFinalAt := r1StartAt.Add(time.Duration(numRounds) * 30 * time.Minute)
+		newFinalStr := newFinalAt.UTC().Format(time.RFC3339)
+		if newFinalStr != gd.Schedule.Final {
+			log.Printf("updating finalAt %s → %s for game day %s (%d actual rounds, r1 at %s)",
+				gd.Schedule.Final, newFinalStr, gd.GameDayID, numRounds, r1StartAt.UTC().Format(time.RFC3339))
+			gd.Schedule.Final = newFinalStr
+			h.rescheduleFinal(ctx, gd)
 		}
 
 		// Upsert EventBridge schedules for r2-rN now that we know actual round times.
-		// rescheduleElimRounds also updates gd.Schedule.Final if the last elim round
-		// would fire after the final, so gd must be passed by pointer.
+		// rescheduleElimRounds also guards against finalAt being before the last
+		// elim round, so gd must be passed by pointer.
 		h.rescheduleElimRounds(ctx, &gd, 1)
 	}
 
