@@ -6,7 +6,7 @@ You don't play. You code. Write the autonomous brain that drives your tank in Go
 
 ## Game Concept
 
-You don't play TankMaze. You program your tank, submit it, and watch it fight.
+You don't drive a tank — you program it, submit it, and watch it fight.
 
 - **Write a tank in Go**: implement a `Tick(sensors Sensors) Action` function. It runs every 100 ms and returns one action (move, rotate, fire, scan, or idle). Package-level variables persist across ticks — that's your tank's memory.
 - **Allocate stats**: distribute exactly 15 points across speed, sensor range, damage, armor, and fire rate. Fast tanks see less; hard-hitting tanks move slowly.
