@@ -37,6 +37,11 @@ export class ApiStack extends Stack {
     const { tables, wasmBucket, matchLogsBucket, codebuildProject, userPoolId, userPoolClientId, frontendDomain } = props;
     const backendDir = path.join(__dirname, '../../../backend');
 
+    // Resolve the correct Go binary. The system go may be older than what
+    // go.work requires; prefer the cached toolchain if it exists.
+    const go122 = '/home/macaco/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.22.12.linux-amd64/bin/go';
+    const goBin = require('fs').existsSync(go122) ? go122 : (process.env.GO_BIN ?? 'go');
+
     // ---- Helper: build a Go Lambda from cmd/<name> ----------------------
 
     const goLambda = (id: string, cmd: string, env: Record<string, string>, timeoutSeconds = 29, memoryMB = 256): lambda.Function => {
@@ -51,7 +56,7 @@ export class ApiStack extends Stack {
               tryBundle(outDir: string): boolean {
                 try {
                   childProcess.execSync(
-                    `GOTOOLCHAIN=local GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o ${outDir}/bootstrap ./cmd/${cmd}`,
+                    `GOTOOLCHAIN=local GOOS=linux GOARCH=arm64 ${goBin} build -tags lambda.norpc -o ${outDir}/bootstrap ./cmd/${cmd}`,
                     { cwd: backendDir, stdio: 'inherit' },
                   );
                   return true;
