@@ -1,5 +1,7 @@
 # TankMaze
 
+<img src="images/logo.png" alt="TankMaze logo" width="220" />
+
 Somewhere in the labyrinth, an enemy tank is moving. You don't know where — only that your sensors just spiked and you have one tick to decide: advance, turn, fire, or wait for better data. TankMaze is a strategic programming game where intelligence gathering is survival.
 
 You don't play. You code. Write the autonomous brain that drives your tank in Go, submit it, and watch your creation navigate fog-of-war, enemy contact, and the limits of its own hardware — without you. Refine it between Game Days, climb a global ranking built on strategy not reflexes, and stay ahead: every update your opponent ships is a reason to ship a better one.
