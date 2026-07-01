@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { signIn, signInWithGoogle } from '../services/auth';
 import { useAuthStore } from '../store/authStore';
@@ -20,6 +20,17 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    document.title = 'TankMaze — the strategic tank programming game';
+    const meta = document.querySelector('meta[name="description"]') ?? (() => {
+      const m = document.createElement('meta');
+      m.setAttribute('name', 'description');
+      document.head.appendChild(m);
+      return m;
+    })();
+    meta.setAttribute('content', 'TankMaze is a strategic programming game where you write Go code to control an autonomous tank. Compete in tournaments, climb the global leaderboard, and debug your AI with tick-by-tick replays.');
+  }, []);
 
   async function handleGoogleSignIn() {
     if (import.meta.env.VITE_LOCAL_DEV === 'true') {

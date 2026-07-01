@@ -61,6 +61,7 @@ function LoginRoute() {
 }
 
 const router = createBrowserRouter([
+  { path: '/', element: <LoginRoute /> },
   { path: '/login', element: <LoginRoute /> },
   { path: '/privacy', element: <PrivacyPolicy /> },
   { path: '/watch', element: <Suspense fallback={null}><Watch /></Suspense> },
@@ -86,7 +87,7 @@ const router = createBrowserRouter([
       { path: '/admin/ads', element: <AdminAdConfig /> },
     ],
   },
-  { path: '*', element: <Navigate to="/dashboard" replace /> },
+  { path: '*', element: <Navigate to="/" replace /> },
 ]);
 
 export default function App() {
