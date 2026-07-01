@@ -503,6 +503,7 @@ export default function TankEditor() {
   const [extraImports, setExtraImports] = useState<string[]>([]);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [compileLimitReached, setCompileLimitReached] = useState(false);
   const [pendingVersion, setPendingVersion] = useState<string | null>(null);
   const [pollingPhase, setPollingPhase] = useState<'queued' | 'compiling' | null>(null);
   const [elapsedSecs, setElapsedSecs] = useState(0);
@@ -775,8 +776,14 @@ export default function TankEditor() {
       setPendingVersion(v.version);
       setSaveStatus('polling');
     } catch (e) {
-      setSaveStatus('failed');
-      setSaveError(e instanceof Error ? e.message : 'Submit failed');
+      const msg = e instanceof Error ? e.message : 'Submit failed';
+      if (msg.startsWith('429')) {
+        setCompileLimitReached(true);
+        setSaveStatus('idle');
+      } else {
+        setSaveStatus('failed');
+        setSaveError(msg);
+      }
     }
   }
 
@@ -990,6 +997,15 @@ export default function TankEditor() {
             />
           </div>
         </details>
+      )}
+
+      {/* Compilation limit banner */}
+      {compileLimitReached && (
+        <div style={{ background: '#1c1200', border: '1px solid #92400e', color: '#fbbf24', borderRadius: 8, padding: '12px 16px', marginBottom: 12, fontSize: 14 }}>
+          Compilation limit reached for this period.{' '}
+          <a href="/account" style={{ color: '#f59e0b', fontWeight: 600 }}>View your account</a>{' '}
+          to see your quota or upgrade your plan.
+        </div>
       )}
 
       {/* Status — shown between config and editor so it's always visible */}

@@ -282,6 +282,7 @@ export class ApiStack extends Stack {
     tables.rankings.grantReadData(tankApi);
     tables.maps.grantReadWriteData(tankApi);
     tables.platformConfig.grantReadWriteData(tankApi);
+    tables.userSettings.grantReadWriteData(tankApi);
     wasmBucket.grantReadWrite(tankApi);
     matchLogsBucket.grantRead(tankApi);
     tankApi.addToRolePolicy(new iam.PolicyStatement({

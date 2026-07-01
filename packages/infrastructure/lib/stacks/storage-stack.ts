@@ -19,6 +19,7 @@ export interface TableSet {
   rankings: dynamodb.Table;
   maps: dynamodb.Table;
   platformConfig: dynamodb.Table;
+  userSettings: dynamodb.Table;
 }
 
 // Env var map for Lambda functions
@@ -32,6 +33,7 @@ export function tableEnvVars(t: TableSet): Record<string, string> {
     RANKINGS_TABLE:         t.rankings.tableName,
     MAPS_TABLE:             t.maps.tableName,
     PLATFORM_CONFIG_TABLE:  t.platformConfig.tableName,
+    USER_SETTINGS_TABLE:    t.userSettings.tableName,
   };
 }
 
@@ -127,7 +129,14 @@ export class StorageStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN,
     });
 
-    this.tables = { tanks, tankVersions, matches, connections, gamedays, rankings, maps, platformConfig };
+    const userSettings = new dynamodb.Table(this, 'UserSettingsTable', {
+      tableName: 'tankmaze-user-settings',
+      partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    this.tables = { tanks, tankVersions, matches, connections, gamedays, rankings, maps, platformConfig, userSettings };
 
     // ---- S3 buckets ----------------------------------------------------
 

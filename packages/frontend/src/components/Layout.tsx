@@ -75,7 +75,7 @@ export default function Layout({ children }: LayoutProps) {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {user && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Link to="/account" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
               {user.picture ? (
                 <img
                   src={user.picture}
@@ -95,7 +95,7 @@ export default function Layout({ children }: LayoutProps) {
               <span style={{ color: '#94a3b8', fontSize: 14 }}>
                 {user.name ?? user.username}
               </span>
-            </div>
+            </Link>
           )}
           <button onClick={handleSignOut} style={ghostButtonStyle}>Sign out</button>
         </div>
@@ -107,6 +107,7 @@ export default function Layout({ children }: LayoutProps) {
           { to: '/dashboard', label: 'Dashboard', color: undefined },
           { to: '/leaderboard', label: 'Leaderboard', color: undefined },
           { to: '/gamedays', label: 'Game Days', color: undefined },
+          { to: '/account', label: 'Account', color: undefined },
           ...(user?.isAdmin ? [
             { to: '/admin/users', label: 'Admin: Users', color: '#f59e0b' },
             { to: '/admin/ads', label: 'Admin: Ads', color: '#f59e0b' },

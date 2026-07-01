@@ -1,5 +1,5 @@
 import { getIdToken } from './auth';
-import type { Tank, TankVersion, Match, RankingEntry, GameDay, GameMap } from '../types';
+import type { Tank, TankVersion, Match, RankingEntry, GameDay, GameMap, UserSettings } from '../types';
 
 const BASE = (import.meta.env.VITE_API_ENDPOINT as string) ?? '';
 
@@ -189,6 +189,14 @@ export const adminGetAdConfig = () =>
   request<AdConfigBody & { enabled: boolean }>('/admin/config/ads');
 export const adminUpdateAdConfig = (body: AdConfigBody) =>
   request<void>('/admin/config/ads', { method: 'PATCH', body: JSON.stringify(body) });
+
+// User settings / subscription
+export const getMySettings = () => request<UserSettings>('/me/settings');
+export const adminSetUserTier = (userId: string, tier: string) =>
+  request<{ tier: string }>(`/me/settings?userId=${encodeURIComponent(userId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ tier }),
+  });
 
 export const adminListTanks = (nextToken?: string) =>
   request<{ tanks: Tank[]; nextToken?: string }>(

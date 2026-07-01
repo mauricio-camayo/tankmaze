@@ -43,12 +43,19 @@ const (
 
 // server holds all shared mutable state.
 type server struct {
-	store       *memStore
-	mu          sync.RWMutex
-	wasmData    map[string][]byte    // wasmKey → WASM bytes
-	srcData     map[string][]byte    // sourceKey → source bytes
-	liveMatches map[string]*liveMatch
-	adConfig    adConfigState
+	store        *memStore
+	mu           sync.RWMutex
+	wasmData     map[string][]byte // wasmKey → WASM bytes
+	srcData      map[string][]byte // sourceKey → source bytes
+	liveMatches  map[string]*liveMatch
+	adConfig     adConfigState
+	userSettings userSettingsState
+}
+
+type userSettingsState struct {
+	Tier                   string `json:"tier"`
+	CompilationsThisWindow int    `json:"compilationsThisWindow"`
+	WindowStart            string `json:"windowStart"`
 }
 
 type adConfigState struct {
@@ -191,6 +198,12 @@ func (srv *server) route(w http.ResponseWriter, r *http.Request) {
 	case method == "PATCH" && n == 2 && parts[0] == "maps":
 		srv.updateMap(w, r, parts[1])
 
+	// User settings
+	case method == "GET" && rawPath == "me/settings":
+		srv.getMySettings(w)
+	case method == "PATCH" && rawPath == "me/settings":
+		srv.patchMySettings(w, r)
+
 	// Ad config
 	case method == "GET" && rawPath == "config/ads":
 		srv.getAdConfig(w)
@@ -275,6 +288,20 @@ func (srv *server) createTank(w http.ResponseWriter, r *http.Request) {
 
 	forkFrom := r.URL.Query().Get("forkFrom")
 	forkVersion := r.URL.Query().Get("forkVersion")
+
+	// Enforce tank limit.
+	srv.mu.RLock()
+	tier := srv.userSettings.Tier
+	if tier == "" {
+		tier = db.TierFree
+	}
+	srv.mu.RUnlock()
+	tankLimit, _ := db.TierLimits(tier)
+	existing := srv.store.listTanksByUser(localUserID)
+	if len(existing) >= tankLimit {
+		jsonErr(w, http.StatusForbidden, fmt.Sprintf("tank limit reached (%d/%d for %s tier)", len(existing), tankLimit, tier))
+		return
+	}
 
 	tankID := newUUID()
 	now := time.Now().Unix()
@@ -434,6 +461,33 @@ func (srv *server) submitVersion(w http.ResponseWriter, r *http.Request, tankID 
 		jsonErr(w, http.StatusBadRequest, "source too large")
 		return
 	}
+
+	// Enforce compilation quota before starting the build.
+	srv.mu.Lock()
+	cTier := srv.userSettings.Tier
+	if cTier == "" {
+		cTier = db.TierFree
+	}
+	// Lazy window reset.
+	if srv.userSettings.WindowStart != "" {
+		if t, err2 := time.Parse(time.RFC3339, srv.userSettings.WindowStart); err2 == nil {
+			if time.Since(t) >= 30*24*time.Hour {
+				srv.userSettings.CompilationsThisWindow = 0
+				srv.userSettings.WindowStart = ""
+			}
+		}
+	}
+	_, compileLimit := db.TierLimits(cTier)
+	if srv.userSettings.CompilationsThisWindow >= compileLimit {
+		srv.mu.Unlock()
+		jsonErr(w, http.StatusTooManyRequests, fmt.Sprintf("compilation limit reached (%d/%d for %s tier)", srv.userSettings.CompilationsThisWindow, compileLimit, cTier))
+		return
+	}
+	if srv.userSettings.WindowStart == "" {
+		srv.userSettings.WindowStart = time.Now().UTC().Format(time.RFC3339)
+	}
+	srv.userSettings.CompilationsThisWindow++
+	srv.mu.Unlock()
 
 	versions := srv.store.listVersionsByTank(tankID)
 	nextVer := nextMinorVersion(versions)
@@ -1383,6 +1437,46 @@ func (srv *server) patchAdConfig(w http.ResponseWriter, r *http.Request) {
 	srv.adConfig.BottomSlotID = body.BottomSlotID
 	srv.mu.Unlock()
 	jsonOK(w, map[string]string{"status": "ok"})
+}
+
+// ── User settings handlers ─────────────────────────────────────────────────
+
+func (srv *server) getMySettings(w http.ResponseWriter) {
+	srv.mu.RLock()
+	us := srv.userSettings
+	srv.mu.RUnlock()
+	tier := us.Tier
+	if tier == "" {
+		tier = db.TierFree
+	}
+	tankLimit, compileLimit := db.TierLimits(tier)
+	jsonOK(w, map[string]interface{}{
+		"tier":                   tier,
+		"compilationsThisWindow": us.CompilationsThisWindow,
+		"windowStart":            us.WindowStart,
+		"tankLimit":              tankLimit,
+		"compilationLimit":       compileLimit,
+	})
+}
+
+func (srv *server) patchMySettings(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Tier string `json:"tier"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		jsonErr(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	switch body.Tier {
+	case db.TierFree, db.TierBuilder, db.TierPro:
+	default:
+		jsonErr(w, http.StatusBadRequest, "tier must be free, builder, or pro")
+		return
+	}
+	srv.mu.Lock()
+	srv.userSettings.Tier = body.Tier
+	srv.mu.Unlock()
+	jsonOK(w, map[string]string{"tier": body.Tier})
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────

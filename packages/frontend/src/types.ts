@@ -152,6 +152,16 @@ export interface GameDay {
   randomMaps?: boolean;
 }
 
+export type SubscriptionTier = 'free' | 'builder' | 'pro';
+
+export interface UserSettings {
+  tier: SubscriptionTier;
+  compilationsThisWindow: number;
+  windowStart: string;
+  tankLimit: number;
+  compilationLimit: number;
+}
+
 export interface GameMap {
   mapId: string;
   slug: string;

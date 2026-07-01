@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { listTanks, listAiTanks, forkTank, listGameDays } from '../services/api';
+import { listTanks, listAiTanks, forkTank, listGameDays, getMySettings } from '../services/api';
 import { useAuthStore } from '../store/authStore';
-import type { Tank, TankVersion, GameDay } from '../types';
+import type { Tank, TankVersion, GameDay, UserSettings } from '../types';
 import { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
 import { avatarSrc } from '../components/AvatarPicker';
 
@@ -340,6 +340,7 @@ export default function Dashboard() {
   const [aiTanks, setAiTanks] = useState<AiTank[]>([]);
   const [runningGameDay, setRunningGameDay] = useState<GameDay | null>(null);
   const [upcomingGameDay, setUpcomingGameDay] = useState<GameDay | null>(null);
+  const [settings, setSettings] = useState<UserSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -352,6 +353,9 @@ export default function Dashboard() {
 
   useEffect(() => {
     reload();
+    if (!viewUserId) {
+      getMySettings().then(setSettings).catch(() => {});
+    }
     listAiTanks().then((data) => setAiTanks(data ?? [])).catch(() => {});
     listGameDays()
       .then((days) => {
@@ -371,6 +375,8 @@ export default function Dashboard() {
       })
       .catch(() => {});
   }, []);
+
+  const atTankLimit = !viewUserId && settings !== null && tanks.length >= settings.tankLimit;
 
   function handleNewTank() {
     navigate('/tanks/new/edit');
@@ -399,9 +405,16 @@ export default function Dashboard() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
         <h2 style={{ margin: 0, fontSize: 22, color: '#e2e8f0' }}>{viewUserId ? 'Tanks' : 'My Tanks'}</h2>
         {!viewUserId && (
-          <button onClick={handleNewTank} style={primaryButtonStyle}>
-            + New Tank
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {atTankLimit && (
+              <span style={{ fontSize: 13, color: '#f59e0b' }}>
+                Tank limit reached ({tanks.length}/{settings?.tankLimit})
+              </span>
+            )}
+            <button onClick={handleNewTank} disabled={atTankLimit} style={{ ...primaryButtonStyle, opacity: atTankLimit ? 0.5 : 1, cursor: atTankLimit ? 'not-allowed' : 'pointer' }}>
+              + New Tank
+            </button>
+          </div>
         )}
       </div>
 
@@ -421,7 +434,7 @@ export default function Dashboard() {
             {viewUserId ? 'This user has no tanks.' : "You haven't created any tanks yet."}
           </p>
           {!viewUserId && (
-            <button onClick={handleNewTank} style={primaryButtonStyle}>
+            <button onClick={handleNewTank} disabled={atTankLimit} style={{ ...primaryButtonStyle, opacity: atTankLimit ? 0.5 : 1, cursor: atTankLimit ? 'not-allowed' : 'pointer' }}>
               + New Tank
             </button>
           )}

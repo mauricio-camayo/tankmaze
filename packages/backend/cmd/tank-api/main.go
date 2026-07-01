@@ -82,6 +82,10 @@ type createTankBody struct {
 	Name string `json:"name"`
 }
 
+type patchMySettingsBody struct {
+	Tier string `json:"tier"`
+}
+
 type submitVersionBody struct {
 	Source string           `json:"source"`
 	Config db.VersionConfig `json:"config"`
@@ -302,6 +306,12 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 	case method == "PATCH" && len(parts) == 2 && parts[0] == "maps":
 		return h.updateMap(ctx, req, parts[1])
 
+	// User settings / subscription
+	case method == "GET" && rawPath == "me/settings":
+		return h.getMySettings(ctx, req)
+	case method == "PATCH" && rawPath == "me/settings":
+		return h.patchMySettings(ctx, req)
+
 	// Ad config (public read, admin write)
 	case method == "GET" && rawPath == "config/ads":
 		return h.getAdConfig(ctx)
@@ -394,6 +404,22 @@ func (h *handler) createTank(ctx context.Context, req events.APIGatewayV2HTTPReq
 		} else if srcTank, err := h.store.GetTank(ctx, forkFrom); err == nil && srcTank.UserID == "__ai__" {
 			isAIFork = true
 		}
+	}
+
+	// Enforce per-tier tank limit (skip for admin users viewing as another user).
+	us, err := h.store.GetUserSettings(ctx, uid)
+	if err != nil {
+		log.Printf("get user settings: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	tankLimit, _ := db.TierLimits(us.Tier)
+	existingTanks, err := h.store.ListTanksByUser(ctx, uid)
+	if err != nil {
+		log.Printf("list tanks for limit: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	if len(existingTanks) >= tankLimit {
+		return errResp(http.StatusForbidden, fmt.Sprintf("tank limit reached (%d/%d for %s tier)", len(existingTanks), tankLimit, us.Tier)), nil
 	}
 
 	tankID := newUUID()
@@ -684,6 +710,21 @@ func (h *handler) submitVersion(ctx context.Context, req events.APIGatewayV2HTTP
 	if err := h.store.PutVersion(ctx, ver); err != nil {
 		log.Printf("put version: %v", err)
 		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+
+	// Enforce compilation quota; increment counter after version is committed.
+	cus, err := h.store.GetUserSettings(ctx, uid)
+	if err != nil {
+		log.Printf("get user settings for compile: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	cus, _ = db.ResetWindowIfExpired(cus)
+	_, compileLimit := db.TierLimits(cus.Tier)
+	if cus.CompilationsThisWindow >= compileLimit {
+		return errResp(http.StatusTooManyRequests, fmt.Sprintf("compilation limit reached (%d/%d for %s tier)", cus.CompilationsThisWindow, compileLimit, cus.Tier)), nil
+	}
+	if incErr := h.store.IncrementCompilations(ctx, uid, cus.WindowStart); incErr != nil {
+		log.Printf("increment compilations: %v", incErr)
 	}
 
 	h.triggerBuild(ctx, tankID, nextVer, sourceKey, wasmKey)
@@ -2282,6 +2323,60 @@ func (h *handler) adminResetCompile(ctx context.Context, req events.APIGatewayV2
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
 	return jsonResp(http.StatusOK, map[string]string{"status": "reset"}), nil
+}
+
+// ---- User settings handlers ---------------------------------------------------
+
+func (h *handler) getMySettings(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	uid := userID(req)
+	if uid == "" {
+		return errResp(http.StatusUnauthorized, "unauthorized"), nil
+	}
+	us, err := h.store.GetUserSettings(ctx, uid)
+	if err != nil {
+		log.Printf("getMySettings: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	us, _ = db.ResetWindowIfExpired(us)
+	tankLimit, compileLimit := db.TierLimits(us.Tier)
+	return jsonResp(http.StatusOK, map[string]interface{}{
+		"tier":                   us.Tier,
+		"compilationsThisWindow": us.CompilationsThisWindow,
+		"windowStart":            us.WindowStart,
+		"tankLimit":              tankLimit,
+		"compilationLimit":       compileLimit,
+	}), nil
+}
+
+func (h *handler) patchMySettings(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	if !isAdmin(req) {
+		return errResp(http.StatusForbidden, "admin only"), nil
+	}
+	var body patchMySettingsBody
+	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
+		return errResp(http.StatusBadRequest, "invalid request body"), nil
+	}
+	targetUID := req.QueryStringParameters["userId"]
+	if targetUID == "" {
+		return errResp(http.StatusBadRequest, "userId query param required"), nil
+	}
+	switch body.Tier {
+	case db.TierFree, db.TierBuilder, db.TierPro:
+	default:
+		return errResp(http.StatusBadRequest, "tier must be free, builder, or pro"), nil
+	}
+	us, err := h.store.GetUserSettings(ctx, targetUID)
+	if err != nil {
+		log.Printf("patchMySettings get: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	us.UserID = targetUID
+	us.Tier = body.Tier
+	if err := h.store.PutUserSettings(ctx, us); err != nil {
+		log.Printf("patchMySettings put: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	return jsonResp(http.StatusOK, map[string]string{"tier": us.Tier}), nil
 }
 
 // ---- Ad config handlers -------------------------------------------------------
