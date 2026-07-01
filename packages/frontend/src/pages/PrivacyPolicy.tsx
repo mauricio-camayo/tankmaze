@@ -94,7 +94,7 @@ export default function PrivacyPolicy() {
         <p style={s.p}>
           Depending on your jurisdiction you may have rights to access, correct, or delete your
           personal data. To exercise these rights, email{' '}
-          <a href="mailto:mauricio.camayo@gmail.com" style={s.a}>mauricio.camayo@gmail.com</a>.
+          <a href="mailto:info@tankmaze.org" style={s.a}>info@tankmaze.org</a>.
         </p>
 
         <h2 style={s.h2}>Changes to This Policy</h2>
@@ -107,7 +107,7 @@ export default function PrivacyPolicy() {
         <h2 style={s.h2}>Contact</h2>
         <p style={s.p}>
           Questions? Email{' '}
-          <a href="mailto:mauricio.camayo@gmail.com" style={s.a}>mauricio.camayo@gmail.com</a>.
+          <a href="mailto:info@tankmaze.org" style={s.a}>info@tankmaze.org</a>.
         </p>
       </div>
     </div>
