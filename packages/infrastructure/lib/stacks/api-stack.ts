@@ -23,8 +23,8 @@ interface ApiStackProps extends StackProps {
   codebuildProject: codebuild.Project;
   userPoolId: string;
   userPoolClientId: string;
-  /** CloudFront domain to restrict CORS origins (SEC-CORS). Defaults to '*' when not provided. */
-  frontendDomain?: string;
+  /** Domains to restrict CORS origins to (SEC-CORS). Defaults to '*' when not provided or empty. */
+  frontendDomains?: string[];
 }
 
 export class ApiStack extends Stack {
@@ -34,7 +34,7 @@ export class ApiStack extends Stack {
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
-    const { tables, wasmBucket, matchLogsBucket, codebuildProject, userPoolId, userPoolClientId, frontendDomain } = props;
+    const { tables, wasmBucket, matchLogsBucket, codebuildProject, userPoolId, userPoolClientId, frontendDomains } = props;
     const backendDir = path.join(__dirname, '../../../backend');
 
     // Resolve the correct Go binary. The system go may be older than what
@@ -401,10 +401,12 @@ export class ApiStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN,
     });
 
-    // SEC-CORS: restrict allowed origins to the production CloudFront domain.
-    // Falls back to '*' when frontendDomain is not provided (first deploy before
-    // frontend stack exists). Set props.frontendDomain once the domain is known.
-    const allowOrigins = frontendDomain ? [`https://${frontendDomain}`] : ['*'];
+    // SEC-CORS: restrict allowed origins to the production frontend domain(s).
+    // Falls back to '*' when frontendDomains is not provided (first deploy before
+    // frontend stack exists). Set props.frontendDomains once the domain(s) are known.
+    const allowOrigins = frontendDomains && frontendDomains.length > 0
+      ? frontendDomains.map((d) => `https://${d}`)
+      : ['*'];
 
     const httpApi = new apigwv2.HttpApi(this, 'HttpApi', {
       apiName: 'tankmaze-http',
