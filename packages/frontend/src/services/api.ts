@@ -177,6 +177,19 @@ export const adminToggleUserRole = (sub: string) =>
 export const adminDeleteUser = (sub: string) =>
   request<void>(`/admin/users/${sub}`, { method: 'DELETE' });
 
+// Ad config
+export interface AdConfigBody {
+  publisherId?: string;
+  topSlotId?: string;
+  rightSlotId?: string;
+  bottomSlotId?: string;
+  enabled?: boolean;
+}
+export const adminGetAdConfig = () =>
+  request<AdConfigBody & { enabled: boolean }>('/admin/config/ads');
+export const adminUpdateAdConfig = (body: AdConfigBody) =>
+  request<void>('/admin/config/ads', { method: 'PATCH', body: JSON.stringify(body) });
+
 export const adminListTanks = (nextToken?: string) =>
   request<{ tanks: Tank[]; nextToken?: string }>(
     `/admin/tanks${nextToken ? `?nextToken=${encodeURIComponent(nextToken)}` : ''}`,

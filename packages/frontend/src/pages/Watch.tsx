@@ -277,7 +277,7 @@ export default function Watch() {
           )}
 
           {/* Canvas host — always in DOM so Phaser can mount; hidden until ready */}
-          <div style={{
+          <div className="tm-canvas-wrap" style={{
             width: CANVAS, height: CANVAS,
             border: '1px solid #2d2d4e', borderRadius: 8,
             overflow: 'hidden',
@@ -288,7 +288,7 @@ export default function Watch() {
 
           {/* Placeholder: connecting or waiting for match to be processed */}
           {(!snapshot || matchPending) && !wsError && (
-            <div style={{
+            <div className="tm-canvas-wrap" style={{
               width: CANVAS, height: CANVAS,
               border: '1px solid #2d2d4e', borderRadius: 8,
               display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -305,7 +305,7 @@ export default function Watch() {
           )}
 
           {snapshot && (
-            <div style={{ width: CANVAS, marginTop: 14 }}>
+            <div style={{ maxWidth: CANVAS, width: '100%', marginTop: 14 }}>
               <ObserverHUD
                 snapshot={snapshot}
                 ticks={ticks}

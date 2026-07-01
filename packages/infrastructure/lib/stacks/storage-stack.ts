@@ -18,18 +18,20 @@ export interface TableSet {
   gamedays: dynamodb.Table;
   rankings: dynamodb.Table;
   maps: dynamodb.Table;
+  platformConfig: dynamodb.Table;
 }
 
 // Env var map for Lambda functions
 export function tableEnvVars(t: TableSet): Record<string, string> {
   return {
-    TANKS_TABLE:         t.tanks.tableName,
-    TANK_VERSIONS_TABLE: t.tankVersions.tableName,
-    MATCHES_TABLE:       t.matches.tableName,
-    CONNECTIONS_TABLE:   t.connections.tableName,
-    GAMEDAYS_TABLE:      t.gamedays.tableName,
-    RANKINGS_TABLE:      t.rankings.tableName,
-    MAPS_TABLE:          t.maps.tableName,
+    TANKS_TABLE:            t.tanks.tableName,
+    TANK_VERSIONS_TABLE:    t.tankVersions.tableName,
+    MATCHES_TABLE:          t.matches.tableName,
+    CONNECTIONS_TABLE:      t.connections.tableName,
+    GAMEDAYS_TABLE:         t.gamedays.tableName,
+    RANKINGS_TABLE:         t.rankings.tableName,
+    MAPS_TABLE:             t.maps.tableName,
+    PLATFORM_CONFIG_TABLE:  t.platformConfig.tableName,
   };
 }
 
@@ -118,7 +120,14 @@ export class StorageStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN,
     });
 
-    this.tables = { tanks, tankVersions, matches, connections, gamedays, rankings, maps };
+    const platformConfig = new dynamodb.Table(this, 'PlatformConfigTable', {
+      tableName: 'tankmaze-platform-config',
+      partitionKey: { name: 'configKey', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    this.tables = { tanks, tankVersions, matches, connections, gamedays, rankings, maps, platformConfig };
 
     // ---- S3 buckets ----------------------------------------------------
 

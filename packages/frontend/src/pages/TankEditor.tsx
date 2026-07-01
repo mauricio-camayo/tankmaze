@@ -892,6 +892,23 @@ export default function TankEditor() {
 
   return (
     <Layout>
+      {/* Mobile read-only notice (hidden on tablet/desktop via responsive.css) */}
+      <div className="tm-mobile-readonly" style={{
+        background: '#1a1a2e', border: '1px solid #2d2d4e', borderRadius: 10,
+        padding: '24px 20px', textAlign: 'center',
+      }}>
+        <div style={{ fontSize: 32, marginBottom: 12 }}>🖥️</div>
+        <p style={{ margin: '0 0 8px', color: '#e2e8f0', fontWeight: 600, fontSize: 16 }}>
+          Desktop browser required
+        </p>
+        <p style={{ margin: 0, color: '#64748b', fontSize: 14, lineHeight: 1.5 }}>
+          Tank code editing requires a desktop browser. You can view this page on a desktop to edit your tank.
+        </p>
+      </div>
+
+      {/* Editor — hidden on mobile via responsive.css */}
+      <div className="tm-mobile-editor">
+
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -1039,6 +1056,8 @@ export default function TankEditor() {
           onStay={() => blocker.reset?.()}
         />
       )}
+
+      </div>{/* end tm-mobile-editor */}
     </Layout>
   );
 }

@@ -302,6 +302,14 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 	case method == "PATCH" && len(parts) == 2 && parts[0] == "maps":
 		return h.updateMap(ctx, req, parts[1])
 
+	// Ad config (public read, admin write)
+	case method == "GET" && rawPath == "config/ads":
+		return h.getAdConfig(ctx)
+	case method == "GET" && rawPath == "admin/config/ads":
+		return h.adminGetAdConfig(ctx, req)
+	case method == "PATCH" && rawPath == "admin/config/ads":
+		return h.adminPatchAdConfig(ctx, req)
+
 	// Admin
 	case method == "GET" && rawPath == "admin/users":
 		return h.adminListUsers(ctx, req)
@@ -2274,6 +2282,91 @@ func (h *handler) adminResetCompile(ctx context.Context, req events.APIGatewayV2
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
 	return jsonResp(http.StatusOK, map[string]string{"status": "reset"}), nil
+}
+
+// ---- Ad config handlers -------------------------------------------------------
+
+// getAdConfig is the public endpoint GET /config/ads — no auth required.
+func (h *handler) getAdConfig(ctx context.Context) (events.APIGatewayV2HTTPResponse, error) {
+	cfg, err := h.store.GetAdConfig(ctx)
+	if err != nil {
+		log.Printf("getAdConfig: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	return jsonResp(http.StatusOK, map[string]interface{}{
+		"enabled":      cfg.Enabled,
+		"publisherId":  cfg.PublisherID,
+		"topSlotId":    cfg.TopSlotID,
+		"rightSlotId":  cfg.RightSlotID,
+		"bottomSlotId": cfg.BottomSlotID,
+	}), nil
+}
+
+func (h *handler) adminGetAdConfig(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	if !isAdmin(req) {
+		return errResp(http.StatusForbidden, "forbidden"), nil
+	}
+	cfg, err := h.store.GetAdConfig(ctx)
+	if err != nil {
+		log.Printf("adminGetAdConfig: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	return jsonResp(http.StatusOK, map[string]interface{}{
+		"enabled":      cfg.Enabled,
+		"publisherId":  cfg.PublisherID,
+		"topSlotId":    cfg.TopSlotID,
+		"rightSlotId":  cfg.RightSlotID,
+		"bottomSlotId": cfg.BottomSlotID,
+	}), nil
+}
+
+type patchAdConfigBody struct {
+	Enabled      *bool  `json:"enabled"`
+	PublisherID  string `json:"publisherId"`
+	TopSlotID    string `json:"topSlotId"`
+	RightSlotID  string `json:"rightSlotId"`
+	BottomSlotID string `json:"bottomSlotId"`
+}
+
+func (h *handler) adminPatchAdConfig(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	if !isAdmin(req) {
+		return errResp(http.StatusForbidden, "forbidden"), nil
+	}
+	var body patchAdConfigBody
+	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
+		return errResp(http.StatusBadRequest, "invalid request body"), nil
+	}
+	existing, err := h.store.GetAdConfig(ctx)
+	if err != nil {
+		log.Printf("adminPatchAdConfig get: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	// When enabled is present the client is sending a full config; replace all fields.
+	if body.Enabled != nil {
+		existing.Enabled = *body.Enabled
+		existing.PublisherID = body.PublisherID
+		existing.TopSlotID = body.TopSlotID
+		existing.RightSlotID = body.RightSlotID
+		existing.BottomSlotID = body.BottomSlotID
+	} else {
+		if body.PublisherID != "" {
+			existing.PublisherID = body.PublisherID
+		}
+		if body.TopSlotID != "" {
+			existing.TopSlotID = body.TopSlotID
+		}
+		if body.RightSlotID != "" {
+			existing.RightSlotID = body.RightSlotID
+		}
+		if body.BottomSlotID != "" {
+			existing.BottomSlotID = body.BottomSlotID
+		}
+	}
+	if err := h.store.PutAdConfig(ctx, existing); err != nil {
+		log.Printf("adminPatchAdConfig put: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	return jsonResp(http.StatusOK, map[string]string{"status": "ok"}), nil
 }
 
 // isAdmin returns true if the caller belongs to the "platform-admin" Cognito group.

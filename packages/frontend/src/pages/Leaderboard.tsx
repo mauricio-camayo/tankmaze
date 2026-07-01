@@ -57,7 +57,7 @@ function LeaderboardRow({ entry, onClick }: { entry: RankingEntry; onClick: () =
         alignItems: 'center', gap: 8, padding: '10px 4px',
         borderBottom: '1px solid #2d2d4e', cursor: 'pointer',
         background: hovered ? 'rgba(255,255,255,0.03)' : 'transparent',
-        transition: 'background 0.1s',
+        transition: 'background 0.1s', minWidth: 560,
       }}
     >
       <span style={{ fontWeight: 700, fontSize: 14, color: rankColor(entry.rank) }}>
@@ -123,10 +123,11 @@ export default function Leaderboard() {
 
       {!loading && !error && entries.length > 0 && (
         <div style={cardStyle}>
+          <div className="tm-table-scroll">
           <div style={{
             display: 'grid', gridTemplateColumns: COLS,
             alignItems: 'center', gap: 8, padding: '0 4px 10px',
-            borderBottom: '1px solid #2d2d4e', marginBottom: 2,
+            borderBottom: '1px solid #2d2d4e', marginBottom: 2, minWidth: 560,
           }}>
             <span style={thStyle}>#</span>
             <span style={thStyle}>Tank</span>
@@ -140,6 +141,7 @@ export default function Leaderboard() {
           {visible.map((e) => (
             <LeaderboardRow key={e.tankId} entry={e} onClick={() => navigate(`/tanks/${e.tankId}`)} />
           ))}
+          </div>{/* end tm-table-scroll */}
 
           {pageCount > 1 && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '16px 4px 4px' }}>
@@ -149,6 +151,7 @@ export default function Leaderboard() {
                 style={{
                   background: 'none', border: '1px solid #2d2d4e', color: page === 1 ? '#475569' : '#94a3b8',
                   borderRadius: 6, padding: '4px 14px', cursor: page === 1 ? 'default' : 'pointer', fontSize: 13,
+                  minHeight: 44,
                 }}
               >
                 Prev
@@ -160,6 +163,7 @@ export default function Leaderboard() {
                 style={{
                   background: 'none', border: '1px solid #2d2d4e', color: page === pageCount ? '#475569' : '#94a3b8',
                   borderRadius: 6, padding: '4px 14px', cursor: page === pageCount ? 'default' : 'pointer', fontSize: 13,
+                  minHeight: 44,
                 }}
               >
                 Next

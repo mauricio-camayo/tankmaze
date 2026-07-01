@@ -32,6 +32,7 @@ type Store struct {
 	gamedaysTable    string
 	rankingsTable    string
 	mapsTable        string
+	configTable      string
 }
 
 // New creates a Store from a pre-configured DynamoDB client. Table names are
@@ -46,6 +47,7 @@ func New(client *dynamodb.Client) *Store {
 		gamedaysTable:    os.Getenv("GAMEDAYS_TABLE"),
 		rankingsTable:    os.Getenv("RANKINGS_TABLE"),
 		mapsTable:        os.Getenv("MAPS_TABLE"),
+		configTable:      os.Getenv("PLATFORM_CONFIG_TABLE"),
 	}
 }
 

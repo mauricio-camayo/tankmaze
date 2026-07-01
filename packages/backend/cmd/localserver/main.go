@@ -48,6 +48,15 @@ type server struct {
 	wasmData    map[string][]byte    // wasmKey → WASM bytes
 	srcData     map[string][]byte    // sourceKey → source bytes
 	liveMatches map[string]*liveMatch
+	adConfig    adConfigState
+}
+
+type adConfigState struct {
+	Enabled      bool   `json:"enabled"`
+	PublisherID  string `json:"publisherId"`
+	TopSlotID    string `json:"topSlotId"`
+	RightSlotID  string `json:"rightSlotId"`
+	BottomSlotID string `json:"bottomSlotId"`
 }
 
 func newServer() *server {
@@ -181,6 +190,14 @@ func (srv *server) route(w http.ResponseWriter, r *http.Request) {
 		srv.createMap(w, r)
 	case method == "PATCH" && n == 2 && parts[0] == "maps":
 		srv.updateMap(w, r, parts[1])
+
+	// Ad config
+	case method == "GET" && rawPath == "config/ads":
+		srv.getAdConfig(w)
+	case method == "GET" && rawPath == "admin/config/ads":
+		srv.getAdConfig(w)
+	case method == "PATCH" && rawPath == "admin/config/ads":
+		srv.patchAdConfig(w, r)
 
 	// Admin
 	case method == "GET" && rawPath == "admin/users":
@@ -1333,6 +1350,39 @@ func (srv *server) adminResetCompile(w http.ResponseWriter, r *http.Request, tan
 		Status: "failed", CompileError: "reset by admin",
 	})
 	jsonOK(w, map[string]string{"status": "reset"})
+}
+
+// ── Ad config handlers ─────────────────────────────────────────────────────
+
+func (srv *server) getAdConfig(w http.ResponseWriter) {
+	srv.mu.RLock()
+	cfg := srv.adConfig
+	srv.mu.RUnlock()
+	jsonOK(w, cfg)
+}
+
+func (srv *server) patchAdConfig(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Enabled      *bool  `json:"enabled"`
+		PublisherID  string `json:"publisherId"`
+		TopSlotID    string `json:"topSlotId"`
+		RightSlotID  string `json:"rightSlotId"`
+		BottomSlotID string `json:"bottomSlotId"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		jsonErr(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	srv.mu.Lock()
+	if body.Enabled != nil {
+		srv.adConfig.Enabled = *body.Enabled
+	}
+	srv.adConfig.PublisherID = body.PublisherID
+	srv.adConfig.TopSlotID = body.TopSlotID
+	srv.adConfig.RightSlotID = body.RightSlotID
+	srv.adConfig.BottomSlotID = body.BottomSlotID
+	srv.mu.Unlock()
+	jsonOK(w, map[string]string{"status": "ok"})
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────

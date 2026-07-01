@@ -281,6 +281,7 @@ export class ApiStack extends Stack {
     tables.gamedays.grantReadWriteData(tankApi);
     tables.rankings.grantReadData(tankApi);
     tables.maps.grantReadWriteData(tankApi);
+    tables.platformConfig.grantReadWriteData(tankApi);
     wasmBucket.grantReadWrite(tankApi);
     matchLogsBucket.grantRead(tankApi);
     tankApi.addToRolePolicy(new iam.PolicyStatement({
@@ -437,6 +438,7 @@ export class ApiStack extends Stack {
       '/gamedays',
       '/gamedays/{gameDayId}',
       '/tanks/ai',
+      '/config/ads',
     ];
     for (const p of publicPaths) {
       httpApi.addRoutes({

@@ -12,6 +12,7 @@ import GameDay from './pages/GameDay';
 import GameDayList from './pages/GameDayList';
 import AdminUsers from './pages/admin/Users';
 import AdminTanks from './pages/admin/Tanks';
+import AdminAdConfig from './pages/admin/AdConfig';
 
 // Watch imports Phaser (~1 MB) — keep it in a separate lazy chunk
 const Watch = lazy(() => import('./pages/Watch'));
@@ -68,6 +69,7 @@ const router = createBrowserRouter([
     children: [
       { path: '/admin/users', element: <AdminUsers /> },
       { path: '/admin/tanks', element: <AdminTanks /> },
+      { path: '/admin/ads', element: <AdminAdConfig /> },
     ],
   },
   { path: '*', element: <Navigate to="/dashboard" replace /> },

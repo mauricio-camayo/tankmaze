@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { signOut } from '../services/auth';
 import { useAuthStore } from '../store/authStore';
 import { formatNavClock } from '../utils/time';
+import AdSlots from './AdSlots';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -11,12 +12,17 @@ interface LayoutProps {
 export default function Layout({ children }: LayoutProps) {
   const { user, setUser } = useAuthStore();
   const navigate = useNavigate();
+  const location = useLocation();
   const [clock, setClock] = useState(() => formatNavClock(new Date()));
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     const id = setInterval(() => setClock(formatNavClock(new Date())), 60_000);
     return () => clearInterval(id);
   }, []);
+
+  // Close drawer on navigation
+  useEffect(() => { setMenuOpen(false); }, [location.pathname]);
 
   async function handleSignOut() {
     await signOut();
@@ -24,24 +30,49 @@ export default function Layout({ children }: LayoutProps) {
     navigate('/login');
   }
 
+  const isAdminRoute = location.pathname.startsWith('/admin');
+  const isLoginRoute = location.pathname === '/login';
+  const showAds = !isAdminRoute && !isLoginRoute;
+
   return (
-    <div style={{ minHeight: '100vh', background: '#0f0f1a', color: '#e2e8f0' }}>
+    <div style={{ minHeight: '100vh', background: '#0f0f1a', color: '#e2e8f0', position: 'relative' }}>
       <nav style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 24px', height: 56,
+        padding: '0 24px', height: 56, position: 'relative',
         background: '#1a1a2e', borderBottom: '1px solid #2d2d4e',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-          <Link to="/dashboard" style={{ color: '#7c6af7', fontWeight: 700, fontSize: 18, textDecoration: 'none' }}>
-            TankMaze
-          </Link>
+        {/* Logo — always visible */}
+        <Link to="/dashboard" style={{ color: '#7c6af7', fontWeight: 700, fontSize: 18, textDecoration: 'none', flexShrink: 0 }}>
+          TankMaze
+        </Link>
+
+        {/* Desktop nav links (hidden on mobile/tablet via CSS) */}
+        <div className="tm-nav-links" style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
           <Link to="/leaderboard" style={navLinkStyle}>Leaderboard</Link>
           <Link to="/gamedays" style={navLinkStyle}>Game Days</Link>
-          {user?.isAdmin && <Link to="/admin/users" style={{ ...navLinkStyle, color: '#f59e0b' }}>Admin</Link>}
+          {user?.isAdmin && (
+            <>
+              <Link to="/admin/users" style={{ ...navLinkStyle, color: '#f59e0b' }}>Users</Link>
+              <Link to="/admin/ads" style={{ ...navLinkStyle, color: '#f59e0b' }}>Ads</Link>
+            </>
+          )}
         </div>
-        <span style={{ color: '#7c6af7', fontSize: 13, fontWeight: 600 }}>
+
+        {/* Hamburger button (hidden on desktop via CSS) */}
+        <button
+          className="tm-hamburger"
+          onClick={() => setMenuOpen((o) => !o)}
+          aria-label="Menu"
+          aria-expanded={menuOpen}
+          style={{ fontSize: 20 }}
+        >
+          {menuOpen ? '✕' : '☰'}
+        </button>
+
+        <span className="tm-nav-clock" style={{ color: '#7c6af7', fontSize: 13, fontWeight: 600 }}>
           {clock}
         </span>
+
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {user && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -69,9 +100,38 @@ export default function Layout({ children }: LayoutProps) {
           <button onClick={handleSignOut} style={ghostButtonStyle}>Sign out</button>
         </div>
       </nav>
-      <main style={{ maxWidth: 960, margin: '0 auto', padding: '32px 24px' }}>
-        {children}
-      </main>
+
+      {/* Mobile/tablet slide-down drawer */}
+      <div className={`tm-nav-drawer${menuOpen ? ' open' : ''}`}>
+        {[
+          { to: '/dashboard', label: 'Dashboard', color: undefined },
+          { to: '/leaderboard', label: 'Leaderboard', color: undefined },
+          { to: '/gamedays', label: 'Game Days', color: undefined },
+          ...(user?.isAdmin ? [
+            { to: '/admin/users', label: 'Admin: Users', color: '#f59e0b' },
+            { to: '/admin/ads', label: 'Admin: Ads', color: '#f59e0b' },
+          ] : []),
+        ].map(({ to, label, color }) => (
+          <Link
+            key={to}
+            to={to}
+            style={{ ...navLinkStyle, ...(color ? { color } : {}), fontSize: 16, minHeight: 44, display: 'flex', alignItems: 'center' }}
+          >
+            {label}
+          </Link>
+        ))}
+      </div>
+
+      {showAds && <AdSlots position="top" />}
+
+      <div style={{ position: 'relative' }}>
+        <main style={{ maxWidth: 960, margin: '0 auto', padding: '32px 24px' }}>
+          {children}
+        </main>
+        {showAds && <AdSlots position="right" />}
+      </div>
+
+      {showAds && <AdSlots position="bottom" />}
     </div>
   );
 }
