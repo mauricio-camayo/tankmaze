@@ -11,7 +11,7 @@ export class AuthStack extends Stack {
 
     const googleClientId = this.node.tryGetContext('googleClientId') as string | undefined;
     const googleClientSecret = this.node.tryGetContext('googleClientSecret') as string | undefined;
-    const callbackUrls = ['http://localhost:5173'];
+    const callbackUrls = ['http://localhost:5173', 'https://tankmaze.org'];
     if (process.env.SITE_URL) callbackUrls.push(process.env.SITE_URL);
 
     // Logical ID changed (UserPool → UserPool2) to force CloudFormation
