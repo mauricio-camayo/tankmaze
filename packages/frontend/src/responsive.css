@@ -1,0 +1,125 @@
+/* ── TankMaze Responsive Styles ── */
+
+/* Hamburger button: hidden on desktop, visible on mobile/tablet */
+.tm-hamburger {
+  display: none;
+  background: none;
+  border: 1px solid #2d2d4e;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 18px;
+  line-height: 1;
+  min-height: 44px;
+  min-width: 44px;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Desktop nav links row */
+.tm-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+/* Center clock */
+.tm-nav-clock {
+  display: block;
+}
+
+/* Mobile/tablet drawer */
+.tm-nav-drawer {
+  display: none;
+  position: absolute;
+  top: 56px;
+  left: 0;
+  right: 0;
+  background: #1a1a2e;
+  border-bottom: 1px solid #2d2d4e;
+  padding: 16px 24px;
+  flex-direction: column;
+  gap: 16px;
+  z-index: 100;
+}
+.tm-nav-drawer.open {
+  display: flex;
+}
+
+/* Touch target minimum 44×44 */
+.tm-touch { min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; }
+
+/* Scrollable table wrapper */
+.tm-table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Canvas scaling */
+.tm-canvas-wrap {
+  max-width: 100%;
+}
+
+/* Mobile view-only banner (hidden by default) */
+.tm-mobile-readonly { display: none; }
+.tm-mobile-editor   { display: block; }
+
+/* Ad slots layout */
+.tm-ad-top-bar {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+.tm-ad-right-rail {
+  position: fixed;
+  right: 16px;
+  top: 80px;
+  width: 160px;
+}
+.tm-ad-bottom-bar {
+  display: none;
+  width: 100%;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+/* ── ≤ 1023 px (mobile + tablet): hamburger nav ── */
+@media (max-width: 1023px) {
+  .tm-hamburger     { display: inline-flex; }
+  .tm-nav-links     { display: none; }
+  .tm-nav-clock     { display: none; }
+
+  /* Shift sign-out / avatar to right; hamburger on far left */
+  .tm-nav-right-pair { gap: 8px; }
+
+  /* Right-rail ad hidden on tablet+mobile */
+  .tm-ad-right-rail { display: none; }
+}
+
+/* ── ≤ 639 px (mobile only) ── */
+@media (max-width: 639px) {
+  /* TankEditor: read-only mode */
+  .tm-mobile-readonly { display: block; }
+  .tm-mobile-editor   { display: none; }
+
+  /* Scale canvas host to viewport width */
+  .tm-canvas-wrap {
+    width: 100%;
+    overflow: hidden;
+  }
+  .tm-canvas-wrap > div {
+    width: 100% !important;
+    height: auto !important;
+    aspect-ratio: 1;
+  }
+  .tm-canvas-wrap canvas {
+    width: 100% !important;
+    height: auto !important;
+  }
+
+  /* Bottom bar ad shown on mobile instead of right rail */
+  .tm-ad-top-bar { display: none; }
+  .tm-ad-bottom-bar { display: flex; }
+}
