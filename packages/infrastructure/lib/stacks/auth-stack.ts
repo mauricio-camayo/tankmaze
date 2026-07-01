@@ -1,5 +1,6 @@
 import { Stack, StackProps, CfnOutput, SecretValue } from 'aws-cdk-lib';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import { Construct } from 'constructs';
 
 export class AuthStack extends Stack {
@@ -44,11 +45,18 @@ export class AuthStack extends Stack {
       description: 'TankMaze platform administrators',
     });
 
-    // Domain prefix changed alongside pool recreation to avoid a collision
-    // while CloudFormation is deleting the old domain and creating the new one.
-    const domainPrefix = `tankmaze-auth-${this.account}`;
-    this.userPool.addDomain('Domain', {
-      cognitoDomain: { domainPrefix },
+    // Custom domain so Google's consent screen shows "auth.tankmaze.org"
+    // instead of the default *.amazoncognito.com prefix domain. DNS is on
+    // Cloudflare (not Route53), so validation is manual: after `cdk deploy`
+    // starts, fetch the CNAME record ACM is waiting on and add it in
+    // Cloudflare, then wait for the certificate to issue.
+    const authDomainName = 'auth.tankmaze.org';
+    const certificate = new acm.Certificate(this, 'AuthDomainCertificate', {
+      domainName: authDomainName,
+      validation: acm.CertificateValidation.fromDns(),
+    });
+    const domain = this.userPool.addDomain('Domain', {
+      customDomain: { domainName: authDomainName, certificate },
     });
 
     const supportedIdentityProviders = [cognito.UserPoolClientIdentityProvider.COGNITO];
@@ -91,8 +99,10 @@ export class AuthStack extends Stack {
 
     new CfnOutput(this, 'UserPoolId',     { value: this.userPool.userPoolId });
     new CfnOutput(this, 'UserPoolClientId', { value: this.userPoolClient.userPoolClientId });
-    new CfnOutput(this, 'CognitoDomain',  {
-      value: `${domainPrefix}.auth.${this.region}.amazoncognito.com`,
+    new CfnOutput(this, 'CognitoDomain',  { value: authDomainName });
+    new CfnOutput(this, 'CognitoDomainCloudFrontTarget', {
+      value: domain.cloudFrontDomainName,
+      description: 'Point a Cloudflare CNAME for auth.tankmaze.org at this value',
     });
   }
 }
