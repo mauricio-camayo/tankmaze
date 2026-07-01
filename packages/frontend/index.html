@@ -3,10 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>TankMaze</title>
+    <title>TankMaze — the strategic tank programming game</title>
+    <meta name="description" content="TankMaze is a strategic programming game where you write Go code to control an autonomous tank. Compete in tournaments, climb the global leaderboard, and debug your AI with tick-by-tick replays." />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Static content for crawlers; React replaces this on load -->
+      <h1>TankMaze</h1>
+      <p>TankMaze is a strategic programming game where you write Go code to control an autonomous tank and compete in scheduled tournaments.</p>
+      <p>You don't drive a tank — you code one. Write the autonomous brain that drives your tank in Go, submit it, and watch your creation navigate fog-of-war, enemy contact, and the limits of its own hardware — without you.</p>
+      <h2>What you can do</h2>
+      <ul>
+        <li>Write a tank AI in Go — implement a Tick(sensors) Action function that runs every 100 ms.</li>
+        <li>Allocate stats — distribute 15 points across speed, sensor range, damage, armor, and fire rate.</li>
+        <li>Compete in Game Days — round-robin groups followed by single-elimination brackets.</li>
+        <li>Replay and debug — every match recorded tick-by-tick with full sensor and memory inspection.</li>
+      </ul>
+      <p>Sign in to start building your tank. <a href="/login">Sign in</a> · <a href="/privacy">Privacy Policy</a></p>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
