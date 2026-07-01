@@ -3,7 +3,7 @@ import { createBrowserRouter, RouterProvider, Navigate, useLocation, Outlet } fr
 import { Hub } from 'aws-amplify/utils';
 import { getAuthUser, getUserProfile } from './services/auth';
 import { useAuthStore } from './store/authStore';
-import Login from './pages/Login';
+import Landing from './pages/Landing';
 import Dashboard from './pages/Dashboard';
 import TankDetail from './pages/TankDetail';
 import TankEditor from './pages/TankEditor';
@@ -53,16 +53,16 @@ function UpgradePlaceholder() {
   );
 }
 
-function LoginRoute() {
+function LandingRoute() {
   const { user, loading } = useAuthStore();
   if (loading) return null;
   if (user) return <Navigate to="/dashboard" replace />;
-  return <Login />;
+  return <Landing />;
 }
 
 const router = createBrowserRouter([
-  { path: '/', element: <LoginRoute /> },
-  { path: '/login', element: <LoginRoute /> },
+  { path: '/', element: <LandingRoute /> },
+  { path: '/login', element: <LandingRoute /> },
   { path: '/privacy', element: <PrivacyPolicy /> },
   { path: '/watch', element: <Suspense fallback={null}><Watch /></Suspense> },
   { path: '/leaderboard', element: <Leaderboard /> },
