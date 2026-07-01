@@ -133,6 +133,15 @@ export default function Layout({ children }: LayoutProps) {
       </div>
 
       {showAds && <AdSlots position="bottom" />}
+
+      <footer style={{
+        borderTop: '1px solid #1e1e35', padding: '12px 24px',
+        display: 'flex', justifyContent: 'center', gap: 24,
+        fontSize: 12, color: '#475569',
+      }}>
+        <Link to="/privacy" style={{ color: '#475569', textDecoration: 'none' }}>Privacy Policy</Link>
+        <span>© {new Date().getFullYear()} TankMaze</span>
+      </footer>
     </div>
   );
 }

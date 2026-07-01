@@ -14,6 +14,7 @@ import AdminUsers from './pages/admin/Users';
 import AdminTanks from './pages/admin/Tanks';
 import AdminAdConfig from './pages/admin/AdConfig';
 import Account from './pages/Account';
+import PrivacyPolicy from './pages/PrivacyPolicy';
 
 // Watch imports Phaser (~1 MB) — keep it in a separate lazy chunk
 const Watch = lazy(() => import('./pages/Watch'));
@@ -61,6 +62,7 @@ function LoginRoute() {
 
 const router = createBrowserRouter([
   { path: '/login', element: <LoginRoute /> },
+  { path: '/privacy', element: <PrivacyPolicy /> },
   { path: '/watch', element: <Suspense fallback={null}><Watch /></Suspense> },
   { path: '/leaderboard', element: <Leaderboard /> },
   { path: '/gamedays', element: <GameDayList /> },
