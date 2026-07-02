@@ -56,7 +56,12 @@ export default function Account() {
 
   return (
     <Layout>
-      <h1 style={{ fontSize: 28, fontWeight: 700, color: '#e2e8f0', marginBottom: 8 }}>Account</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <h1 style={{ fontSize: 28, fontWeight: 700, color: '#e2e8f0', margin: 0 }}>Account</h1>
+        <Link to="/profile" style={{ color: '#7c6af7', fontSize: 13, textDecoration: 'none', fontWeight: 600 }}>
+          Edit profile →
+        </Link>
+      </div>
 
       {error && (
         <div style={{ ...cardStyle, borderColor: '#7f1d1d', color: '#fca5a5', marginBottom: 16 }}>{error}</div>

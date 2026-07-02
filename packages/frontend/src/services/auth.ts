@@ -81,8 +81,8 @@ export async function getAuthUser() {
   }
 }
 
-export async function getUserProfile(): Promise<{ sub?: string; name?: string; picture?: string; isAdmin?: boolean }> {
-  if (LOCAL_DEV) return { name: 'Local User', isAdmin: true };
+export async function getUserProfile(): Promise<{ sub?: string; name?: string; picture?: string; email?: string; isAdmin?: boolean }> {
+  if (LOCAL_DEV) return { name: 'Local User', email: 'dev@localhost', isAdmin: true };
   try {
     const session = await fetchAuthSession();
     const payload = session.tokens?.idToken?.payload;
@@ -92,6 +92,7 @@ export async function getUserProfile(): Promise<{ sub?: string; name?: string; p
       sub: payload['sub'] as string | undefined,
       name: (payload['given_name'] ?? payload['name']) as string | undefined,
       picture: payload['picture'] as string | undefined,
+      email: payload['email'] as string | undefined,
       isAdmin: groups?.includes('platform-admin') ?? false,
     };
   } catch {

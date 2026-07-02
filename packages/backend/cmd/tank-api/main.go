@@ -86,6 +86,10 @@ type patchMySettingsBody struct {
 	Tier string `json:"tier"`
 }
 
+type patchMyProfileBody struct {
+	Name string `json:"name"`
+}
+
 type submitVersionBody struct {
 	Source string           `json:"source"`
 	Config db.VersionConfig `json:"config"`
@@ -311,6 +315,10 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 		return h.getMySettings(ctx, req)
 	case method == "PATCH" && rawPath == "me/settings":
 		return h.patchMySettings(ctx, req)
+
+	// User profile
+	case method == "PATCH" && rawPath == "me/profile":
+		return h.patchMyProfile(ctx, req)
 
 	// Ad config (public read, admin write)
 	case method == "GET" && rawPath == "config/ads":
@@ -2377,6 +2385,54 @@ func (h *handler) patchMySettings(ctx context.Context, req events.APIGatewayV2HT
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
 	return jsonResp(http.StatusOK, map[string]string{"tier": us.Tier}), nil
+}
+
+// patchMyProfile updates the caller's display name: the Cognito given_name
+// attribute (source of truth) plus the denormalized authorName copy already
+// stored on each of their tanks (same field the lazy-backfill in getTank
+// populates from JWT claims when empty). Email is immutable here by design.
+func (h *handler) patchMyProfile(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	uid := userID(req)
+	if uid == "" {
+		return errResp(http.StatusUnauthorized, "unauthorized"), nil
+	}
+	var body patchMyProfileBody
+	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
+		return errResp(http.StatusBadRequest, "invalid request body"), nil
+	}
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		return errResp(http.StatusBadRequest, "name is required"), nil
+	}
+
+	username, err := h.getUsernameBySub(ctx, uid)
+	if err != nil {
+		return errResp(http.StatusNotFound, "user not found"), nil
+	}
+	_, err = h.cognito.AdminUpdateUserAttributes(ctx, &cognitoidp.AdminUpdateUserAttributesInput{
+		UserPoolId: aws.String(h.userPoolID),
+		Username:   aws.String(username),
+		UserAttributes: []cognitotypes.AttributeType{
+			{Name: aws.String("given_name"), Value: aws.String(name)},
+		},
+	})
+	if err != nil {
+		log.Printf("patchMyProfile update attrs %s: %v", uid, err)
+		return errResp(http.StatusInternalServerError, "failed to update profile"), nil
+	}
+
+	tanks, err := h.store.ListTanksByUser(ctx, uid)
+	if err != nil {
+		log.Printf("patchMyProfile list tanks %s: %v", uid, err)
+	} else {
+		for _, t := range tanks {
+			if err := h.store.UpdateAuthorName(ctx, t.TankID, name); err != nil {
+				log.Printf("patchMyProfile backfill authorName %s: %v", t.TankID, err)
+			}
+		}
+	}
+
+	return jsonResp(http.StatusOK, map[string]string{"name": name}), nil
 }
 
 // ---- Ad config handlers -------------------------------------------------------

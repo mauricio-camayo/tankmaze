@@ -198,6 +198,10 @@ export const adminSetUserTier = (userId: string, tier: string) =>
     body: JSON.stringify({ tier }),
   });
 
+// User profile
+export const updateMyProfile = (name: string) =>
+  request<{ name: string }>('/me/profile', { method: 'PATCH', body: JSON.stringify({ name }) });
+
 export const adminListTanks = (nextToken?: string) =>
   request<{ tanks: Tank[]; nextToken?: string }>(
     `/admin/tanks${nextToken ? `?nextToken=${encodeURIComponent(nextToken)}` : ''}`,

@@ -399,6 +399,29 @@ func (s *memStore) toggleUserAdmin(sub string) (isAdmin bool, found bool) {
 	return u.IsAdmin, true
 }
 
+func (s *memStore) updateUserName(sub, name string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ok := s.users[sub]
+	if !ok {
+		return false
+	}
+	u.Name = name
+	s.users[sub] = u
+	return true
+}
+
+func (s *memStore) updateAuthorName(tankID, name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tanks[tankID]
+	if !ok {
+		return
+	}
+	t.AuthorName = name
+	s.tanks[tankID] = t
+}
+
 // ── Game Day management ────────────────────────────────────────────────────
 
 func (s *memStore) putGameDay(gd db.GameDay) {

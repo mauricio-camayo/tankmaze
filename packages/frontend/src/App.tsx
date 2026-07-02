@@ -15,6 +15,7 @@ import AdminUsers from './pages/admin/Users';
 import AdminTanks from './pages/admin/Tanks';
 import AdminAdConfig from './pages/admin/AdConfig';
 import Account from './pages/Account';
+import Profile from './pages/Profile';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 
 // Watch imports Phaser (~1 MB) — keep it in a separate lazy chunk
@@ -77,6 +78,7 @@ const router = createBrowserRouter([
       { path: '/tanks/:tankId', element: <TankDetail /> },
       { path: '/tanks/:tankId/edit', element: <TankEditor /> },
       { path: '/account', element: <Account /> },
+      { path: '/profile', element: <Profile /> },
       { path: '/upgrade', element: <UpgradePlaceholder /> },
     ],
   },
@@ -108,7 +110,7 @@ export default function App() {
       getAuthUser().then(async (u) => {
         if (u) {
           const profile = await getUserProfile();
-          setUser({ userId: profile.sub ?? u.userId, username: u.username, name: profile.name, picture: profile.picture, isAdmin: profile.isAdmin });
+          setUser({ userId: profile.sub ?? u.userId, username: u.username, name: profile.name, picture: profile.picture, email: profile.email, isAdmin: profile.isAdmin });
         } else {
           setUser(null);
         }

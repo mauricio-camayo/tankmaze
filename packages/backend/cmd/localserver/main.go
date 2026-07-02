@@ -204,6 +204,10 @@ func (srv *server) route(w http.ResponseWriter, r *http.Request) {
 	case method == "PATCH" && rawPath == "me/settings":
 		srv.patchMySettings(w, r)
 
+	// User profile
+	case method == "PATCH" && rawPath == "me/profile":
+		srv.patchMyProfile(w, r)
+
 	// Ad config
 	case method == "GET" && rawPath == "config/ads":
 		srv.getAdConfig(w)
@@ -1477,6 +1481,28 @@ func (srv *server) patchMySettings(w http.ResponseWriter, r *http.Request) {
 	srv.userSettings.Tier = body.Tier
 	srv.mu.Unlock()
 	jsonOK(w, map[string]string{"tier": body.Tier})
+}
+
+// ── User profile handlers ──────────────────────────────────────────────────
+
+func (srv *server) patchMyProfile(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		jsonErr(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		jsonErr(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	srv.store.updateUserName(localUserID, name)
+	for _, t := range srv.store.listTanksByUser(localUserID) {
+		srv.store.updateAuthorName(t.TankID, name)
+	}
+	jsonOK(w, map[string]string{"name": name})
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
