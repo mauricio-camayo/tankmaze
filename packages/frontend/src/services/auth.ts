@@ -42,6 +42,11 @@ export async function signInWithGoogle() {
   return signInWithRedirect({ provider: 'Google' });
 }
 
+export async function signInWithFacebook() {
+  if (LOCAL_DEV) return;
+  return signInWithRedirect({ provider: 'Facebook' });
+}
+
 export async function signIn(username: string, password: string) {
   if (LOCAL_DEV) return { isSignedIn: true, nextStep: { signInStep: 'DONE' } };
   return amplifySignIn({ username, password });

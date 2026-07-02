@@ -12,6 +12,8 @@ export class AuthStack extends Stack {
 
     const googleClientId = this.node.tryGetContext('googleClientId') as string | undefined;
     const googleClientSecret = this.node.tryGetContext('googleClientSecret') as string | undefined;
+    const facebookAppId = this.node.tryGetContext('facebookAppId') as string | undefined;
+    const facebookAppSecret = this.node.tryGetContext('facebookAppSecret') as string | undefined;
     const callbackUrls = ['http://localhost:5173', 'https://tankmaze.org'];
     if (process.env.SITE_URL) callbackUrls.push(process.env.SITE_URL);
 
@@ -77,6 +79,23 @@ export class AuthStack extends Stack {
       supportedIdentityProviders.push(cognito.UserPoolClientIdentityProvider.GOOGLE);
     }
 
+    let facebookIdp: cognito.UserPoolIdentityProviderFacebook | undefined;
+
+    if (facebookAppId && facebookAppSecret) {
+      facebookIdp = new cognito.UserPoolIdentityProviderFacebook(this, 'FacebookIdP', {
+        userPool: this.userPool,
+        clientId: facebookAppId,
+        clientSecret: facebookAppSecret,
+        scopes: ['public_profile', 'email'],
+        attributeMapping: {
+          email:          cognito.ProviderAttribute.FACEBOOK_EMAIL,
+          givenName:      cognito.ProviderAttribute.FACEBOOK_NAME,
+          profilePicture: cognito.ProviderAttribute.other('picture'),
+        },
+      });
+      supportedIdentityProviders.push(cognito.UserPoolClientIdentityProvider.FACEBOOK);
+    }
+
     this.userPoolClient = new cognito.UserPoolClient(this, 'UserPoolClient', {
       userPool: this.userPool,
       userPoolClientName: 'tankmaze-web',
@@ -95,6 +114,9 @@ export class AuthStack extends Stack {
 
     if (googleIdp) {
       this.userPoolClient.node.addDependency(googleIdp);
+    }
+    if (facebookIdp) {
+      this.userPoolClient.node.addDependency(facebookIdp);
     }
 
     new CfnOutput(this, 'UserPoolId',     { value: this.userPool.userPoolId });

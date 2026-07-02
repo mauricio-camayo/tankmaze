@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { signIn, signInWithGoogle, signUpWithEmail, confirmEmailSignUp, resendConfirmationCode } from '../services/auth';
+import { signIn, signInWithGoogle, signInWithFacebook, signUpWithEmail, confirmEmailSignUp, resendConfirmationCode } from '../services/auth';
 import { useAuthStore } from '../store/authStore';
 
 const inputStyle: React.CSSProperties = {
@@ -64,6 +64,21 @@ export default function Landing() {
       await signInWithGoogle();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Google sign-in failed');
+      setLoading(false);
+    }
+  }
+
+  async function handleFacebookSignIn() {
+    if (import.meta.env.VITE_LOCAL_DEV === 'true') {
+      setUser({ userId: 'local-user', username: 'local' });
+      navigate('/dashboard');
+      return;
+    }
+    setLoading(true);
+    try {
+      await signInWithFacebook();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Facebook sign-in failed');
       setLoading(false);
     }
   }
@@ -220,6 +235,24 @@ export default function Landing() {
                       <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
                     </svg>
                     {mode === 'signin' ? 'Sign in with Google' : 'Sign up with Google'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleFacebookSignIn}
+                    disabled={loading}
+                    style={{
+                      width: '100%', padding: '10px 0', marginTop: 8,
+                      background: '#1877F2', color: '#fff', border: 'none',
+                      borderRadius: 8, cursor: loading ? 'not-allowed' : 'pointer',
+                      fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center',
+                      justifyContent: 'center', gap: 8,
+                    }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff">
+                      <path d="M22 12.06C22 6.51 17.52 2 12 2S2 6.51 2 12.06c0 5.02 3.66 9.18 8.44 9.94v-7.03H7.9v-2.91h2.54V9.85c0-2.51 1.49-3.9 3.77-3.9 1.09 0 2.23.2 2.23.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56v1.89h2.78l-.44 2.91h-2.34V22c4.78-.76 8.44-4.92 8.44-9.94z"/>
+                    </svg>
+                    {mode === 'signin' ? 'Sign in with Facebook' : 'Sign up with Facebook'}
                   </button>
 
                   <div style={{ display: 'flex', alignItems: 'center', margin: '16px 0' }}>
