@@ -106,8 +106,14 @@
   .tm-ad-right-rail { display: none; }
 }
 
+/* Leaderboard: grid table by default, card layout swaps in on mobile */
+.tm-lb-cards { display: none; }
+
 /* ── ≤ 639 px (mobile only) ── */
 @media (max-width: 639px) {
+  .tm-lb-table { display: none; }
+  .tm-lb-cards { display: block; }
+
   /* TankEditor: read-only mode */
   .tm-mobile-readonly { display: block; }
   .tm-mobile-editor   { display: none; }

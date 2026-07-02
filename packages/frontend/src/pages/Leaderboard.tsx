@@ -84,6 +84,31 @@ function LeaderboardRow({ entry, onClick }: { entry: RankingEntry; onClick: () =
   );
 }
 
+function LeaderboardCard({ entry, onClick }: { entry: RankingEntry; onClick: () => void }) {
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 12, padding: '12px 4px',
+        borderBottom: '1px solid #2d2d4e', cursor: 'pointer', minHeight: 44,
+      }}
+    >
+      <span style={{ fontWeight: 700, fontSize: 14, color: rankColor(entry.rank), width: 24, flexShrink: 0 }}>
+        {entry.rank}
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ color: '#e2e8f0', fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {entry.tankName}
+        </div>
+        <div style={{ color: '#475569', fontSize: 11 }}>{entry.authorUsername}</div>
+      </div>
+      <span style={{ color: '#a78bfa', fontWeight: 600, fontSize: 14, flexShrink: 0 }}>
+        {entry.globalScore.toLocaleString()}
+      </span>
+    </div>
+  );
+}
+
 const thStyle: React.CSSProperties = {
   color: '#475569', fontSize: 11, fontWeight: 600,
   textTransform: 'uppercase', letterSpacing: '0.05em',
@@ -123,7 +148,7 @@ export default function Leaderboard() {
 
       {!loading && !error && entries.length > 0 && (
         <div style={cardStyle}>
-          <div className="tm-table-scroll">
+          <div className="tm-lb-table tm-table-scroll">
           <div style={{
             display: 'grid', gridTemplateColumns: COLS,
             alignItems: 'center', gap: 8, padding: '0 4px 10px',
@@ -142,6 +167,15 @@ export default function Leaderboard() {
             <LeaderboardRow key={e.tankId} entry={e} onClick={() => navigate(`/tanks/${e.tankId}`)} />
           ))}
           </div>{/* end tm-table-scroll */}
+
+          {/* Mobile-only card layout (below 640px, via responsive.css): avoids the
+              7-column grid's sideways scroll on narrow viewports; shows only the
+              columns that matter at a glance. */}
+          <div className="tm-lb-cards">
+            {visible.map((e) => (
+              <LeaderboardCard key={e.tankId} entry={e} onClick={() => navigate(`/tanks/${e.tankId}`)} />
+            ))}
+          </div>
 
           {pageCount > 1 && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '16px 4px 4px' }}>
