@@ -884,7 +884,30 @@ func nextTournamentPhase(gd db.GameDay) string {
 		}
 	}
 	if last > 0 {
+		// If the current round already has ≤1 active (both-sides-real) pair,
+		// there's no next elimination round to run — the survivor(s) go
+		// straight to the final. Mirrors the guard in tournament-scheduler's
+		// handleElimination, which otherwise just no-ops when invoked with
+		// this bogus elimination_r{N+1} phase, leaving the round stuck at
+		// "running" until the separately-scheduled -final EventBridge rule
+		// eventually rescues it.
+		lastKey := fmt.Sprintf("r%d", last)
+		if activePairs(gd.Bracket[lastKey]) <= 1 {
+			return "final"
+		}
 		return fmt.Sprintf("elimination_r%d", last+1)
 	}
 	return ""
+}
+
+// activePairs returns the number of pairs in slots where both sides are real
+// tanks (as opposed to byes). Mirrors tournament-scheduler's activePairs.
+func activePairs(slots []db.BracketSlot) int {
+	n := 0
+	for i := 0; i+1 < len(slots); i += 2 {
+		if slots[i].TankID != "" && slots[i+1].TankID != "" {
+			n++
+		}
+	}
+	return n
 }
