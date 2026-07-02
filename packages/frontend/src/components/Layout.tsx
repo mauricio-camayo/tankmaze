@@ -105,7 +105,6 @@ export default function Layout({ children }: LayoutProps) {
           { to: '/leaderboard', label: 'Leaderboard', color: undefined },
           { to: '/gamedays', label: 'Game Days', color: undefined },
           { to: '/account', label: 'Account', color: undefined },
-          { to: '/profile', label: 'Profile', color: undefined },
           ...(user?.isAdmin ? [
             { to: '/admin', label: 'Admin', color: '#f59e0b' },
           ] : []),

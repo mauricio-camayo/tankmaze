@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Layout, { cardStyle, primaryButtonStyle } from '../components/Layout';
-import { getMySettings } from '../services/api';
-import { listTanks } from '../services/api';
+import { getMySettings, listTanks, updateMyProfile } from '../services/api';
+import { useAuthStore } from '../store/authStore';
 import type { UserSettings } from '../types';
 
 const tierColors: Record<string, string> = {
@@ -16,6 +16,27 @@ const tierLabels: Record<string, string> = {
   builder: 'Builder',
   pro: 'Pro',
 };
+
+// Usage status thresholds: yellow kicks in at this fraction of the limit,
+// red at 100%+. Configurable via VITE_USAGE_WARNING_THRESHOLD (0-1).
+const WARNING_THRESHOLD = Number(import.meta.env.VITE_USAGE_WARNING_THRESHOLD ?? 0.9);
+
+const STATUS_GREEN = '#4ade80';
+const STATUS_YELLOW = '#fbbf24';
+const STATUS_RED = '#f87171';
+
+function usageStatusColor(value: number, max: number): string {
+  const pct = value / Math.max(1, max);
+  if (pct >= 1) return STATUS_RED;
+  if (pct >= WARNING_THRESHOLD) return STATUS_YELLOW;
+  return STATUS_GREEN;
+}
+
+function worstStatusColor(colors: string[]): string {
+  if (colors.includes(STATUS_RED)) return STATUS_RED;
+  if (colors.includes(STATUS_YELLOW)) return STATUS_YELLOW;
+  return STATUS_GREEN;
+}
 
 function ProgressBar({ value, max, color }: { value: number; max: number; color: string }) {
   const pct = Math.min(100, (value / Math.max(1, max)) * 100);
@@ -38,9 +59,15 @@ function windowResetLabel(windowStart: string): string {
 }
 
 export default function Account() {
+  const { user, setUser } = useAuthStore();
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [tankCount, setTankCount] = useState<number>(0);
   const [error, setError] = useState('');
+
+  const [name, setName] = useState(user?.name ?? '');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([getMySettings(), listTanks()])
@@ -51,29 +78,108 @@ export default function Account() {
       .catch((e) => setError(e.message));
   }, []);
 
+  async function handleSaveProfile() {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setSaving(true);
+    setSaved(false);
+    setProfileError(null);
+    try {
+      await updateMyProfile(trimmed);
+      if (user) setUser({ ...user, name: trimmed });
+      setSaved(true);
+    } catch (e) {
+      setProfileError(e instanceof Error ? e.message : 'Failed to save profile');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const tier = settings?.tier ?? 'free';
-  const color = tierColors[tier] ?? '#7c6af7';
+  const tierColor = tierColors[tier] ?? '#7c6af7';
+
+  const tankStatusColor = settings ? usageStatusColor(tankCount, settings.tankLimit) : STATUS_GREEN;
+  const compStatusColor = settings ? usageStatusColor(settings.compilationsThisWindow, settings.compilationLimit) : STATUS_GREEN;
+  const overallStatusColor = worstStatusColor([tankStatusColor, compStatusColor]);
 
   return (
     <Layout>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 700, color: '#e2e8f0', margin: 0 }}>Account</h1>
-        <Link to="/profile" style={{ color: '#7c6af7', fontSize: 13, textDecoration: 'none', fontWeight: 600 }}>
-          Edit profile →
-        </Link>
-      </div>
+      <h1 style={{ fontSize: 28, fontWeight: 700, color: '#e2e8f0', margin: '0 0 20px' }}>Account</h1>
 
       {error && (
         <div style={{ ...cardStyle, borderColor: '#7f1d1d', color: '#fca5a5', marginBottom: 16 }}>{error}</div>
       )}
 
+      {/* Profile */}
+      <div style={{ ...cardStyle, marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
+          {user?.picture ? (
+            <img
+              src={user.picture}
+              alt=""
+              referrerPolicy="no-referrer"
+              style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover' }}
+            />
+          ) : (
+            <div style={{
+              width: 64, height: 64, borderRadius: '50%',
+              background: '#7c6af7', display: 'flex', alignItems: 'center',
+              justifyContent: 'center', fontSize: 24, fontWeight: 700, color: '#fff',
+            }}>
+              {(user?.name ?? user?.username ?? '?').charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div style={{ color: '#64748b', fontSize: 12, lineHeight: 1.5 }}>
+            {user?.picture
+              ? 'Picture from your Google/Facebook account.'
+              : 'No picture on file. Sign in with Google or Facebook to add one automatically.'}
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ fontSize: 13, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Name</label>
+          <input
+            value={name}
+            onChange={(e) => { setName(e.target.value); setSaved(false); }}
+            style={{
+              width: '100%', background: '#0f0f1a', border: '1px solid #2d2d4e', borderRadius: 6,
+              color: '#e2e8f0', padding: '8px 10px', fontSize: 14, boxSizing: 'border-box',
+            }}
+          />
+        </div>
+
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ fontSize: 13, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Email</label>
+          <input
+            value={user?.email ?? ''}
+            disabled
+            style={{
+              width: '100%', background: '#15151f', border: '1px solid #2d2d4e', borderRadius: 6,
+              color: '#64748b', padding: '8px 10px', fontSize: 14, boxSizing: 'border-box', cursor: 'not-allowed',
+            }}
+          />
+          <p style={{ margin: '4px 0 0', color: '#475569', fontSize: 11 }}>Email cannot be changed here.</p>
+        </div>
+
+        {profileError && <p style={{ color: '#f87171', fontSize: 13, margin: '0 0 12px' }}>{profileError}</p>}
+        {saved && <p style={{ color: '#4ade80', fontSize: 13, margin: '0 0 12px' }}>Saved.</p>}
+
+        <button
+          onClick={handleSaveProfile}
+          disabled={saving || !name.trim()}
+          style={{ ...primaryButtonStyle, opacity: saving || !name.trim() ? 0.6 : 1 }}
+        >
+          {saving ? 'Saving…' : 'Save changes'}
+        </button>
+      </div>
+
       {settings && (
         <>
-          {/* Tier badge */}
+          {/* Tier badge + usage */}
           <div style={{ ...cardStyle, marginBottom: 20 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
               <span style={{
-                background: color,
+                background: tierColor,
                 color: '#fff',
                 borderRadius: 20,
                 padding: '4px 16px',
@@ -84,7 +190,12 @@ export default function Account() {
               }}>
                 {tierLabels[tier] ?? tier}
               </span>
-              <span style={{ color: '#64748b', fontSize: 14 }}>Current plan</span>
+              <span style={{ color: '#64748b', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{
+                  width: 8, height: 8, borderRadius: '50%', background: overallStatusColor, flexShrink: 0,
+                }} />
+                Current plan
+              </span>
             </div>
 
             {/* Tank usage */}
@@ -95,7 +206,7 @@ export default function Account() {
                   {tankCount} / {settings.tankLimit}
                 </span>
               </div>
-              <ProgressBar value={tankCount} max={settings.tankLimit} color={color} />
+              <ProgressBar value={tankCount} max={settings.tankLimit} color={tankStatusColor} />
             </div>
 
             {/* Compilation usage */}
@@ -113,7 +224,7 @@ export default function Account() {
                   {settings.compilationsThisWindow} / {settings.compilationLimit}
                 </span>
               </div>
-              <ProgressBar value={settings.compilationsThisWindow} max={settings.compilationLimit} color={color} />
+              <ProgressBar value={settings.compilationsThisWindow} max={settings.compilationLimit} color={compStatusColor} />
             </div>
           </div>
 
