@@ -2,6 +2,9 @@ import { Amplify } from 'aws-amplify';
 import {
   signIn as amplifySignIn,
   signOut as amplifySignOut,
+  signUp as amplifySignUp,
+  confirmSignUp as amplifyConfirmSignUp,
+  resendSignUpCode as amplifyResendSignUpCode,
   getCurrentUser,
   fetchAuthSession,
   signInWithRedirect,
@@ -42,6 +45,21 @@ export async function signInWithGoogle() {
 export async function signIn(username: string, password: string) {
   if (LOCAL_DEV) return { isSignedIn: true, nextStep: { signInStep: 'DONE' } };
   return amplifySignIn({ username, password });
+}
+
+export async function signUpWithEmail(email: string, password: string) {
+  if (LOCAL_DEV) return { isSignUpComplete: false, nextStep: { signUpStep: 'CONFIRM_SIGN_UP' } };
+  return amplifySignUp({ username: email, password, options: { userAttributes: { email } } });
+}
+
+export async function confirmEmailSignUp(email: string, code: string) {
+  if (LOCAL_DEV) return { isSignUpComplete: true };
+  return amplifyConfirmSignUp({ username: email, confirmationCode: code });
+}
+
+export async function resendConfirmationCode(email: string) {
+  if (LOCAL_DEV) return;
+  return amplifyResendSignUpCode({ username: email });
 }
 
 export async function signOut() {

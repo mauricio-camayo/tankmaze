@@ -1,7 +1,18 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { signIn, signInWithGoogle } from '../services/auth';
+import { signIn, signInWithGoogle, signUpWithEmail, confirmEmailSignUp, resendConfirmationCode } from '../services/auth';
 import { useAuthStore } from '../store/authStore';
+
+const inputStyle: React.CSSProperties = {
+  width: '100%', background: '#0f0f1a', border: '1px solid #2d2d4e', borderRadius: 6,
+  color: '#e2e8f0', padding: '8px 10px', fontSize: 14, boxSizing: 'border-box',
+};
+const labelStyle: React.CSSProperties = { fontSize: 13, color: '#94a3b8', display: 'block', marginBottom: 4 };
+const submitButtonStyle = (loading: boolean): React.CSSProperties => ({
+  width: '100%', background: '#7c6af7', border: 'none', color: '#fff', borderRadius: 8,
+  padding: '10px 0', fontWeight: 600, fontSize: 14, cursor: loading ? 'not-allowed' : 'pointer',
+  opacity: loading ? 0.7 : 1,
+});
 
 const feature = (emoji: string, title: string, desc: string) => (
   <div key={title} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
@@ -13,12 +24,19 @@ const feature = (emoji: string, title: string, desc: string) => (
   </div>
 );
 
+type AuthMode = 'signin' | 'signup' | 'verify';
+
 export default function Landing() {
   const navigate = useNavigate();
   const setUser = useAuthStore((s) => s.setUser);
+  const [mode, setMode] = useState<AuthMode>('signin');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [signupPassword, setSignupPassword] = useState('');
+  const [pendingEmail, setPendingEmail] = useState('');
+  const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   // Form is injected by JS only — crawlers see product copy without a login wall
   const [formMounted, setFormMounted] = useState(false);
@@ -53,17 +71,74 @@ export default function Landing() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setInfo(null);
     setLoading(true);
     try {
       const result = await signIn(username, password);
       if (result.isSignedIn) {
         setUser({ userId: '', username });
         navigate('/dashboard');
+      } else if (result.nextStep?.signInStep === 'CONFIRM_SIGN_UP') {
+        // Amplify v6 doesn't throw for unconfirmed users — it resolves with this step instead.
+        setPendingEmail(username);
+        setMode('verify');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sign in failed');
+      if (err instanceof Error && err.name === 'UserNotConfirmedException') {
+        // Defensive fallback in case some path still throws (older Amplify behavior).
+        setPendingEmail(username);
+        setMode('verify');
+      } else {
+        setError(err instanceof Error ? err.message : 'Sign in failed');
+      }
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleSignUp(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setInfo(null);
+    setLoading(true);
+    try {
+      await signUpWithEmail(username, signupPassword);
+      setPendingEmail(username);
+      setMode('verify');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sign up failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleVerify(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setInfo(null);
+    setLoading(true);
+    try {
+      await confirmEmailSignUp(pendingEmail, code);
+      setUsername(pendingEmail);
+      setPassword('');
+      setCode('');
+      setMode('signin');
+      setInfo('Email verified — you can sign in now.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Verification failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleResendCode() {
+    setError(null);
+    setInfo(null);
+    try {
+      await resendConfirmationCode(pendingEmail);
+      setInfo('Code resent — check your inbox.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to resend code');
     }
   }
 
@@ -120,68 +195,169 @@ export default function Landing() {
         {formMounted && (
           <div style={{ flex: '0 0 320px' }}>
             <div style={{ background: '#1a1a2e', border: '1px solid #2d2d4e', borderRadius: 12, padding: '28px 24px' }}>
-              <h2 style={{ margin: '0 0 20px', fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}>Sign in</h2>
+              <h2 style={{ margin: '0 0 20px', fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}>
+                {mode === 'signin' ? 'Sign in' : mode === 'signup' ? 'Create account' : 'Verify your email'}
+              </h2>
 
-              <button
-                type="button"
-                onClick={handleGoogleSignIn}
-                disabled={loading}
-                style={{
-                  width: '100%', padding: '10px 0', marginBottom: 4,
-                  background: '#fff', color: '#1a1a1a', border: 'none',
-                  borderRadius: 8, cursor: loading ? 'not-allowed' : 'pointer',
-                  fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center',
-                  justifyContent: 'center', gap: 8,
-                }}
-              >
-                <svg width="18" height="18" viewBox="0 0 48 48">
-                  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-                  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-                  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-                  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-                </svg>
-                Sign in with Google
-              </button>
+              {mode !== 'verify' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleGoogleSignIn}
+                    disabled={loading}
+                    style={{
+                      width: '100%', padding: '10px 0', marginBottom: 4,
+                      background: '#fff', color: '#1a1a1a', border: 'none',
+                      borderRadius: 8, cursor: loading ? 'not-allowed' : 'pointer',
+                      fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center',
+                      justifyContent: 'center', gap: 8,
+                    }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 48 48">
+                      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+                    </svg>
+                    {mode === 'signin' ? 'Sign in with Google' : 'Sign up with Google'}
+                  </button>
 
-              <div style={{ display: 'flex', alignItems: 'center', margin: '16px 0' }}>
-                <hr style={{ flex: 1, border: 'none', borderTop: '1px solid #2d2d4e' }} />
-                <span style={{ padding: '0 10px', color: '#475569', fontSize: 12 }}>or</span>
-                <hr style={{ flex: 1, border: 'none', borderTop: '1px solid #2d2d4e' }} />
-              </div>
+                  <div style={{ display: 'flex', alignItems: 'center', margin: '16px 0' }}>
+                    <hr style={{ flex: 1, border: 'none', borderTop: '1px solid #2d2d4e' }} />
+                    <span style={{ padding: '0 10px', color: '#475569', fontSize: 12 }}>or</span>
+                    <hr style={{ flex: 1, border: 'none', borderTop: '1px solid #2d2d4e' }} />
+                  </div>
+                </>
+              )}
 
-              <form onSubmit={handleSubmit}>
-                <div style={{ marginBottom: 12 }}>
-                  <label style={{ fontSize: 13, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Username</label>
-                  <input
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    autoFocus
-                    required
-                    style={{ width: '100%', background: '#0f0f1a', border: '1px solid #2d2d4e', borderRadius: 6, color: '#e2e8f0', padding: '8px 10px', fontSize: 14, boxSizing: 'border-box' }}
-                  />
-                </div>
-                <div style={{ marginBottom: 16 }}>
-                  <label style={{ fontSize: 13, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Password</label>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    style={{ width: '100%', background: '#0f0f1a', border: '1px solid #2d2d4e', borderRadius: 6, color: '#e2e8f0', padding: '8px 10px', fontSize: 14, boxSizing: 'border-box' }}
-                  />
-                </div>
-                {error && <p style={{ color: '#f87171', fontSize: 13, margin: '0 0 12px' }}>{error}</p>}
-                <button
-                  type="submit"
-                  disabled={loading}
-                  style={{ width: '100%', background: '#7c6af7', border: 'none', color: '#fff', borderRadius: 8, padding: '10px 0', fontWeight: 600, fontSize: 14, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}
-                >
-                  {loading ? 'Signing in…' : 'Sign in'}
-                </button>
-              </form>
+              {mode === 'signin' && (
+                <form onSubmit={handleSubmit}>
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={labelStyle}>Email</label>
+                    <input
+                      type="email"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      autoFocus
+                      required
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={labelStyle}>Password</label>
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      style={inputStyle}
+                    />
+                  </div>
+                  {error && <p style={{ color: '#f87171', fontSize: 13, margin: '0 0 12px' }}>{error}</p>}
+                  {info && <p style={{ color: '#4ade80', fontSize: 13, margin: '0 0 12px' }}>{info}</p>}
+                  <button type="submit" disabled={loading} style={submitButtonStyle(loading)}>
+                    {loading ? 'Signing in…' : 'Sign in'}
+                  </button>
+                  <p style={{ textAlign: 'center', fontSize: 13, color: '#64748b', margin: '16px 0 0' }}>
+                    Don't have an account?{' '}
+                    <button
+                      type="button"
+                      onClick={() => { setMode('signup'); setError(null); setInfo(null); }}
+                      style={{ background: 'none', border: 'none', color: '#7c6af7', fontSize: 13, cursor: 'pointer', padding: 0, fontWeight: 600 }}
+                    >
+                      Create one
+                    </button>
+                  </p>
+                </form>
+              )}
+
+              {mode === 'signup' && (
+                <form onSubmit={handleSignUp}>
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={labelStyle}>Email</label>
+                    <input
+                      type="email"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      autoFocus
+                      required
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={labelStyle}>Password</label>
+                    <input
+                      type="password"
+                      value={signupPassword}
+                      onChange={(e) => setSignupPassword(e.target.value)}
+                      required
+                      minLength={8}
+                      style={inputStyle}
+                    />
+                    <p style={{ margin: '4px 0 0', color: '#475569', fontSize: 11 }}>
+                      At least 8 characters, with uppercase, lowercase, and a digit.
+                    </p>
+                  </div>
+                  {error && <p style={{ color: '#f87171', fontSize: 13, margin: '0 0 12px' }}>{error}</p>}
+                  <button type="submit" disabled={loading} style={submitButtonStyle(loading)}>
+                    {loading ? 'Creating account…' : 'Create account'}
+                  </button>
+                  <p style={{ textAlign: 'center', fontSize: 13, color: '#64748b', margin: '16px 0 0' }}>
+                    Already have an account?{' '}
+                    <button
+                      type="button"
+                      onClick={() => { setMode('signin'); setError(null); setInfo(null); }}
+                      style={{ background: 'none', border: 'none', color: '#7c6af7', fontSize: 13, cursor: 'pointer', padding: 0, fontWeight: 600 }}
+                    >
+                      Sign in
+                    </button>
+                  </p>
+                </form>
+              )}
+
+              {mode === 'verify' && (
+                <form onSubmit={handleVerify}>
+                  <p style={{ color: '#94a3b8', fontSize: 13, lineHeight: 1.6, margin: '0 0 16px' }}>
+                    We sent a verification code to <strong style={{ color: '#e2e8f0' }}>{pendingEmail}</strong>. Enter it below to activate your account.
+                  </p>
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={labelStyle}>Verification code</label>
+                    <input
+                      value={code}
+                      onChange={(e) => setCode(e.target.value)}
+                      autoFocus
+                      required
+                      inputMode="numeric"
+                      style={inputStyle}
+                    />
+                  </div>
+                  {error && <p style={{ color: '#f87171', fontSize: 13, margin: '0 0 12px' }}>{error}</p>}
+                  {info && <p style={{ color: '#4ade80', fontSize: 13, margin: '0 0 12px' }}>{info}</p>}
+                  <button type="submit" disabled={loading} style={submitButtonStyle(loading)}>
+                    {loading ? 'Verifying…' : 'Verify'}
+                  </button>
+                  <p style={{ textAlign: 'center', fontSize: 13, color: '#64748b', margin: '16px 0 0' }}>
+                    <button
+                      type="button"
+                      onClick={handleResendCode}
+                      style={{ background: 'none', border: 'none', color: '#7c6af7', fontSize: 13, cursor: 'pointer', padding: 0, fontWeight: 600 }}
+                    >
+                      Resend code
+                    </button>
+                    {' · '}
+                    <button
+                      type="button"
+                      onClick={() => { setMode('signin'); setError(null); setInfo(null); }}
+                      style={{ background: 'none', border: 'none', color: '#64748b', fontSize: 13, cursor: 'pointer', padding: 0 }}
+                    >
+                      Back to sign in
+                    </button>
+                  </p>
+                </form>
+              )}
 
               <p style={{ marginTop: 20, textAlign: 'center', fontSize: 12, color: '#475569', margin: '20px 0 0' }}>
-                By signing in you agree to our{' '}
+                By continuing you agree to our{' '}
                 <Link to="/privacy" style={{ color: '#7c6af7' }}>Privacy Policy</Link>.
               </p>
             </div>
