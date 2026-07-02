@@ -91,8 +91,16 @@
   .tm-nav-links     { display: none; }
   .tm-nav-clock     { display: none; }
 
+  /* Nav row: with desktop links/clock hidden, only logo + hamburger + the
+     right-hand group remain. `space-between` on 3 items floats the
+     hamburger's position based on how many siblings happen to be hidden, so
+     pin logo+hamburger to the left explicitly and push the right group to
+     the far right (wrapping to its own line rather than overflowing
+     off-screen if it doesn't fit). */
+  .tm-nav { flex-wrap: wrap; height: auto; min-height: 56px; justify-content: flex-start !important; }
+
   /* Shift sign-out / avatar to right; hamburger on far left */
-  .tm-nav-right-pair { gap: 8px; }
+  .tm-nav-right-pair { gap: 8px; margin-left: auto; }
 
   /* Right-rail ad hidden on tablet+mobile */
   .tm-ad-right-rail { display: none; }

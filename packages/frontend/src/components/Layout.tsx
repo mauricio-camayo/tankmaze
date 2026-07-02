@@ -36,29 +36,12 @@ export default function Layout({ children }: LayoutProps) {
 
   return (
     <div style={{ minHeight: '100vh', background: '#0f0f1a', color: '#e2e8f0', position: 'relative' }}>
-      <nav style={{
+      <nav className="tm-nav" style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '0 24px', height: 56, position: 'relative',
         background: '#1a1a2e', borderBottom: '1px solid #2d2d4e',
       }}>
-        {/* Logo — always visible */}
-        <Link to="/dashboard" style={{ color: '#7c6af7', fontWeight: 700, fontSize: 18, textDecoration: 'none', flexShrink: 0 }}>
-          TankMaze
-        </Link>
-
-        {/* Desktop nav links (hidden on mobile/tablet via CSS) */}
-        <div className="tm-nav-links" style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-          <Link to="/leaderboard" style={navLinkStyle}>Leaderboard</Link>
-          <Link to="/gamedays" style={navLinkStyle}>Game Days</Link>
-          {user?.isAdmin && (
-            <>
-              <Link to="/admin/users" style={{ ...navLinkStyle, color: '#f59e0b' }}>Users</Link>
-              <Link to="/admin/ads" style={{ ...navLinkStyle, color: '#f59e0b' }}>Ads</Link>
-            </>
-          )}
-        </div>
-
-        {/* Hamburger button (hidden on desktop via CSS) */}
+        {/* Hamburger button (hidden on desktop via CSS); sits left of the logo on mobile/tablet */}
         <button
           className="tm-hamburger"
           onClick={() => setMenuOpen((o) => !o)}
@@ -69,11 +52,28 @@ export default function Layout({ children }: LayoutProps) {
           {menuOpen ? '✕' : '☰'}
         </button>
 
+        {/* Logo — always visible */}
+        <Link to="/dashboard" style={{ color: '#7c6af7', fontWeight: 700, fontSize: 18, textDecoration: 'none', flexShrink: 0 }}>
+          TankMaze
+        </Link>
+
+        {/* Desktop nav links (hidden on mobile/tablet via CSS) */}
+        <div className="tm-nav-links" style={{ alignItems: 'center', gap: 24 }}>
+          <Link to="/leaderboard" style={navLinkStyle}>Leaderboard</Link>
+          <Link to="/gamedays" style={navLinkStyle}>Game Days</Link>
+          {user?.isAdmin && (
+            <>
+              <Link to="/admin/users" style={{ ...navLinkStyle, color: '#f59e0b' }}>Users</Link>
+              <Link to="/admin/ads" style={{ ...navLinkStyle, color: '#f59e0b' }}>Ads</Link>
+            </>
+          )}
+        </div>
+
         <span className="tm-nav-clock" style={{ color: '#7c6af7', fontSize: 13, fontWeight: 600 }}>
           {clock}
         </span>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div className="tm-nav-right-pair" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {user && (
             <Link to="/account" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
               {user.picture ? (

@@ -690,7 +690,14 @@ export default function GameDayPage() {
   const [error, setError] = useState<string | null>(null);
   const [maps, setMaps] = useState<GameMap[]>([]);
   const [bracketPage, setBracketPage] = useState(0);
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const { user } = useAuthStore();
+
+  useEffect(() => {
+    function onResize() { setViewportWidth(window.innerWidth); }
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   function reload() {
     if (!gameDayId) return;
@@ -914,7 +921,7 @@ export default function GameDayPage() {
       {/* Bracket with 3-round pagination */}
       {showBracket && (() => {
         const totalRounds = bracketRounds.length;
-        const PAGE_SIZE = 3;
+        const PAGE_SIZE = viewportWidth < 640 ? 1 : viewportWidth < 1024 ? 2 : 3;
         const maxPage = Math.max(0, totalRounds - PAGE_SIZE + 1 - 1);
         const clampedPage = Math.min(bracketPage, maxPage);
         const pageStart = clampedPage;
