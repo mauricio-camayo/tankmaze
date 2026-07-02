@@ -3,6 +3,11 @@ import { useNavigate, Link } from 'react-router-dom';
 import { signIn, signInWithGoogle, signInWithFacebook, signUpWithEmail, confirmEmailSignUp, resendConfirmationCode } from '../services/auth';
 import { useAuthStore } from '../store/authStore';
 
+// Facebook IdP is wired up (CDK + backend) but not yet usable — no real
+// Facebook App exists yet. Flip once FACEBOOK_APP_ID/FACEBOOK_APP_SECRET are
+// set as GitHub secrets and a real login has been verified. See item 189.
+const FACEBOOK_LOGIN_ENABLED = false;
+
 const inputStyle: React.CSSProperties = {
   width: '100%', background: '#0f0f1a', border: '1px solid #2d2d4e', borderRadius: 6,
   color: '#e2e8f0', padding: '8px 10px', fontSize: 14, boxSizing: 'border-box',
@@ -237,23 +242,25 @@ export default function Landing() {
                     {mode === 'signin' ? 'Sign in with Google' : 'Sign up with Google'}
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={handleFacebookSignIn}
-                    disabled={loading}
-                    style={{
-                      width: '100%', padding: '10px 0', marginTop: 8,
-                      background: '#1877F2', color: '#fff', border: 'none',
-                      borderRadius: 8, cursor: loading ? 'not-allowed' : 'pointer',
-                      fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center',
-                      justifyContent: 'center', gap: 8,
-                    }}
-                  >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff">
-                      <path d="M22 12.06C22 6.51 17.52 2 12 2S2 6.51 2 12.06c0 5.02 3.66 9.18 8.44 9.94v-7.03H7.9v-2.91h2.54V9.85c0-2.51 1.49-3.9 3.77-3.9 1.09 0 2.23.2 2.23.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56v1.89h2.78l-.44 2.91h-2.34V22c4.78-.76 8.44-4.92 8.44-9.94z"/>
-                    </svg>
-                    {mode === 'signin' ? 'Sign in with Facebook' : 'Sign up with Facebook'}
-                  </button>
+                  {FACEBOOK_LOGIN_ENABLED && (
+                    <button
+                      type="button"
+                      onClick={handleFacebookSignIn}
+                      disabled={loading}
+                      style={{
+                        width: '100%', padding: '10px 0', marginTop: 8,
+                        background: '#1877F2', color: '#fff', border: 'none',
+                        borderRadius: 8, cursor: loading ? 'not-allowed' : 'pointer',
+                        fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center',
+                        justifyContent: 'center', gap: 8,
+                      }}
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff">
+                        <path d="M22 12.06C22 6.51 17.52 2 12 2S2 6.51 2 12.06c0 5.02 3.66 9.18 8.44 9.94v-7.03H7.9v-2.91h2.54V9.85c0-2.51 1.49-3.9 3.77-3.9 1.09 0 2.23.2 2.23.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56v1.89h2.78l-.44 2.91h-2.34V22c4.78-.76 8.44-4.92 8.44-9.94z"/>
+                      </svg>
+                      {mode === 'signin' ? 'Sign in with Facebook' : 'Sign up with Facebook'}
+                    </button>
+                  )}
 
                   <div style={{ display: 'flex', alignItems: 'center', margin: '16px 0' }}>
                     <hr style={{ flex: 1, border: 'none', borderTop: '1px solid #2d2d4e' }} />
