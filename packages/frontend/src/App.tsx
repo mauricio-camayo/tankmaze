@@ -10,6 +10,7 @@ import TankEditor from './pages/TankEditor';
 import Leaderboard from './pages/Leaderboard';
 import GameDay from './pages/GameDay';
 import GameDayList from './pages/GameDayList';
+import AdminLayout from './pages/admin/AdminLayout';
 import AdminUsers from './pages/admin/Users';
 import AdminTanks from './pages/admin/Tanks';
 import AdminAdConfig from './pages/admin/AdConfig';
@@ -82,9 +83,16 @@ const router = createBrowserRouter([
   {
     element: <RequireAdmin />,
     children: [
-      { path: '/admin/users', element: <AdminUsers /> },
-      { path: '/admin/tanks', element: <AdminTanks /> },
-      { path: '/admin/ads', element: <AdminAdConfig /> },
+      {
+        path: '/admin',
+        element: <AdminLayout />,
+        children: [
+          { index: true, element: <Navigate to="/admin/users" replace /> },
+          { path: 'users', element: <AdminUsers /> },
+          { path: 'tanks', element: <AdminTanks /> },
+          { path: 'ads', element: <AdminAdConfig /> },
+        ],
+      },
     ],
   },
   { path: '*', element: <Navigate to="/" replace /> },

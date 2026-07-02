@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import Layout, { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../../components/Layout';
+import { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../../components/Layout';
 import { adminListTanks, adminUpdateTank, adminDeleteTank } from '../../services/api';
 import type { Tank } from '../../types';
 
@@ -55,11 +55,8 @@ export default function AdminTanks() {
   }
 
   return (
-    <Layout>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <h2 style={{ margin: 0, color: '#e2e8f0' }}>Admin — Tanks</h2>
-        <a href="/admin/users" style={{ color: '#64748b', fontSize: 13 }}>→ Users</a>
-      </div>
+    <>
+      <h2 style={{ margin: '0 0 20px', color: '#e2e8f0' }}>Tanks</h2>
 
       {error && <p style={{ color: '#f87171' }}>{error}</p>}
       {loading ? (
@@ -185,7 +182,7 @@ export default function AdminTanks() {
         )}
         </>
       )}
-    </Layout>
+    </>
   );
 }
 

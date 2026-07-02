@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import Layout from '../../components/Layout';
 import { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../../components/Layout';
 import { adminGetAdConfig, adminUpdateAdConfig, type AdConfigBody } from '../../services/api';
 
@@ -68,10 +67,8 @@ export default function AdminAdConfig() {
   );
 
   return (
-    <Layout>
-      <h1 style={{ margin: '0 0 24px', color: '#e2e8f0', fontSize: 22, fontWeight: 700 }}>
-        Ad Configuration
-      </h1>
+    <>
+      <h2 style={{ margin: '0 0 20px', color: '#e2e8f0' }}>Ads</h2>
 
       {loading && <div style={{ color: '#64748b' }}>Loading…</div>}
       {error && <div style={{ color: '#f87171', marginBottom: 12 }}>{error}</div>}
@@ -109,6 +106,6 @@ export default function AdminAdConfig() {
           </div>
         </div>
       )}
-    </Layout>
+    </>
   );
 }

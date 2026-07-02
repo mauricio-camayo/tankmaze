@@ -62,10 +62,7 @@ export default function Layout({ children }: LayoutProps) {
           <Link to="/leaderboard" style={navLinkStyle}>Leaderboard</Link>
           <Link to="/gamedays" style={navLinkStyle}>Game Days</Link>
           {user?.isAdmin && (
-            <>
-              <Link to="/admin/users" style={{ ...navLinkStyle, color: '#f59e0b' }}>Users</Link>
-              <Link to="/admin/ads" style={{ ...navLinkStyle, color: '#f59e0b' }}>Ads</Link>
-            </>
+            <Link to="/admin" style={{ ...navLinkStyle, color: '#f59e0b' }}>Admin</Link>
           )}
         </div>
 
@@ -109,8 +106,7 @@ export default function Layout({ children }: LayoutProps) {
           { to: '/gamedays', label: 'Game Days', color: undefined },
           { to: '/account', label: 'Account', color: undefined },
           ...(user?.isAdmin ? [
-            { to: '/admin/users', label: 'Admin: Users', color: '#f59e0b' },
-            { to: '/admin/ads', label: 'Admin: Ads', color: '#f59e0b' },
+            { to: '/admin', label: 'Admin', color: '#f59e0b' },
           ] : []),
         ].map(({ to, label, color }) => (
           <Link
