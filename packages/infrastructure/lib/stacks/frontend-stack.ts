@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { Stack, StackProps, CfnOutput, RemovalPolicy, Duration } from 'aws-cdk-lib';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
@@ -96,6 +97,15 @@ export class FrontendStack extends Stack {
       },
     });
 
+    // Redirects any non-canonical host (e.g. the raw *.cloudfront.net domain)
+    // to https://tankmaze.org, preserving path and query string (item 199).
+    const canonicalHostRedirect = new cloudfront.Function(this, 'CanonicalHostRedirect', {
+      code: cloudfront.FunctionCode.fromFile({
+        filePath: path.join(__dirname, '../../lib/cloudfront-functions/canonical-host-redirect.js'),
+      }),
+      runtime: cloudfront.FunctionRuntime.JS_2_0,
+    });
+
     // CloudFront distribution with OAC (Origin Access Control)
     const distribution = new cloudfront.Distribution(this, 'Distribution', {
       defaultBehavior: {
@@ -104,6 +114,12 @@ export class FrontendStack extends Stack {
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
         responseHeadersPolicy,
         compress: true,
+        functionAssociations: [
+          {
+            function: canonicalHostRedirect,
+            eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
+          },
+        ],
       },
       defaultRootObject: 'index.html',
       // TLS 1.2 minimum — drops TLS 1.0/1.1 (POODLE, BEAST) (INFRA-CF-TLS).
