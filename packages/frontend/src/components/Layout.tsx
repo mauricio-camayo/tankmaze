@@ -53,8 +53,9 @@ export default function Layout({ children }: LayoutProps) {
         </button>
 
         {/* Logo — always visible */}
-        <Link to="/dashboard" style={{ color: '#7c6af7', fontWeight: 700, fontSize: 18, textDecoration: 'none', flexShrink: 0 }}>
-          TankMaze
+        <Link to="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 18, textDecoration: 'none', flexShrink: 0 }}>
+          <img src="/logo.png" alt="" width={28} height={28} style={{ display: 'block' }} />
+          <span style={{ color: '#e2e8f0' }}>Tank<span style={{ color: '#7c6af7' }}>Maze</span></span>
         </Link>
 
         {/* Desktop nav links (hidden on mobile/tablet via CSS) */}

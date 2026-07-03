@@ -42,6 +42,11 @@ function TankCard({ tank }: TankCardProps) {
 
   return (
     <div style={{ ...cardStyle, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <img
+        src={avatarSrc(tank.tankId, tank.avatarUrl)}
+        alt=""
+        style={{ width: 40, height: 40, borderRadius: 8, imageRendering: 'pixelated', border: '2px solid #2d2d4e', flexShrink: 0, marginRight: 12 }}
+      />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
           <h3 style={{ margin: 0, fontSize: 17, color: '#e2e8f0' }}>
