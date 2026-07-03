@@ -15,6 +15,7 @@ import AdminUsers from './pages/admin/Users';
 import AdminTanks from './pages/admin/Tanks';
 import AdminAdConfig from './pages/admin/AdConfig';
 import Account from './pages/Account';
+import Upgrade from './pages/Upgrade';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 
 // Watch imports Phaser (~1 MB) — keep it in a separate lazy chunk
@@ -45,15 +46,6 @@ function RequireAdmin() {
   return <Outlet />;
 }
 
-function UpgradePlaceholder() {
-  return (
-    <div style={{ minHeight: '100vh', background: '#0f0f1a', color: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16 }}>
-      <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0 }}>Upgrade Coming Soon</h1>
-      <p style={{ color: '#64748b', margin: 0 }}>Paid plans are not yet available. Check back later.</p>
-    </div>
-  );
-}
-
 function LandingRoute() {
   const { user, loading } = useAuthStore();
   if (loading) return null;
@@ -77,7 +69,7 @@ const router = createBrowserRouter([
       { path: '/tanks/:tankId', element: <TankDetail /> },
       { path: '/tanks/:tankId/edit', element: <TankEditor /> },
       { path: '/account', element: <Account /> },
-      { path: '/upgrade', element: <UpgradePlaceholder /> },
+      { path: '/upgrade', element: <Upgrade /> },
     ],
   },
   {

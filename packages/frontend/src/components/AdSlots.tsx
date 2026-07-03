@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { loadAdConfig, type AdConfig } from '../services/adConfig';
+import { getMySettings } from '../services/api';
+import { useAuthStore } from '../store/authStore';
 
 declare global {
   interface Window {
@@ -47,7 +49,11 @@ interface AdSlotsProps {
 }
 
 export default function AdSlots({ position }: AdSlotsProps) {
+  const { user } = useAuthStore();
   const [config, setConfig] = useState<AdConfig | null>(null);
+  // Paid tiers (builder/pro) never see ads; unauthenticated visitors are
+  // treated as free-tier (ads visible) since there's no settings record to fetch.
+  const [payingTier, setPayingTier] = useState(false);
 
   useEffect(() => {
     loadAdConfig().then((cfg) => {
@@ -56,7 +62,17 @@ export default function AdSlots({ position }: AdSlotsProps) {
     });
   }, []);
 
-  if (!config?.enabled || !config.publisherId) return null;
+  useEffect(() => {
+    if (!user) {
+      setPayingTier(false);
+      return;
+    }
+    getMySettings()
+      .then((s) => setPayingTier(s.tier === 'builder' || s.tier === 'pro'))
+      .catch(() => setPayingTier(false));
+  }, [user]);
+
+  if (!config?.enabled || !config.publisherId || payingTier) return null;
 
   if (position === 'top') {
     return (
