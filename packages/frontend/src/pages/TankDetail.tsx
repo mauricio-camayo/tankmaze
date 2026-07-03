@@ -509,6 +509,7 @@ export default function TankDetail() {
   // For owner actions: a ready major version (compileStatus 'ready' or '' for public view).
   const latestReadyMajorForActions = majors.find((v) => v.compileStatus === 'ready' || v.compileStatus === '');
   const canRegister = isOwner && !!latestReadyMajorForActions;
+  const isDisqualified = !!latestReadyMajorForActions?.disqualified;
   const isRegistered = canRegister && (latestReadyMajorForActions?.registeredForGameDays?.length ?? 0) > 0;
   const canTest = isOwner && !!latestReadyMajorForActions;
 
@@ -601,7 +602,12 @@ export default function TankDetail() {
                       </button>
                     );
                   })}
-                <button onClick={openRegisterPicker} disabled={registering} style={ghostButtonStyle}>
+                <button
+                  onClick={openRegisterPicker}
+                  disabled={registering || isDisqualified}
+                  title={isDisqualified ? 'This version is disqualified due to excessive tick violations and cannot register for Game Days.' : undefined}
+                  style={{ ...ghostButtonStyle, opacity: isDisqualified ? 0.5 : 1, cursor: isDisqualified ? 'not-allowed' : 'pointer' }}
+                >
                   {registering ? '…' : 'Register for Game Day'}
                 </button>
               </>

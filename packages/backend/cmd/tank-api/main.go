@@ -989,6 +989,9 @@ func (h *handler) registerVersion(ctx context.Context, req events.APIGatewayV2HT
 	if ver.VersionType != "major" {
 		return errResp(http.StatusBadRequest, "only major versions can be registered for Game Days"), nil
 	}
+	if ver.Disqualified {
+		return errResp(http.StatusUnprocessableEntity, "this version is disqualified and cannot register for Game Days"), nil
+	}
 
 	var body registerVersionBody
 	if err := json.Unmarshal([]byte(req.Body), &body); err != nil || body.GameDayID == "" {

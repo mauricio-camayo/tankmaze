@@ -623,6 +623,10 @@ func (srv *server) registerVersion(w http.ResponseWriter, r *http.Request, tankI
 		jsonErr(w, http.StatusBadRequest, "only major versions can register for Game Days")
 		return
 	}
+	if ver.Disqualified {
+		jsonErr(w, http.StatusUnprocessableEntity, "this version is disqualified and cannot register for Game Days")
+		return
+	}
 	tank, err := srv.store.getTank(tankID)
 	if errors.Is(err, db.ErrNotFound) {
 		jsonErr(w, http.StatusNotFound, "tank not found")

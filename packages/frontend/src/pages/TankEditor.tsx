@@ -891,6 +891,7 @@ export default function TankEditor() {
     latestVersion &&
     isMajor(latestVersion.version) &&
     latestVersion.compileStatus === 'ready';
+  const isDisqualified = !!latestVersion?.disqualified;
   const isRegistered = canRegister && (latestVersion?.registeredForGameDays?.length ?? 0) > 0;
   const isSaving = saveStatus === 'submitting' || saveStatus === 'polling';
 
@@ -949,6 +950,9 @@ export default function TankEditor() {
               {latestVersion.version} {isMajor(latestVersion.version) ? 'major' : 'minor'}
             </span>
           )}
+          {isDisqualified && (
+            <span style={{ background: '#f87171', color: '#fff', fontSize: 10, padding: '1px 6px', borderRadius: 4, fontWeight: 600 }}>DQ</span>
+          )}
         </div>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -959,7 +963,12 @@ export default function TankEditor() {
                   {registering ? '…' : `Withdraw ·${gdId.slice(-6)}`}
                 </button>
               ))}
-              <button onClick={openRegisterPicker} disabled={registering} style={ghostButtonStyle}>
+              <button
+                onClick={openRegisterPicker}
+                disabled={registering || isDisqualified}
+                title={isDisqualified ? 'This version is disqualified due to excessive tick violations and cannot register for Game Days.' : undefined}
+                style={{ ...ghostButtonStyle, opacity: isDisqualified ? 0.5 : 1, cursor: isDisqualified ? 'not-allowed' : 'pointer' }}
+              >
                 {registering ? '…' : 'Register for Game Day'}
               </button>
             </>
