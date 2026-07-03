@@ -6,6 +6,7 @@ import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as route53targets from 'aws-cdk-lib/aws-route53-targets';
 import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import { Construct } from 'constructs';
 
 interface FrontendStackProps extends StackProps {
@@ -106,8 +107,20 @@ export class FrontendStack extends Stack {
       runtime: cloudfront.FunctionRuntime.JS_2_0,
     });
 
+    // Registers tankmaze.org as a valid alias on the distribution so CloudFront
+    // accepts that Host directly (item 208) — imports the cert requested and
+    // DNS-validated out of band (Cloudflare CNAME), since this account's
+    // deploy role has no acm:* permissions to request one via CDK itself.
+    //   cdk deploy --context certificateArn=arn:aws:acm:us-east-1:...
+    const certificateArn = this.node.tryGetContext('certificateArn') as string | undefined;
+    const siteDomain = 'tankmaze.org';
+    const certificate = certificateArn
+      ? acm.Certificate.fromCertificateArn(this, 'SiteCertificate', certificateArn)
+      : undefined;
+
     // CloudFront distribution with OAC (Origin Access Control)
     const distribution = new cloudfront.Distribution(this, 'Distribution', {
+      ...(certificate ? { domainNames: [siteDomain], certificate } : {}),
       defaultBehavior: {
         origin: origins.S3BucketOrigin.withOriginAccessControl(siteBucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,

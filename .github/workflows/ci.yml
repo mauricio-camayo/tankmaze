@@ -188,6 +188,7 @@ jobs:
           FACEBOOK_APP_SECRET: ${{ secrets.FACEBOOK_APP_SECRET }}
           VITE_USER_POOL_ID: ${{ secrets.VITE_USER_POOL_ID }}
           VITE_USER_POOL_CLIENT_ID: ${{ secrets.VITE_USER_POOL_CLIENT_ID }}
+          SITE_CERTIFICATE_ARN: ${{ secrets.SITE_CERTIFICATE_ARN }}
         run: |
           pnpm install --frozen-lockfile
           pnpm build
@@ -197,6 +198,9 @@ jobs:
           fi
           if [ -n "$FACEBOOK_APP_ID" ] && [ -n "$FACEBOOK_APP_SECRET" ]; then
             CONTEXT_FLAGS="$CONTEXT_FLAGS --context facebookAppId=$FACEBOOK_APP_ID --context facebookAppSecret=$FACEBOOK_APP_SECRET"
+          fi
+          if [ -n "$SITE_CERTIFICATE_ARN" ]; then
+            CONTEXT_FLAGS="$CONTEXT_FLAGS --context certificateArn=$SITE_CERTIFICATE_ARN"
           fi
           pnpm cdk deploy --all --require-approval never $CONTEXT_FLAGS
 
