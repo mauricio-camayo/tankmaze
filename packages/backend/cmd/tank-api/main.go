@@ -173,6 +173,7 @@ type adminUserResp struct {
 	Name    string `json:"name"`
 	Enabled bool   `json:"enabled"`
 	IsAdmin bool   `json:"isAdmin"`
+	Tier    string `json:"tier"`
 }
 
 // ---- Handler ----------------------------------------------------------------
@@ -2133,12 +2134,17 @@ func (h *handler) adminListUsers(ctx context.Context, req events.APIGatewayV2HTT
 	users := make([]adminUserResp, 0, len(usersOut.Users))
 	for _, u := range usersOut.Users {
 		sub := cognitoAttr(u.Attributes, "sub")
+		tier := db.TierFree
+		if us, err := h.store.GetUserSettings(ctx, sub); err == nil {
+			tier = us.Tier
+		}
 		users = append(users, adminUserResp{
 			Sub:     sub,
 			Email:   cognitoAttr(u.Attributes, "email"),
 			Name:    cognitoAttr(u.Attributes, "name"),
 			Enabled: u.Enabled,
 			IsAdmin: adminSubs[sub],
+			Tier:    tier,
 		})
 	}
 

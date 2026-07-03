@@ -1301,11 +1301,20 @@ func (srv *server) adminListUsers(w http.ResponseWriter) {
 		Name    string `json:"name"`
 		Enabled bool   `json:"enabled"`
 		IsAdmin bool   `json:"isAdmin"`
+		Tier    string `json:"tier"`
+	}
+	srv.mu.RLock()
+	tier := srv.userSettings.Tier
+	srv.mu.RUnlock()
+	if tier == "" {
+		tier = db.TierFree
 	}
 	users := srv.store.listUsers()
 	resp := make([]userResp, 0, len(users))
 	for _, u := range users {
-		resp = append(resp, userResp{Sub: u.Sub, Email: u.Email, Name: u.Name, Enabled: u.Enabled, IsAdmin: u.IsAdmin})
+		// localserver only tracks one global userSettings record (single local user) —
+		// every listed user shows that same tier in local dev.
+		resp = append(resp, userResp{Sub: u.Sub, Email: u.Email, Name: u.Name, Enabled: u.Enabled, IsAdmin: u.IsAdmin, Tier: tier})
 	}
 	jsonOK(w, map[string]any{"users": resp})
 }

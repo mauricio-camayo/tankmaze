@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../../components/Layout';
 import {
-  adminListUsers, adminUpdateUser, adminToggleUserRole, adminDeleteUser,
+  adminListUsers, adminUpdateUser, adminToggleUserRole, adminDeleteUser, adminSetUserTier,
   type AdminUser,
 } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
+
+const TIERS = ['free', 'builder', 'pro'] as const;
 
 export default function AdminUsers() {
   const currentUser = useAuthStore((s) => s.user);
@@ -53,6 +55,19 @@ export default function AdminUsers() {
     }
   }
 
+  async function changeTier(u: AdminUser, tier: string) {
+    if (tier === u.tier) return;
+    setBusy(u.sub);
+    try {
+      await adminSetUserTier(u.sub, tier);
+      setUsers((prev) => prev.map((x) => x.sub === u.sub ? { ...x, tier } : x));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed');
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function deleteUser(sub: string) {
     setBusy(sub);
     try {
@@ -83,6 +98,7 @@ export default function AdminUsers() {
                 <th style={th}>Email</th>
                 <th style={th}>Status</th>
                 <th style={th}>Admin</th>
+                <th style={th}>Tier</th>
                 <th style={th}>Actions</th>
               </tr>
             </thead>
@@ -111,6 +127,21 @@ export default function AdminUsers() {
                         onChange={() => toggleAdmin(u)}
                         title={isSelf ? 'Cannot modify your own role' : ''}
                       />
+                    </td>
+                    <td style={td}>
+                      <select
+                        value={u.tier}
+                        disabled={isBusy}
+                        onChange={(e) => changeTier(u, e.target.value)}
+                        style={{
+                          background: '#0f0f1a', border: '1px solid #2d2d4e', borderRadius: 6,
+                          color: '#e2e8f0', padding: '3px 8px', fontSize: 12,
+                        }}
+                      >
+                        {TIERS.map((t) => (
+                          <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
+                        ))}
+                      </select>
                     </td>
                     <td style={{ ...td, display: 'flex', gap: 8 }}>
                       {!isSelf && (

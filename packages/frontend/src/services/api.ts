@@ -164,6 +164,7 @@ export interface AdminUser {
   name: string;
   enabled: boolean;
   isAdmin: boolean;
+  tier: string;
 }
 
 export const adminListUsers = (nextToken?: string) =>
