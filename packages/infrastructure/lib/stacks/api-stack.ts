@@ -311,6 +311,7 @@ export class ApiStack extends Stack {
         'cognito-idp:AdminAddUserToGroup',
         'cognito-idp:AdminRemoveUserFromGroup',
         'cognito-idp:AdminDeleteUser',
+        'cognito-idp:AdminUpdateUserAttributes',
       ],
       resources: [`arn:aws:cognito-idp:${this.region}:${this.account}:userpool/${userPoolId}`],
     }));
