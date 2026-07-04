@@ -170,7 +170,7 @@ export default function Landing() {
         <div style={{ flex: '1 1 340px', maxWidth: 440 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
             <img src="/logo.png" alt="TankMaze logo" width={66} height={86} />
-            <h1 style={{ fontSize: 36, fontWeight: 800, margin: 0, letterSpacing: '-0.5px', display: 'flex', flexDirection: 'column', lineHeight: 1.05 }}>
+            <h1 style={{ fontSize: 50, fontWeight: 800, margin: 0, letterSpacing: '-0.5px', display: 'flex', flexDirection: 'column', lineHeight: 1.05 }}>
               <span>Tank</span>
               <span style={{ color: '#7c6af7' }}>Maze</span>
             </h1>
