@@ -517,6 +517,7 @@ export default function TankEditor() {
   const [showGameDayPicker, setShowGameDayPicker] = useState(false);
   const [gameDays, setGameDays] = useState<GameDay[]>([]);
   const [loadingGameDays, setLoadingGameDays] = useState(false);
+  const [gameDaysLoaded, setGameDaysLoaded] = useState(false);
 
   const pollCancelRef = useRef(false);
   const pollingStartRef = useRef<number | null>(null);
@@ -638,6 +639,22 @@ export default function TankEditor() {
       .catch((e: Error) => setPageError(e.message))
       .finally(() => setPageLoading(false));
   }, [tankId]);
+
+  // Pre-fetch game days when the tank is already registered, so Withdraw can
+  // be hidden for game days that have already started/completed (item 211;
+  // same gate TankDetail.tsx uses, mirrored here since this page's own
+  // multi-registration Withdraw loop never got it originally).
+  useEffect(() => {
+    const ids = versions.flatMap((v) => v.registeredForGameDays ?? []);
+    if (ids.length > 0 && gameDays.length === 0) {
+      setLoadingGameDays(true);
+      listGameDays()
+        .then((days) => { setGameDays(days); setGameDaysLoaded(true); })
+        .catch(() => { setGameDays([]); setGameDaysLoaded(true); })
+        .finally(() => setLoadingGameDays(false));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [versions]);
 
   // Polling loop
   useEffect(() => {
@@ -808,7 +825,10 @@ export default function TankEditor() {
     setShowGameDayPicker(true);
     if (gameDays.length === 0) {
       setLoadingGameDays(true);
-      listGameDays().then(setGameDays).catch(() => setGameDays([])).finally(() => setLoadingGameDays(false));
+      listGameDays()
+        .then((days) => { setGameDays(days); setGameDaysLoaded(true); })
+        .catch(() => { setGameDays([]); setGameDaysLoaded(true); })
+        .finally(() => setLoadingGameDays(false));
     }
   }
 
@@ -958,11 +978,15 @@ export default function TankEditor() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {canRegister && (
             <>
-              {(latestVersion?.registeredForGameDays ?? []).map((gdId) => (
-                <button key={gdId} onClick={() => handleWithdraw(gdId)} disabled={registering} style={ghostButtonStyle}>
-                  {registering ? '…' : `Withdraw ·${gdId.slice(-6)}`}
-                </button>
-              ))}
+              {gameDaysLoaded && (latestVersion?.registeredForGameDays ?? []).map((gdId) => {
+                const gd = gameDays.find((d) => d.gameDayId === gdId);
+                if (!gd || gd.phases.roundRobin.status !== 'upcoming') return null;
+                return (
+                  <button key={gdId} onClick={() => handleWithdraw(gdId)} disabled={registering} style={ghostButtonStyle}>
+                    {registering ? '…' : `Withdraw ·${gdId.slice(-6)}`}
+                  </button>
+                );
+              })}
               <button
                 onClick={openRegisterPicker}
                 disabled={registering || isDisqualified}
