@@ -51,6 +51,8 @@ type server struct {
 	srcData           map[string][]byte // sourceKey → source bytes
 	avatarData        map[string][]byte // tankId → uploaded avatar image bytes
 	avatarContentType map[string]string // tankId → "image/png" | "image/jpeg"
+	userAvatarData    []byte            // uploaded profile picture bytes (single local user)
+	userAvatarType    string            // "image/png" | "image/jpeg"
 	liveMatches       map[string]*liveMatch
 	adConfig          adConfigState
 	userSettings      userSettingsState
@@ -218,6 +220,10 @@ func (srv *server) route(w http.ResponseWriter, r *http.Request) {
 	// User profile
 	case method == "PATCH" && rawPath == "me/profile":
 		srv.patchMyProfile(w, r)
+	case method == "PUT" && rawPath == "me/profile/picture":
+		srv.uploadProfilePicture(w, r)
+	case method == "GET" && n == 2 && parts[0] == "local-user-assets":
+		srv.serveLocalUserAsset(w, parts[1])
 
 	// Ad config
 	case method == "GET" && rawPath == "config/ads":
@@ -1594,6 +1600,65 @@ func (srv *server) patchMyProfile(w http.ResponseWriter, r *http.Request) {
 		srv.store.updateAuthorName(t.TankID, name)
 	}
 	jsonOK(w, map[string]string{"name": name})
+}
+
+// uploadProfilePicture mirrors tank-api's PUT /me/profile/picture (item 198),
+// storing the decoded bytes in memory (single local user) and serving them
+// back via GET /local-user-assets/avatar.{ext} instead of S3/Cognito.
+func (srv *server) uploadProfilePicture(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Data        string `json:"data"`
+		ContentType string `json:"contentType"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		jsonErr(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	var ext string
+	switch body.ContentType {
+	case "image/png":
+		ext = "png"
+	case "image/jpeg":
+		ext = "jpg"
+	default:
+		jsonErr(w, http.StatusBadRequest, "contentType must be image/png or image/jpeg")
+		return
+	}
+	imgBytes, err := base64.StdEncoding.DecodeString(body.Data)
+	if err != nil {
+		jsonErr(w, http.StatusBadRequest, "data must be valid base64")
+		return
+	}
+	if len(imgBytes) == 0 {
+		jsonErr(w, http.StatusBadRequest, "data is required")
+		return
+	}
+	if len(imgBytes) > maxAvatarBytes {
+		jsonErr(w, http.StatusBadRequest, fmt.Sprintf("avatar must be %d bytes or fewer", maxAvatarBytes))
+		return
+	}
+
+	srv.mu.Lock()
+	srv.userAvatarData = imgBytes
+	srv.userAvatarType = body.ContentType
+	srv.mu.Unlock()
+
+	url := fmt.Sprintf("http://localhost:%s/local-user-assets/avatar.%s", srv.port, ext)
+	srv.store.updateUserPicture(localUserID, url)
+	jsonOK(w, map[string]string{"picture": url})
+}
+
+func (srv *server) serveLocalUserAsset(w http.ResponseWriter, filename string) {
+	srv.mu.RLock()
+	data := srv.userAvatarData
+	contentType := srv.userAvatarType
+	srv.mu.RUnlock()
+	if data == nil || !strings.HasPrefix(filename, "avatar.") {
+		http.NotFound(w, nil)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Write(data)
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────

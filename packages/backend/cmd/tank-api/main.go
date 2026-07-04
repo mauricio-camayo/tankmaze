@@ -6,6 +6,7 @@
 //	GET    /tanks                              – list caller's tanks
 //	GET    /tanks/{id}                         – tank detail + version history
 //	PUT    /tanks/{id}/avatar                  – upload a custom avatar image (owner only, PNG/JPEG, max 512KB)
+//	PUT    /me/profile/picture                 – upload a custom profile picture (PNG/JPEG, max 512KB)
 //	POST   /tanks/{id}/versions               – submit Go source → triggers CodeBuild
 //	GET    /tanks/{id}/versions/{v}/status    – poll compile status
 //	POST   /tanks/{id}/versions/{v}/promote   – promote minor → next major
@@ -328,6 +329,8 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 	// User profile
 	case method == "PATCH" && rawPath == "me/profile":
 		return h.patchMyProfile(ctx, req)
+	case method == "PUT" && rawPath == "me/profile/picture":
+		return h.uploadProfilePicture(ctx, req)
 
 	// Ad config (public read, admin write)
 	case method == "GET" && rawPath == "config/ads":
@@ -2526,6 +2529,75 @@ func (h *handler) patchMyProfile(ctx context.Context, req events.APIGatewayV2HTT
 	}
 
 	return jsonResp(http.StatusOK, map[string]string{"name": name}), nil
+}
+
+// uploadProfilePicture is PUT /me/profile/picture (item 198) — reuses item
+// 158's upload pattern (JSON body of base64 data + contentType, same
+// 512KB/PNG-JPEG validation, same S3 bucket) but under the user-avatars/
+// prefix, and updates Cognito's picture attribute (mutable per auth-stack.ts)
+// via AdminUpdateUserAttributes instead of a Tank record's avatarUrl.
+func (h *handler) uploadProfilePicture(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	uid := userID(req)
+	if uid == "" {
+		return errResp(http.StatusUnauthorized, "unauthorized"), nil
+	}
+
+	var body uploadAvatarBody
+	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
+		return errResp(http.StatusBadRequest, "invalid request body"), nil
+	}
+
+	var ext string
+	switch body.ContentType {
+	case "image/png":
+		ext = "png"
+	case "image/jpeg":
+		ext = "jpg"
+	default:
+		return errResp(http.StatusBadRequest, "contentType must be image/png or image/jpeg"), nil
+	}
+
+	imgBytes, err := base64.StdEncoding.DecodeString(body.Data)
+	if err != nil {
+		return errResp(http.StatusBadRequest, "data must be valid base64"), nil
+	}
+	if len(imgBytes) == 0 {
+		return errResp(http.StatusBadRequest, "data is required"), nil
+	}
+	if len(imgBytes) > maxAvatarBytes {
+		return errResp(http.StatusBadRequest, fmt.Sprintf("avatar must be %d bytes or fewer", maxAvatarBytes)), nil
+	}
+
+	key := fmt.Sprintf("user-avatars/%s/avatar.%s", uid, ext)
+	if _, err := h.s3.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(h.assetsBucket),
+		Key:         aws.String(key),
+		Body:        bytes.NewReader(imgBytes),
+		ContentType: aws.String(body.ContentType),
+	}); err != nil {
+		log.Printf("upload profile picture %s: %v", uid, err)
+		return errResp(http.StatusInternalServerError, "failed to upload picture"), nil
+	}
+
+	url := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", h.assetsBucket, h.region, key)
+
+	username, err := h.getUsernameBySub(ctx, uid)
+	if err != nil {
+		return errResp(http.StatusNotFound, "user not found"), nil
+	}
+	_, err = h.cognito.AdminUpdateUserAttributes(ctx, &cognitoidp.AdminUpdateUserAttributesInput{
+		UserPoolId: aws.String(h.userPoolID),
+		Username:   aws.String(username),
+		UserAttributes: []cognitotypes.AttributeType{
+			{Name: aws.String("picture"), Value: aws.String(url)},
+		},
+	})
+	if err != nil {
+		log.Printf("uploadProfilePicture update attrs %s: %v", uid, err)
+		return errResp(http.StatusInternalServerError, "failed to update profile"), nil
+	}
+
+	return jsonResp(http.StatusOK, map[string]string{"picture": url}), nil
 }
 
 // ---- Ad config handlers -------------------------------------------------------

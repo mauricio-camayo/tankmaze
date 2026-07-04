@@ -1,10 +1,10 @@
 import { useRef, useState } from 'react';
 import { updateTank, uploadTankAvatar } from '../services/api';
 
-const MAX_AVATAR_BYTES = 512 * 1024;
-const ALLOWED_TYPES = ['image/png', 'image/jpeg'];
+export const MAX_AVATAR_BYTES = 512 * 1024;
+export const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg'];
 
-function readFileAsBase64(file: File): Promise<string> {
+export function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -50,7 +50,7 @@ export function AvatarPicker({ tankId, current, onSaved }: Props) {
     e.target.value = ''; // allow re-selecting the same file later
     if (!file) return;
     setUploadError(null);
-    if (!ALLOWED_TYPES.includes(file.type)) {
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
       setUploadError('Only PNG or JPEG images are supported.');
       return;
     }

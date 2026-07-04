@@ -202,6 +202,15 @@ export class StorageStack extends Stack {
       actions: ['s3:GetObject'],
       resources: [this.tankAssetsBucket.arnForObjects('tank-avatars/*')],
     }));
+    // Same bucket, separate prefix, for user profile pictures (item 198) —
+    // reuses item 158's upload pattern rather than a second bucket.
+    this.tankAssetsBucket.addToResourcePolicy(new iam.PolicyStatement({
+      sid: 'PublicReadUserAvatars',
+      effect: iam.Effect.ALLOW,
+      principals: [new iam.AnyPrincipal()],
+      actions: ['s3:GetObject'],
+      resources: [this.tankAssetsBucket.arnForObjects('user-avatars/*')],
+    }));
 
     // ---- Built-in map seeder -------------------------------------------
 

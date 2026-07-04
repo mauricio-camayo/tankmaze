@@ -207,6 +207,11 @@ export const adminSetUserTier = (userId: string, tier: string) =>
 // User profile
 export const updateMyProfile = (name: string) =>
   request<{ name: string }>('/me/profile', { method: 'PATCH', body: JSON.stringify({ name }) });
+export const uploadProfilePicture = (data: string, contentType: string) =>
+  request<{ picture: string }>('/me/profile/picture', {
+    method: 'PUT',
+    body: JSON.stringify({ data, contentType }),
+  });
 
 export const adminListTanks = (nextToken?: string) =>
   request<{ tanks: Tank[]; nextToken?: string }>(

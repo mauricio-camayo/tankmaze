@@ -12,6 +12,7 @@ type localUser struct {
 	Sub     string
 	Email   string
 	Name    string
+	Picture string
 	Enabled bool
 	IsAdmin bool
 }
@@ -407,6 +408,18 @@ func (s *memStore) updateUserName(sub, name string) bool {
 		return false
 	}
 	u.Name = name
+	s.users[sub] = u
+	return true
+}
+
+func (s *memStore) updateUserPicture(sub, url string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ok := s.users[sub]
+	if !ok {
+		return false
+	}
+	u.Picture = url
 	s.users[sub] = u
 	return true
 }

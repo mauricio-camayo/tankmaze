@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Layout, { cardStyle, primaryButtonStyle } from '../components/Layout';
-import { getMySettings, listTanks, updateMyProfile } from '../services/api';
+import { getMySettings, listTanks, updateMyProfile, uploadProfilePicture } from '../services/api';
+import { ALLOWED_IMAGE_TYPES, MAX_AVATAR_BYTES, readFileAsBase64 } from '../components/AvatarPicker';
 import { useAuthStore } from '../store/authStore';
 import type { UserSettings } from '../types';
 
@@ -69,6 +70,10 @@ export default function Account() {
   const [saved, setSaved] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
 
+  const [uploadingPicture, setUploadingPicture] = useState(false);
+  const [pictureError, setPictureError] = useState<string | null>(null);
+  const pictureInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     Promise.all([getMySettings(), listTanks()])
       .then(([s, tanks]) => {
@@ -92,6 +97,31 @@ export default function Account() {
       setProfileError(e instanceof Error ? e.message : 'Failed to save profile');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handlePictureChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setPictureError(null);
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setPictureError('Only PNG or JPEG images are supported.');
+      return;
+    }
+    if (file.size > MAX_AVATAR_BYTES) {
+      setPictureError(`Image must be ${Math.floor(MAX_AVATAR_BYTES / 1024)}KB or smaller.`);
+      return;
+    }
+    setUploadingPicture(true);
+    try {
+      const data = await readFileAsBase64(file);
+      const { picture } = await uploadProfilePicture(data, file.type);
+      if (user) setUser({ ...user, picture });
+    } catch (e) {
+      setPictureError(e instanceof Error ? e.message : 'Upload failed');
+    } finally {
+      setUploadingPicture(false);
     }
   }
 
@@ -129,10 +159,32 @@ export default function Account() {
               {(user?.name ?? user?.username ?? '?').charAt(0).toUpperCase()}
             </div>
           )}
-          <div style={{ color: '#64748b', fontSize: 12, lineHeight: 1.5 }}>
-            {user?.picture
-              ? 'Picture from your Google/Facebook account.'
-              : 'No picture on file. Sign in with Google or Facebook to add one automatically.'}
+          <div>
+            <input
+              ref={pictureInputRef}
+              type="file"
+              accept="image/png,image/jpeg"
+              onChange={handlePictureChange}
+              style={{ display: 'none' }}
+            />
+            <button
+              onClick={() => pictureInputRef.current?.click()}
+              disabled={uploadingPicture}
+              style={{
+                background: 'none', border: '1px solid #2d2d4e', color: '#94a3b8',
+                borderRadius: 6, padding: '5px 12px', fontSize: 12,
+                cursor: uploadingPicture ? 'not-allowed' : 'pointer', marginBottom: 6,
+              }}
+            >
+              {uploadingPicture ? 'Uploading…' : 'Upload photo'}
+            </button>
+            <div style={{ color: '#64748b', fontSize: 12, lineHeight: 1.5 }}>
+              {user?.picture
+                ? 'From your Google/Facebook account, or a photo you uploaded.'
+                : 'No picture on file — upload one, or sign in with Google/Facebook to add one automatically.'}
+              {' '}PNG or JPEG, max 512KB.
+            </div>
+            {pictureError && <p style={{ color: '#f87171', fontSize: 12, margin: '4px 0 0' }}>{pictureError}</p>}
           </div>
         </div>
 
