@@ -6,6 +6,7 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import { Trigger } from 'aws-cdk-lib/triggers';
 import { Construct } from 'constructs';
 
@@ -41,6 +42,7 @@ export class StorageStack extends Stack {
   readonly tables: TableSet;
   readonly wasmBucket: s3.Bucket;
   readonly matchLogsBucket: s3.Bucket;
+  readonly tankAssetsBucket: s3.Bucket;
 
   constructor(scope: Construct, id: string, props: StackProps) {
     super(scope, id, props);
@@ -177,6 +179,29 @@ export class StorageStack extends Stack {
         },
       ],
     });
+
+    // User-uploaded tank avatars (item 158). Public-read is scoped to the
+    // tank-avatars/ prefix only via a bucket policy, not a blanket
+    // BlockPublicAccess override — served directly by S3 (no CloudFront
+    // origin), since <img> tags don't need CORS for simple resource loads.
+    this.tankAssetsBucket = new s3.Bucket(this, 'TankAssets', {
+      bucketName: `tankmaze-tank-assets-${this.account}`,
+      blockPublicAccess: new s3.BlockPublicAccess({
+        blockPublicAcls: true,
+        ignorePublicAcls: true,
+        blockPublicPolicy: false,
+        restrictPublicBuckets: false,
+      }),
+      enforceSSL: true,
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+    this.tankAssetsBucket.addToResourcePolicy(new iam.PolicyStatement({
+      sid: 'PublicReadTankAvatars',
+      effect: iam.Effect.ALLOW,
+      principals: [new iam.AnyPrincipal()],
+      actions: ['s3:GetObject'],
+      resources: [this.tankAssetsBucket.arnForObjects('tank-avatars/*')],
+    }));
 
     // ---- Built-in map seeder -------------------------------------------
 

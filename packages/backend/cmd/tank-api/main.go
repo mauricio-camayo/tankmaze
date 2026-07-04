@@ -5,6 +5,7 @@
 //	POST   /tanks                              – create tank (optional ?forkFrom=&forkVersion= for fork)
 //	GET    /tanks                              – list caller's tanks
 //	GET    /tanks/{id}                         – tank detail + version history
+//	PUT    /tanks/{id}/avatar                  – upload a custom avatar image (owner only, PNG/JPEG, max 512KB)
 //	POST   /tanks/{id}/versions               – submit Go source → triggers CodeBuild
 //	GET    /tanks/{id}/versions/{v}/status    – poll compile status
 //	POST   /tanks/{id}/versions/{v}/promote   – promote minor → next major
@@ -37,6 +38,7 @@ import (
 	"bytes"
 	crand "crypto/rand"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -187,6 +189,8 @@ type handler struct {
 	schedulerSvc           *schedulersvc.Client
 	wasmBucket             string
 	logsBucket             string
+	assetsBucket           string
+	region                 string
 	codebuildProject       string
 	matchRunnerFunc        string
 	versionsTable          string // forwarded to CodeBuild as env override
@@ -222,6 +226,8 @@ func main() {
 		schedulerSvc:           schedulersvc.NewFromConfig(cfg),
 		wasmBucket:             os.Getenv("WASM_BUCKET"),
 		logsBucket:             os.Getenv("MATCH_LOGS_BUCKET"),
+		assetsBucket:           os.Getenv("TANK_ASSETS_BUCKET"),
+		region:                 cfg.Region,
 		codebuildProject:       os.Getenv("CODEBUILD_PROJECT"),
 		matchRunnerFunc:        os.Getenv("MATCH_RUNNER_FUNCTION"),
 		versionsTable:          os.Getenv("TANK_VERSIONS_TABLE"),
@@ -262,6 +268,8 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 		return h.deleteTank(ctx, req, parts[1])
 	case method == "PATCH" && len(parts) == 2 && parts[0] == "tanks":
 		return h.updateTank(ctx, req, parts[1])
+	case method == "PUT" && len(parts) == 3 && parts[0] == "tanks" && parts[2] == "avatar":
+		return h.uploadTankAvatar(ctx, req, parts[1])
 	case method == "POST" && len(parts) == 3 && parts[0] == "tanks" && parts[2] == "versions":
 		return h.submitVersion(ctx, req, parts[1])
 	case method == "GET" && len(parts) == 5 && parts[0] == "tanks" && parts[2] == "versions" && parts[4] == "status":
@@ -1100,6 +1108,82 @@ func (h *handler) updateTank(ctx context.Context, req events.APIGatewayV2HTTPReq
 		}
 	}
 	return jsonResp(http.StatusOK, map[string]string{"name": tank.Name}), nil
+}
+
+type uploadAvatarBody struct {
+	// Data is the raw image bytes, base64-encoded — small enough at the
+	// 512KB cap below that a JSON string field is simpler than wiring up
+	// real multipart/form-data parsing through API Gateway, and matches
+	// this file's existing convention of JSON-body-with-string-fields for
+	// uploads (see submitVersionBody.Source for Go source uploads).
+	Data        string `json:"data"`
+	ContentType string `json:"contentType"`
+}
+
+const maxAvatarBytes = 512 * 1024
+
+// uploadTankAvatar stores a user-uploaded avatar image in S3 under
+// tank-avatars/{tankId}/avatar.{ext} (public-read via bucket policy, see
+// StorageStack) and updates the Tank record's avatarUrl. See item 158.
+func (h *handler) uploadTankAvatar(ctx context.Context, req events.APIGatewayV2HTTPRequest, tankID string) (events.APIGatewayV2HTTPResponse, error) {
+	uid := userID(req)
+	if uid == "" {
+		return errResp(http.StatusUnauthorized, "unauthorized"), nil
+	}
+	tank, err := h.store.GetTank(ctx, tankID)
+	if errors.Is(err, db.ErrNotFound) {
+		return errResp(http.StatusNotFound, "tank not found"), nil
+	}
+	if err != nil {
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	if tank.UserID != uid {
+		return errResp(http.StatusForbidden, "forbidden"), nil
+	}
+
+	var body uploadAvatarBody
+	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
+		return errResp(http.StatusBadRequest, "invalid request body"), nil
+	}
+
+	var ext string
+	switch body.ContentType {
+	case "image/png":
+		ext = "png"
+	case "image/jpeg":
+		ext = "jpg"
+	default:
+		return errResp(http.StatusBadRequest, "contentType must be image/png or image/jpeg"), nil
+	}
+
+	imgBytes, err := base64.StdEncoding.DecodeString(body.Data)
+	if err != nil {
+		return errResp(http.StatusBadRequest, "data must be valid base64"), nil
+	}
+	if len(imgBytes) == 0 {
+		return errResp(http.StatusBadRequest, "data is required"), nil
+	}
+	if len(imgBytes) > maxAvatarBytes {
+		return errResp(http.StatusBadRequest, fmt.Sprintf("avatar must be %d bytes or fewer", maxAvatarBytes)), nil
+	}
+
+	key := fmt.Sprintf("tank-avatars/%s/avatar.%s", tankID, ext)
+	if _, err := h.s3.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(h.assetsBucket),
+		Key:         aws.String(key),
+		Body:        bytes.NewReader(imgBytes),
+		ContentType: aws.String(body.ContentType),
+	}); err != nil {
+		log.Printf("upload avatar %s: %v", tankID, err)
+		return errResp(http.StatusInternalServerError, "failed to upload avatar"), nil
+	}
+
+	url := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", h.assetsBucket, h.region, key)
+	if err := h.store.UpdateTankAvatarURL(ctx, tankID, url); err != nil {
+		log.Printf("update tank avatar url %s: %v", tankID, err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	return jsonResp(http.StatusOK, map[string]string{"avatarUrl": url}), nil
 }
 
 // ---- Score transfer ---------------------------------------------------------

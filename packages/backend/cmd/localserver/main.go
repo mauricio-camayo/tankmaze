@@ -18,6 +18,7 @@ package main
 
 import (
 	crand "crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -43,13 +44,16 @@ const (
 
 // server holds all shared mutable state.
 type server struct {
-	store        *memStore
-	mu           sync.RWMutex
-	wasmData     map[string][]byte // wasmKey → WASM bytes
-	srcData      map[string][]byte // sourceKey → source bytes
-	liveMatches  map[string]*liveMatch
-	adConfig     adConfigState
-	userSettings userSettingsState
+	store             *memStore
+	port              string
+	mu                sync.RWMutex
+	wasmData          map[string][]byte // wasmKey → WASM bytes
+	srcData           map[string][]byte // sourceKey → source bytes
+	avatarData        map[string][]byte // tankId → uploaded avatar image bytes
+	avatarContentType map[string]string // tankId → "image/png" | "image/jpeg"
+	liveMatches       map[string]*liveMatch
+	adConfig          adConfigState
+	userSettings      userSettingsState
 }
 
 type userSettingsState struct {
@@ -68,10 +72,12 @@ type adConfigState struct {
 
 func newServer() *server {
 	return &server{
-		store:       newStore(),
-		wasmData:    make(map[string][]byte),
-		srcData:     make(map[string][]byte),
-		liveMatches: make(map[string]*liveMatch),
+		store:             newStore(),
+		wasmData:          make(map[string][]byte),
+		srcData:           make(map[string][]byte),
+		avatarData:        make(map[string][]byte),
+		avatarContentType: make(map[string]string),
+		liveMatches:       make(map[string]*liveMatch),
 	}
 }
 
@@ -94,6 +100,7 @@ func main() {
 	flag.Parse()
 
 	srv := newServer()
+	srv.port = *port
 
 	log.Println("Compiling AI tanks…")
 	for _, name := range []string{"scout", "bruiser", "ranger", "randy"} {
@@ -117,7 +124,7 @@ func main() {
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -149,6 +156,10 @@ func (srv *server) route(w http.ResponseWriter, r *http.Request) {
 		srv.deleteTank(w, r, parts[1])
 	case method == "PATCH" && n == 2 && parts[0] == "tanks":
 		srv.updateTank(w, r, parts[1])
+	case method == "PUT" && n == 3 && parts[0] == "tanks" && parts[2] == "avatar":
+		srv.uploadTankAvatar(w, r, parts[1])
+	case method == "GET" && n == 3 && parts[0] == "local-assets":
+		srv.serveLocalAsset(w, parts[1], parts[2])
 	case method == "POST" && n == 3 && parts[0] == "tanks" && parts[2] == "versions":
 		srv.submitVersion(w, r, parts[1])
 	case method == "GET" && n == 5 && parts[0] == "tanks" && parts[2] == "versions" && parts[4] == "status":
@@ -421,6 +432,73 @@ func (srv *server) updateTank(w http.ResponseWriter, r *http.Request, tankID str
 	}
 	srv.store.putTank(t)
 	jsonOK(w, map[string]string{"name": t.Name})
+}
+
+const maxAvatarBytes = 512 * 1024
+
+// uploadTankAvatar mirrors tank-api's PUT /tanks/{id}/avatar (item 158), but
+// stores the image bytes in memory and serves them back via
+// GET /local-assets/{tankId}/avatar.{ext} instead of S3.
+func (srv *server) uploadTankAvatar(w http.ResponseWriter, r *http.Request, tankID string) {
+	t, err := srv.store.getTank(tankID)
+	if errors.Is(err, db.ErrNotFound) {
+		jsonErr(w, http.StatusNotFound, "tank not found")
+		return
+	}
+	var body struct {
+		Data        string `json:"data"`
+		ContentType string `json:"contentType"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		jsonErr(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	var ext string
+	switch body.ContentType {
+	case "image/png":
+		ext = "png"
+	case "image/jpeg":
+		ext = "jpg"
+	default:
+		jsonErr(w, http.StatusBadRequest, "contentType must be image/png or image/jpeg")
+		return
+	}
+	imgBytes, err := base64.StdEncoding.DecodeString(body.Data)
+	if err != nil {
+		jsonErr(w, http.StatusBadRequest, "data must be valid base64")
+		return
+	}
+	if len(imgBytes) == 0 {
+		jsonErr(w, http.StatusBadRequest, "data is required")
+		return
+	}
+	if len(imgBytes) > maxAvatarBytes {
+		jsonErr(w, http.StatusBadRequest, fmt.Sprintf("avatar must be %d bytes or fewer", maxAvatarBytes))
+		return
+	}
+
+	srv.mu.Lock()
+	srv.avatarData[tankID] = imgBytes
+	srv.avatarContentType[tankID] = body.ContentType
+	srv.mu.Unlock()
+
+	url := fmt.Sprintf("http://localhost:%s/local-assets/%s/avatar.%s", srv.port, tankID, ext)
+	t.AvatarURL = url
+	srv.store.putTank(t)
+	jsonOK(w, map[string]string{"avatarUrl": url})
+}
+
+func (srv *server) serveLocalAsset(w http.ResponseWriter, tankID, filename string) {
+	srv.mu.RLock()
+	data, ok := srv.avatarData[tankID]
+	contentType := srv.avatarContentType[tankID]
+	srv.mu.RUnlock()
+	if !ok || !strings.HasPrefix(filename, "avatar.") {
+		http.NotFound(w, nil)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Write(data)
 }
 
 func (srv *server) deleteTank(w http.ResponseWriter, _ *http.Request, tankID string) {

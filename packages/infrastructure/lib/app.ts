@@ -40,6 +40,7 @@ const api = new ApiStack(app, 'TankmAzeApi', {
   tables: storage.tables,
   wasmBucket: storage.wasmBucket,
   matchLogsBucket: storage.matchLogsBucket,
+  tankAssetsBucket: storage.tankAssetsBucket,
   codebuildProject: build.project,
   userPoolId,
   userPoolClientId,

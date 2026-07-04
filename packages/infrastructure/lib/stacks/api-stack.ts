@@ -20,6 +20,7 @@ interface ApiStackProps extends StackProps {
   tables: TableSet;
   wasmBucket: s3.Bucket;
   matchLogsBucket: s3.Bucket;
+  tankAssetsBucket: s3.Bucket;
   codebuildProject: codebuild.Project;
   userPoolId: string;
   userPoolClientId: string;
@@ -34,7 +35,7 @@ export class ApiStack extends Stack {
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
-    const { tables, wasmBucket, matchLogsBucket, codebuildProject, userPoolId, userPoolClientId, frontendDomains } = props;
+    const { tables, wasmBucket, matchLogsBucket, tankAssetsBucket, codebuildProject, userPoolId, userPoolClientId, frontendDomains } = props;
     const backendDir = path.join(__dirname, '../../../backend');
 
     // Resolve the correct Go binary. The system go may be older than what
@@ -265,6 +266,7 @@ export class ApiStack extends Stack {
       ...tableEnvVars(tables),
       WASM_BUCKET:                   wasmBucket.bucketName,
       MATCH_LOGS_BUCKET:             matchLogsBucket.bucketName,
+      TANK_ASSETS_BUCKET:            tankAssetsBucket.bucketName,
       CODEBUILD_PROJECT:             codebuildProject.projectName,
       MATCH_RUNNER_FUNCTION:         matchRunner.functionArn,
       SCOUT_TANK_ID:                 'builtin-scout',
@@ -290,6 +292,7 @@ export class ApiStack extends Stack {
     tables.userSettings.grantReadWriteData(tankApi);
     wasmBucket.grantReadWrite(tankApi);
     matchLogsBucket.grantRead(tankApi);
+    tankAssetsBucket.grantWrite(tankApi);
     tankApi.addToRolePolicy(new iam.PolicyStatement({
       actions: ['codebuild:StartBuild'],
       resources: [codebuildProject.projectArn],

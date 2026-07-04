@@ -40,6 +40,11 @@ export const updateTank = (tankId: string, updates: { name?: string; avatarUrl?:
     method: 'PATCH',
     body: JSON.stringify(updates),
   });
+export const uploadTankAvatar = (tankId: string, data: string, contentType: string) =>
+  request<{ avatarUrl: string }>(`/tanks/${tankId}/avatar`, {
+    method: 'PUT',
+    body: JSON.stringify({ data, contentType }),
+  });
 
 // Versions
 export const submitVersion = (tankId: string, source: string, config: object) =>
