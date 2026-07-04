@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard';
 import TankDetail from './pages/TankDetail';
 import TankEditor from './pages/TankEditor';
 import Leaderboard from './pages/Leaderboard';
+import UserProfile from './pages/UserProfile';
 import GameDay from './pages/GameDay';
 import GameDayList from './pages/GameDayList';
 import AdminLayout from './pages/admin/AdminLayout';
@@ -59,6 +60,7 @@ const router = createBrowserRouter([
   { path: '/privacy', element: <PrivacyPolicy /> },
   { path: '/watch', element: <Suspense fallback={null}><Watch /></Suspense> },
   { path: '/leaderboard', element: <Leaderboard /> },
+  { path: '/users/:sub', element: <UserProfile /> },
   { path: '/gamedays', element: <GameDayList /> },
   { path: '/gameday/:gameDayId', element: <GameDay /> },
   {

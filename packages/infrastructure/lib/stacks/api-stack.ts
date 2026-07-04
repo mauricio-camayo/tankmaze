@@ -451,6 +451,7 @@ export class ApiStack extends Stack {
       '/gamedays/{gameDayId}',
       '/tanks/ai',
       '/config/ads',
+      '/users/{sub}',
     ];
     for (const p of publicPaths) {
       httpApi.addRoutes({

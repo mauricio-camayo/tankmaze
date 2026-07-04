@@ -1,5 +1,5 @@
 import { getIdToken } from './auth';
-import type { Tank, TankVersion, Match, RankingEntry, GameDay, GameMap, UserSettings } from '../types';
+import type { Tank, TankVersion, Match, RankingEntry, GameDay, GameMap, UserSettings, PublicUserProfile } from '../types';
 
 const BASE = (import.meta.env.VITE_API_ENDPOINT as string) ?? '';
 
@@ -104,6 +104,7 @@ export const getMatchTicks = (matchId: string) =>
 
 // Rankings
 export const getRankings = () => request<RankingEntry[]>('/rankings');
+export const getPublicUserProfile = (sub: string) => request<PublicUserProfile>(`/users/${sub}`);
 
 // GameDay
 export const listGameDays = () => request<GameDay[]>('/gamedays');

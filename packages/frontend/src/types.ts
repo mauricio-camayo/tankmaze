@@ -84,12 +84,30 @@ export interface RankingEntry {
   tankId: string;
   tankName: string;
   authorUsername: string;
+  authorUserId?: string;
   activeVersion: string;
   avatarUrl?: string;
   globalScore: number;
   bestFinish: number | null;
   gameDays: number;
   lastActiveAt: number | null;
+}
+
+export interface PublicTankSummary {
+  tankId: string;
+  name: string;
+  avatarUrl?: string;
+  globalScore: number;
+  bestFinish: number | null;
+  gameDaysCount: number;
+  lastActiveAt: number | null;
+}
+
+export interface PublicUserProfile {
+  sub: string;
+  name: string;
+  picture?: string;
+  tanks: PublicTankSummary[];
 }
 
 export interface GameDayPhaseStatus {

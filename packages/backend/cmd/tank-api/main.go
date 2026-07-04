@@ -17,6 +17,7 @@
 //	GET    /matches/{id}                       – match metadata + result
 //	GET    /matches/{id}/ticks                 – redirect to pre-signed S3 tick log URL
 //	GET    /rankings                           – global leaderboard
+//	GET    /users/{sub}                         – public author profile (name, picture, public tank list; no email; no auth required)
 //	GET    /gamedays                           – list all game days (no auth required)
 //	POST   /gamedays                           – create game day + EventBridge schedules (admin only)
 //	DELETE /gamedays/{id}                      – cancel game day (admin only, no phase started)
@@ -297,6 +298,8 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 	// Rankings and Game Days
 	case method == "GET" && rawPath == "rankings":
 		return h.getRankings(ctx, req)
+	case method == "GET" && len(parts) == 2 && parts[0] == "users":
+		return h.getPublicUserProfile(ctx, parts[1])
 	case method == "GET" && rawPath == "gamedays":
 		return h.listGameDays(ctx)
 	case method == "POST" && rawPath == "gamedays":
@@ -1427,6 +1430,7 @@ func (h *handler) getRankings(ctx context.Context, req events.APIGatewayV2HTTPRe
 		TankID         string `json:"tankId"`
 		TankName       string `json:"tankName"`
 		AuthorUsername string `json:"authorUsername"`
+		AuthorUserID   string `json:"authorUserId,omitempty"`
 		AvatarURL      string `json:"avatarUrl,omitempty"`
 		GlobalScore    int    `json:"globalScore"`
 		BestFinish     *int   `json:"bestFinish"`
@@ -1440,6 +1444,7 @@ func (h *handler) getRankings(ctx context.Context, req events.APIGatewayV2HTTPRe
 			TankID:         t.TankID,
 			TankName:       t.Name,
 			AuthorUsername: authorNameOrID(t),
+			AuthorUserID:   t.UserID,
 			AvatarURL:      t.AvatarURL,
 			GlobalScore:    t.GlobalScore,
 			BestFinish:     t.BestFinish,
@@ -1448,6 +1453,77 @@ func (h *handler) getRankings(ctx context.Context, req events.APIGatewayV2HTTPRe
 		}
 	}
 	return jsonResp(http.StatusOK, result), nil
+}
+
+// publicTankSummary is the subset of a Tank record safe to show on another
+// user's public profile — deliberately a hand-built allow-list rather than
+// returning db.Tank directly, so a future field added to Tank doesn't leak
+// here by default.
+type publicTankSummary struct {
+	TankID        string `json:"tankId"`
+	Name          string `json:"name"`
+	AvatarURL     string `json:"avatarUrl,omitempty"`
+	GlobalScore   int    `json:"globalScore"`
+	BestFinish    *int   `json:"bestFinish"`
+	GameDaysCount int    `json:"gameDaysCount"`
+	LastActiveAt  int64  `json:"lastActiveAt"`
+}
+
+// getPublicUserProfile is GET /users/{sub} — public, no auth required (same
+// as /rankings, which links here). Returns only a display name, an optional
+// picture, and a public tank list. Email is never read for this path: the
+// display name comes from the authorName already denormalized onto the
+// user's own tanks (same field patchMyProfile/getTank backfill), and the
+// only Cognito attribute ever extracted is "picture" — never "email" or any
+// other attribute, so there's no attribute list here for email to
+// accidentally leak from. See item 210.
+func (h *handler) getPublicUserProfile(ctx context.Context, sub string) (events.APIGatewayV2HTTPResponse, error) {
+	tanks, err := h.store.ListTanksByUser(ctx, sub)
+	if err != nil {
+		log.Printf("getPublicUserProfile list tanks %s: %v", sub, err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+
+	name := sub
+	for _, t := range tanks {
+		if t.AuthorName != "" {
+			name = t.AuthorName
+			break
+		}
+	}
+
+	var picture string
+	if out, lookupErr := h.cognito.ListUsers(ctx, &cognitoidp.ListUsersInput{
+		UserPoolId: aws.String(h.userPoolID),
+		Filter:     aws.String(fmt.Sprintf(`sub = "%s"`, sub)),
+		Limit:      aws.Int32(1),
+	}); lookupErr == nil && len(out.Users) > 0 {
+		picture = cognitoAttr(out.Users[0].Attributes, "picture")
+	}
+
+	if len(tanks) == 0 && picture == "" && name == sub {
+		return errResp(http.StatusNotFound, "user not found"), nil
+	}
+
+	publicTanks := make([]publicTankSummary, len(tanks))
+	for i, t := range tanks {
+		publicTanks[i] = publicTankSummary{
+			TankID:        t.TankID,
+			Name:          t.Name,
+			AvatarURL:     t.AvatarURL,
+			GlobalScore:   t.GlobalScore,
+			BestFinish:    t.BestFinish,
+			GameDaysCount: t.GameDaysCount,
+			LastActiveAt:  t.LastActiveAt,
+		}
+	}
+
+	return jsonResp(http.StatusOK, map[string]interface{}{
+		"sub":     sub,
+		"name":    name,
+		"picture": picture,
+		"tanks":   publicTanks,
+	}), nil
 }
 
 func (h *handler) listGameDays(ctx context.Context) (events.APIGatewayV2HTTPResponse, error) {

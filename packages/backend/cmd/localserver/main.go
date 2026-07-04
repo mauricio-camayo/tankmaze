@@ -188,6 +188,8 @@ func (srv *server) route(w http.ResponseWriter, r *http.Request) {
 	// Rankings / Game Days
 	case method == "GET" && rawPath == "rankings":
 		srv.getRankings(w, r)
+	case method == "GET" && n == 2 && parts[0] == "users":
+		srv.getPublicUserProfile(w, parts[1])
 	case method == "GET" && rawPath == "gamedays":
 		srv.listGameDays(w)
 	case method == "POST" && rawPath == "gamedays":
@@ -963,6 +965,41 @@ func (srv *server) getRankings(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 	jsonOK(w, result)
+}
+
+// getPublicUserProfile mirrors tank-api's GET /users/{sub} (item 210). Local
+// dev only has one user, so any other sub 404s like a real unknown user
+// would.
+func (srv *server) getPublicUserProfile(w http.ResponseWriter, sub string) {
+	if sub != localUserID {
+		jsonErr(w, http.StatusNotFound, "user not found")
+		return
+	}
+	srv.mu.RLock()
+	u := srv.store.users[localUserID]
+	srv.mu.RUnlock()
+
+	tanks := srv.store.listTanksByUser(localUserID)
+	type publicTank struct {
+		TankID        string `json:"tankId"`
+		Name          string `json:"name"`
+		AvatarURL     string `json:"avatarUrl,omitempty"`
+		GlobalScore   int    `json:"globalScore"`
+		BestFinish    *int   `json:"bestFinish"`
+		GameDaysCount int    `json:"gameDaysCount"`
+		LastActiveAt  int64  `json:"lastActiveAt"`
+	}
+	publicTanks := make([]publicTank, len(tanks))
+	for i, t := range tanks {
+		publicTanks[i] = publicTank{
+			TankID: t.TankID, Name: t.Name, AvatarURL: t.AvatarURL,
+			GlobalScore: t.GlobalScore, BestFinish: t.BestFinish,
+			GameDaysCount: t.GameDaysCount, LastActiveAt: t.LastActiveAt,
+		}
+	}
+	jsonOK(w, map[string]interface{}{
+		"sub": sub, "name": u.Name, "picture": u.Picture, "tanks": publicTanks,
+	})
 }
 
 func (srv *server) listGameDays(w http.ResponseWriter) {

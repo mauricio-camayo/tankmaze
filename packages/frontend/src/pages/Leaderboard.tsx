@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import Layout, { cardStyle } from '../components/Layout';
 import { getRankings } from '../services/api';
 import { avatarSrc } from '../components/AvatarPicker';
@@ -73,7 +73,19 @@ function LeaderboardRow({ entry, onClick }: { entry: RankingEntry; onClick: () =
         <div style={{ color: '#e2e8f0', fontSize: 14 }}>{entry.tankName}</div>
         <div style={{ color: '#475569', fontSize: 11 }}>{entry.activeVersion}</div>
       </div>
-      <span style={{ color: '#94a3b8', fontSize: 13 }}>{entry.authorUsername}</span>
+      {entry.authorUserId ? (
+        <Link
+          to={`/users/${entry.authorUserId}`}
+          onClick={(e) => e.stopPropagation()}
+          style={{ color: '#94a3b8', fontSize: 13, textDecoration: 'none' }}
+          onMouseEnter={(e) => { e.currentTarget.style.textDecoration = 'underline'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.textDecoration = 'none'; }}
+        >
+          {entry.authorUsername}
+        </Link>
+      ) : (
+        <span style={{ color: '#94a3b8', fontSize: 13 }}>{entry.authorUsername}</span>
+      )}
       <span style={{ color: '#a78bfa', fontWeight: 600, fontSize: 14, textAlign: 'right' }}>
         {entry.globalScore.toLocaleString()}
       </span>
@@ -111,7 +123,13 @@ function LeaderboardCard({ entry, onClick }: { entry: RankingEntry; onClick: () 
         <div style={{ color: '#e2e8f0', fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {entry.tankName}
         </div>
-        <div style={{ color: '#475569', fontSize: 11 }}>{entry.authorUsername}</div>
+        <div style={{ color: '#475569', fontSize: 11 }}>
+          {entry.authorUserId ? (
+            <Link to={`/users/${entry.authorUserId}`} onClick={(e) => e.stopPropagation()} style={{ color: '#475569', textDecoration: 'none' }}>
+              {entry.authorUsername}
+            </Link>
+          ) : entry.authorUsername}
+        </div>
       </div>
       <span style={{ color: '#a78bfa', fontWeight: 600, fontSize: 14, flexShrink: 0 }}>
         {entry.globalScore.toLocaleString()}
