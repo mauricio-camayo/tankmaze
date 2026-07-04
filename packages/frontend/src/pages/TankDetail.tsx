@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import Layout, { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
-import { getTank, deleteTank, withdrawRegistration, getRankings, listGameDays, registerForGameDay, startMatch, listMaps, type OpponentSpec } from '../services/api';
+import { getTank, deleteTank, withdrawRegistration, getRankings, listGameDays, registerForGameDay, startMatch, listMaps, listTanks, getMySettings, type OpponentSpec } from '../services/api';
 import type { Tank, TankVersion, GameDay, GameMap } from '../types';
 import ForkDialog from '../components/ForkDialog';
 import { avatarSrc } from '../components/AvatarPicker';
@@ -376,6 +376,7 @@ export default function TankDetail() {
   const [error, setError] = useState<string | null>(null);
   const [rank, setRank] = useState<number | null>(null);
   const [showFork, setShowFork] = useState(false);
+  const [atForkLimit, setAtForkLimit] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showDeregisterConfirm, setShowDeregisterConfirm] = useState(false);
@@ -405,6 +406,17 @@ export default function TankDetail() {
       })
       .catch(() => { /* rank unavailable — leave null */ });
   }, [tankId]);
+
+  // Whether the current user (not necessarily this tank's owner — forking
+  // creates a new tank under the current user regardless of whose tank it is)
+  // is already at their tier's tank limit, to proactively block Fork instead
+  // of only reacting to the backend's 403 after a failed attempt.
+  useEffect(() => {
+    if (!currentUser) return;
+    Promise.all([listTanks(), getMySettings()])
+      .then(([myTanks, settings]) => setAtForkLimit(myTanks.length >= settings.tankLimit))
+      .catch(() => { /* leave false — backend still enforces the real limit */ });
+  }, [currentUser]);
 
   // Pre-fetch game days when the tank is already registered, so Withdraw button labels
   // can show the human-readable name instead of a UUID fragment.
@@ -613,7 +625,14 @@ export default function TankDetail() {
               </>
             )}
             {latestReadyMajor && !tank.scoreTransferredTo && (
-              <button onClick={() => setShowFork(true)} style={ghostButtonStyle}>Fork</button>
+              <button
+                onClick={() => setShowFork(true)}
+                disabled={atForkLimit}
+                title={atForkLimit ? 'You are at your tank limit — upgrade or delete a tank to fork this one.' : undefined}
+                style={{ ...ghostButtonStyle, opacity: atForkLimit ? 0.5 : 1, cursor: atForkLimit ? 'not-allowed' : 'pointer' }}
+              >
+                Fork
+              </button>
             )}
             {isOwner && (
               <button onClick={() => navigate(`/tanks/${tankId}/edit`)} style={primaryButtonStyle}>
