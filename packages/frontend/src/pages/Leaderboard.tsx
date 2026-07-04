@@ -7,7 +7,32 @@ import type { RankingEntry } from '../types';
 
 const DECAY_DAYS = 90;
 const PAGE_SIZE = 20;
-const COLS = '48px 32px 1fr 140px 88px 60px 50px 110px';
+const COLS = '48px 32px 1fr 24px 140px 88px 60px 50px 110px';
+
+// Author's own profile picture (item 213) — distinct from the tank avatar
+// (item 209). Same initial-letter fallback convention as Account.tsx/
+// Layout.tsx's nav bar when the author has no picture on file.
+function AuthorAvatar({ name, picture }: { name: string; picture?: string }) {
+  if (picture) {
+    return (
+      <img
+        src={picture}
+        alt=""
+        referrerPolicy="no-referrer"
+        style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+      />
+    );
+  }
+  return (
+    <div style={{
+      width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+      background: '#7c6af7', display: 'flex', alignItems: 'center',
+      justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#fff',
+    }}>
+      {name.charAt(0).toUpperCase()}
+    </div>
+  );
+}
 
 function ordinal(n: number | null): string {
   if (n === null) return '—';
@@ -73,6 +98,7 @@ function LeaderboardRow({ entry, onClick }: { entry: RankingEntry; onClick: () =
         <div style={{ color: '#e2e8f0', fontSize: 14 }}>{entry.tankName}</div>
         <div style={{ color: '#475569', fontSize: 11 }}>{entry.activeVersion}</div>
       </div>
+      <AuthorAvatar name={entry.authorUsername} picture={entry.authorPicture} />
       {entry.authorUserId ? (
         <Link
           to={`/users/${entry.authorUserId}`}
@@ -123,7 +149,8 @@ function LeaderboardCard({ entry, onClick }: { entry: RankingEntry; onClick: () 
         <div style={{ color: '#e2e8f0', fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {entry.tankName}
         </div>
-        <div style={{ color: '#475569', fontSize: 11 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#475569', fontSize: 11 }}>
+          <AuthorAvatar name={entry.authorUsername} picture={entry.authorPicture} />
           {entry.authorUserId ? (
             <Link to={`/users/${entry.authorUserId}`} onClick={(e) => e.stopPropagation()} style={{ color: '#475569', textDecoration: 'none' }}>
               {entry.authorUsername}
@@ -186,6 +213,7 @@ export default function Leaderboard() {
             <span style={thStyle}>#</span>
             <span aria-hidden="true" />
             <span style={thStyle}>Tank</span>
+            <span aria-hidden="true" />
             <span style={thStyle}>Author</span>
             <span style={{ ...thStyle, textAlign: 'right' }}>Score</span>
             <span style={{ ...thStyle, textAlign: 'center' }}>Best</span>

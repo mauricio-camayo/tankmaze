@@ -1431,20 +1431,31 @@ func (h *handler) getRankings(ctx context.Context, req events.APIGatewayV2HTTPRe
 		TankName       string `json:"tankName"`
 		AuthorUsername string `json:"authorUsername"`
 		AuthorUserID   string `json:"authorUserId,omitempty"`
+		AuthorPicture  string `json:"authorPicture,omitempty"`
 		AvatarURL      string `json:"avatarUrl,omitempty"`
 		GlobalScore    int    `json:"globalScore"`
 		BestFinish     *int   `json:"bestFinish"`
 		GameDays       int    `json:"gameDays"`
 		LastActiveAt   int64  `json:"lastActiveAt"`
 	}
+	// Cache picture lookups per unique author — many rows share the same
+	// owner, and each lookup is a Cognito ListUsers call (item 213, reusing
+	// item 210's lookupUserPicture).
+	pictureCache := make(map[string]string)
 	result := make([]entry, len(tanks))
 	for i, t := range tanks {
+		picture, cached := pictureCache[t.UserID]
+		if !cached {
+			picture = h.lookupUserPicture(ctx, t.UserID)
+			pictureCache[t.UserID] = picture
+		}
 		result[i] = entry{
 			Rank:           i + 1,
 			TankID:         t.TankID,
 			TankName:       t.Name,
 			AuthorUsername: authorNameOrID(t),
 			AuthorUserID:   t.UserID,
+			AuthorPicture:  picture,
 			AvatarURL:      t.AvatarURL,
 			GlobalScore:    t.GlobalScore,
 			BestFinish:     t.BestFinish,
@@ -1467,6 +1478,23 @@ type publicTankSummary struct {
 	BestFinish    *int   `json:"bestFinish"`
 	GameDaysCount int    `json:"gameDaysCount"`
 	LastActiveAt  int64  `json:"lastActiveAt"`
+}
+
+// lookupUserPicture returns a user's Cognito "picture" attribute by sub, or
+// "" if not found/set. Deliberately extracts only this one attribute — never
+// "email" or any other — so callers on public/other-user paths (item 210's
+// getPublicUserProfile, item 213's getRankings) can't accidentally leak
+// email just by reusing this helper.
+func (h *handler) lookupUserPicture(ctx context.Context, sub string) string {
+	out, err := h.cognito.ListUsers(ctx, &cognitoidp.ListUsersInput{
+		UserPoolId: aws.String(h.userPoolID),
+		Filter:     aws.String(fmt.Sprintf(`sub = "%s"`, sub)),
+		Limit:      aws.Int32(1),
+	})
+	if err != nil || len(out.Users) == 0 {
+		return ""
+	}
+	return cognitoAttr(out.Users[0].Attributes, "picture")
 }
 
 // getPublicUserProfile is GET /users/{sub} — public, no auth required (same
@@ -1492,14 +1520,7 @@ func (h *handler) getPublicUserProfile(ctx context.Context, sub string) (events.
 		}
 	}
 
-	var picture string
-	if out, lookupErr := h.cognito.ListUsers(ctx, &cognitoidp.ListUsersInput{
-		UserPoolId: aws.String(h.userPoolID),
-		Filter:     aws.String(fmt.Sprintf(`sub = "%s"`, sub)),
-		Limit:      aws.Int32(1),
-	}); lookupErr == nil && len(out.Users) > 0 {
-		picture = cognitoAttr(out.Users[0].Attributes, "picture")
-	}
+	picture := h.lookupUserPicture(ctx, sub)
 
 	if len(tanks) == 0 && picture == "" && name == sub {
 		return errResp(http.StatusNotFound, "user not found"), nil

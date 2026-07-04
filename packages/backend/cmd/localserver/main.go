@@ -944,11 +944,16 @@ func (srv *server) getRankings(w http.ResponseWriter, _ *http.Request) {
 		TankID        string `json:"tankId"`
 		Name          string `json:"name"`
 		UserID        string `json:"userId"`
+		AuthorPicture string `json:"authorPicture,omitempty"`
 		AvatarURL     string `json:"avatarUrl,omitempty"`
 		GlobalScore   int    `json:"globalScore"`
 		BestFinish    *int   `json:"bestFinish"`
 		GameDaysCount int    `json:"gameDaysCount"`
 		LastActiveAt  int64  `json:"lastActiveAt"`
+	}
+	pictures := make(map[string]string)
+	for _, u := range srv.store.listUsers() {
+		pictures[u.Sub] = u.Picture
 	}
 	result := make([]entry, len(tanks))
 	for i, t := range tanks {
@@ -957,6 +962,7 @@ func (srv *server) getRankings(w http.ResponseWriter, _ *http.Request) {
 			TankID:        t.TankID,
 			Name:          t.Name,
 			UserID:        t.UserID,
+			AuthorPicture: pictures[t.UserID],
 			AvatarURL:     t.AvatarURL,
 			GlobalScore:   t.GlobalScore,
 			BestFinish:    t.BestFinish,
