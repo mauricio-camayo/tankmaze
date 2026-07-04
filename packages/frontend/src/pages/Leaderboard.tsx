@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout, { cardStyle } from '../components/Layout';
 import { getRankings } from '../services/api';
+import { avatarSrc } from '../components/AvatarPicker';
 import type { RankingEntry } from '../types';
 
 const DECAY_DAYS = 90;
 const PAGE_SIZE = 20;
-const COLS = '48px 1fr 140px 88px 60px 50px 110px';
+const COLS = '48px 32px 1fr 140px 88px 60px 50px 110px';
 
 function ordinal(n: number | null): string {
   if (n === null) return '—';
@@ -63,6 +64,11 @@ function LeaderboardRow({ entry, onClick }: { entry: RankingEntry; onClick: () =
       <span style={{ fontWeight: 700, fontSize: 14, color: rankColor(entry.rank) }}>
         {entry.rank}
       </span>
+      <img
+        src={avatarSrc(entry.tankId, entry.avatarUrl)}
+        alt=""
+        style={{ width: 28, height: 28, borderRadius: 6, imageRendering: 'pixelated', flexShrink: 0 }}
+      />
       <div>
         <div style={{ color: '#e2e8f0', fontSize: 14 }}>{entry.tankName}</div>
         <div style={{ color: '#475569', fontSize: 11 }}>{entry.activeVersion}</div>
@@ -96,6 +102,11 @@ function LeaderboardCard({ entry, onClick }: { entry: RankingEntry; onClick: () 
       <span style={{ fontWeight: 700, fontSize: 14, color: rankColor(entry.rank), width: 24, flexShrink: 0 }}>
         {entry.rank}
       </span>
+      <img
+        src={avatarSrc(entry.tankId, entry.avatarUrl)}
+        alt=""
+        style={{ width: 28, height: 28, borderRadius: 6, imageRendering: 'pixelated', flexShrink: 0 }}
+      />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ color: '#e2e8f0', fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {entry.tankName}
@@ -155,6 +166,7 @@ export default function Leaderboard() {
             borderBottom: '1px solid #2d2d4e', marginBottom: 2, minWidth: 560,
           }}>
             <span style={thStyle}>#</span>
+            <span aria-hidden="true" />
             <span style={thStyle}>Tank</span>
             <span style={thStyle}>Author</span>
             <span style={{ ...thStyle, textAlign: 'right' }}>Score</span>

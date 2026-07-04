@@ -85,6 +85,7 @@ export interface RankingEntry {
   tankName: string;
   authorUsername: string;
   activeVersion: string;
+  avatarUrl?: string;
   globalScore: number;
   bestFinish: number | null;
   gameDays: number;

@@ -942,6 +942,7 @@ func (srv *server) getRankings(w http.ResponseWriter, _ *http.Request) {
 		TankID        string `json:"tankId"`
 		Name          string `json:"name"`
 		UserID        string `json:"userId"`
+		AvatarURL     string `json:"avatarUrl,omitempty"`
 		GlobalScore   int    `json:"globalScore"`
 		BestFinish    *int   `json:"bestFinish"`
 		GameDaysCount int    `json:"gameDaysCount"`
@@ -954,6 +955,7 @@ func (srv *server) getRankings(w http.ResponseWriter, _ *http.Request) {
 			TankID:        t.TankID,
 			Name:          t.Name,
 			UserID:        t.UserID,
+			AvatarURL:     t.AvatarURL,
 			GlobalScore:   t.GlobalScore,
 			BestFinish:    t.BestFinish,
 			GameDaysCount: t.GameDaysCount,

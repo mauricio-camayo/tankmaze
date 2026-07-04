@@ -1427,6 +1427,7 @@ func (h *handler) getRankings(ctx context.Context, req events.APIGatewayV2HTTPRe
 		TankID         string `json:"tankId"`
 		TankName       string `json:"tankName"`
 		AuthorUsername string `json:"authorUsername"`
+		AvatarURL      string `json:"avatarUrl,omitempty"`
 		GlobalScore    int    `json:"globalScore"`
 		BestFinish     *int   `json:"bestFinish"`
 		GameDays       int    `json:"gameDays"`
@@ -1439,6 +1440,7 @@ func (h *handler) getRankings(ctx context.Context, req events.APIGatewayV2HTTPRe
 			TankID:         t.TankID,
 			TankName:       t.Name,
 			AuthorUsername: authorNameOrID(t),
+			AvatarURL:      t.AvatarURL,
 			GlobalScore:    t.GlobalScore,
 			BestFinish:     t.BestFinish,
 			GameDays:       t.GameDaysCount,
