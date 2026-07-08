@@ -712,12 +712,14 @@ export default function TankDetail() {
       {majors.length === 0 ? (
         <div style={{ ...cardStyle, color: '#64748b', textAlign: 'center', padding: '40px 24px' }}>
           No versions yet.{' '}
-          <button
-            onClick={() => navigate(`/tanks/${tankId}/edit`)}
-            style={{ ...primaryButtonStyle, padding: '4px 12px', fontSize: 13 }}
-          >
-            Open editor →
-          </button>
+          {isOwner && (
+            <button
+              onClick={() => navigate(`/tanks/${tankId}/edit`)}
+              style={{ ...primaryButtonStyle, padding: '4px 12px', fontSize: 13 }}
+            >
+              Open editor →
+            </button>
+          )}
         </div>
       ) : (
         majors.map((major) => (

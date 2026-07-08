@@ -17,28 +17,38 @@ type localUser struct {
 	IsAdmin bool
 }
 
+// localFriendship mirrors db.Friendship's dual-item model (see
+// internal/db/friendships.go) in memory: one entry per direction, keyed
+// friendships[userId][friendId].
+type localFriendship struct {
+	Status      string
+	RequestedBy string
+}
+
 type memStore struct {
-	mu       sync.RWMutex
-	tanks    map[string]db.Tank
-	versions map[string][]db.TankVersion // tankId → slice
-	matches  map[string]db.Match
-	maps     map[string]db.Map
-	mapSlugs map[string]string       // slug → mapId
-	rankings map[string][]db.Ranking // tankId → []Ranking
-	users    map[string]localUser    // sub → user
-	gamedays map[string]db.GameDay
+	mu          sync.RWMutex
+	tanks       map[string]db.Tank
+	versions    map[string][]db.TankVersion // tankId → slice
+	matches     map[string]db.Match
+	maps        map[string]db.Map
+	mapSlugs    map[string]string       // slug → mapId
+	rankings    map[string][]db.Ranking // tankId → []Ranking
+	users       map[string]localUser    // sub → user
+	gamedays    map[string]db.GameDay
+	friendships map[string]map[string]localFriendship // userId → friendId → relationship
 }
 
 func newStore() *memStore {
 	s := &memStore{
-		tanks:    make(map[string]db.Tank),
-		versions: make(map[string][]db.TankVersion),
-		matches:  make(map[string]db.Match),
-		maps:     make(map[string]db.Map),
-		mapSlugs: make(map[string]string),
-		rankings: make(map[string][]db.Ranking),
-		users:    make(map[string]localUser),
-		gamedays: make(map[string]db.GameDay),
+		tanks:       make(map[string]db.Tank),
+		versions:    make(map[string][]db.TankVersion),
+		matches:     make(map[string]db.Match),
+		maps:        make(map[string]db.Map),
+		mapSlugs:    make(map[string]string),
+		rankings:    make(map[string][]db.Ranking),
+		users:       make(map[string]localUser),
+		gamedays:    make(map[string]db.GameDay),
+		friendships: make(map[string]map[string]localFriendship),
 	}
 	s.users[localUserID] = localUser{
 		Sub:     localUserID,
@@ -376,6 +386,13 @@ func (s *memStore) listUsers() []localUser {
 	return result
 }
 
+func (s *memStore) getUser(sub string) (localUser, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	u, ok := s.users[sub]
+	return u, ok
+}
+
 func (s *memStore) updateUserEnabled(sub string, enabled bool) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -533,4 +550,58 @@ func (s *memStore) deleteUser(sub string) (found bool) {
 		}
 	}
 	return true
+}
+
+// getFriendship, sendFriendRequest, acceptFriendRequest, removeFriendship,
+// and listFriendships mirror internal/db/friendships.go's dual-item model
+// (item 223) in memory. Local dev only ever has one real logged-in user, so
+// this is mainly useful for exercising the API shape against an arbitrary
+// second userId via curl, not a real two-account flow.
+func (s *memStore) getFriendship(userID, friendID string) (localFriendship, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	f, ok := s.friendships[userID][friendID]
+	return f, ok
+}
+
+func (s *memStore) sendFriendRequest(fromID, toID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.friendships[fromID] == nil {
+		s.friendships[fromID] = make(map[string]localFriendship)
+	}
+	if s.friendships[toID] == nil {
+		s.friendships[toID] = make(map[string]localFriendship)
+	}
+	s.friendships[fromID][toID] = localFriendship{Status: "pending", RequestedBy: fromID}
+	s.friendships[toID][fromID] = localFriendship{Status: "pending", RequestedBy: fromID}
+}
+
+func (s *memStore) acceptFriendRequest(userID, friendID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, pair := range [2][2]string{{userID, friendID}, {friendID, userID}} {
+		if s.friendships[pair[0]] != nil {
+			f := s.friendships[pair[0]][pair[1]]
+			f.Status = "accepted"
+			s.friendships[pair[0]][pair[1]] = f
+		}
+	}
+}
+
+func (s *memStore) removeFriendship(userID, friendID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.friendships[userID], friendID)
+	delete(s.friendships[friendID], userID)
+}
+
+func (s *memStore) listFriendships(userID string) map[string]localFriendship {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make(map[string]localFriendship, len(s.friendships[userID]))
+	for k, v := range s.friendships[userID] {
+		out[k] = v
+	}
+	return out
 }

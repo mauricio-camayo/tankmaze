@@ -21,6 +21,7 @@ export interface TableSet {
   maps: dynamodb.Table;
   platformConfig: dynamodb.Table;
   userSettings: dynamodb.Table;
+  friendships: dynamodb.Table;
 }
 
 // Env var map for Lambda functions
@@ -35,6 +36,7 @@ export function tableEnvVars(t: TableSet): Record<string, string> {
     MAPS_TABLE:             t.maps.tableName,
     PLATFORM_CONFIG_TABLE:  t.platformConfig.tableName,
     USER_SETTINGS_TABLE:    t.userSettings.tableName,
+    FRIENDSHIPS_TABLE:      t.friendships.tableName,
   };
 }
 
@@ -138,7 +140,20 @@ export class StorageStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN,
     });
 
-    this.tables = { tanks, tankVersions, matches, connections, gamedays, rankings, maps, platformConfig, userSettings };
+    // Friendships (item 223) — a friendship is stored as a pair of items, one
+    // per direction (userId=A,friendId=B) and (userId=B,friendId=A), so a
+    // lookup from either side is a single GetItem/Query against that user's
+    // own partition. See internal/db/friendships.go.
+    const friendships = new dynamodb.Table(this, 'FriendshipsTable', {
+      tableName: 'tankmaze-friendships',
+      partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
+      sortKey:      { name: 'friendId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: true,
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    this.tables = { tanks, tankVersions, matches, connections, gamedays, rankings, maps, platformConfig, userSettings, friendships };
 
     // ---- S3 buckets ----------------------------------------------------
 

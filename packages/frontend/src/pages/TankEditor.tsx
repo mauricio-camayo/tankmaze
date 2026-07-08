@@ -22,6 +22,23 @@ import {
 import type { Tank, TankVersion, TankConfig, GameDay, GameMap } from '../types';
 import { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
 import { AvatarPicker, avatarSrc } from '../components/AvatarPicker';
+import { useAuthStore } from '../store/authStore';
+
+// Built-in AI tanks (Scout/Bruiser/Ranger/Randy) are never reachable via the
+// editor's normal entry points (forking one creates a new tank owned by the
+// current user), but are excepted from the ownership redirect below for the
+// same reason the backend's getVersionSource excepts them — production uses
+// the "builtin-" tankId prefix, localserver uses fixed "__name__" ids.
+function isAiTankId(id: string): boolean {
+  return id.startsWith('builtin-') || ['__scout__', '__bruiser__', '__ranger__', '__randy__'].includes(id);
+}
+
+// Draft cache keys are scoped by userId as well as tankId (item 222) — keyed
+// only by tankId, an edited-but-unsaved draft from one account leaked to any
+// other account that later opened the same tank on the same browser.
+function draftKey(kind: 'src' | 'cfg' | 'imports', userId: string, tankId: string): string {
+  return `tankmaze-${kind}-${userId}-${tankId}`;
+}
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -494,6 +511,7 @@ type SaveStatus = 'idle' | 'submitting' | 'polling' | 'ready' | 'failed';
 export default function TankEditor() {
   const { tankId } = useParams<{ tankId: string }>();
   const navigate = useNavigate();
+  const currentUser = useAuthStore((s) => s.user);
 
   const [tank, setTank] = useState<Tank | null>(null);
   const [versions, setVersions] = useState<TankVersion[]>([]);
@@ -546,6 +564,14 @@ export default function TankEditor() {
     }
     getTank(tankId)
       .then(async ({ versions: v, ...t }) => {
+        // Editor is reachable via any /tanks/:id/edit URL regardless of
+        // ownership (item 221) — the backend already 403s on the actual
+        // source/save calls, but redirect here too so the editor UI never
+        // renders at all for a tank the current user doesn't own.
+        if (t.userId !== currentUser?.userId && !isAiTankId(tankId)) {
+          navigate(`/tanks/${tankId}`, { replace: true });
+          return;
+        }
         setTank(t);
         setAvatarUrl(t.avatarUrl);
         setVersions(v ?? []);
@@ -556,7 +582,7 @@ export default function TankEditor() {
         // Always strip preamble — old localStorage/S3 values may include it.
         let srcToSet: string;
         let fetchedRaw = '';
-        const savedSrc = localStorage.getItem(`tankmaze-src-${tankId}`);
+        const savedSrc = localStorage.getItem(draftKey('src', currentUser?.userId ?? '', tankId));
         if (savedSrc) {
           srcToSet = stripPreamble(savedSrc);
         } else {
@@ -584,7 +610,7 @@ export default function TankEditor() {
         // Forks of AI tanks have their own converted source that has stdlib imports
         // stripped during the AI-to-tank conversion — fall back to parsing from the
         // fork origin source when own source has no detected stdlib imports.
-        const savedImports = localStorage.getItem(`tankmaze-imports-${tankId}`);
+        const savedImports = localStorage.getItem(draftKey('imports', currentUser?.userId ?? '', tankId));
         if (savedImports) {
           setExtraImports(JSON.parse(savedImports) as string[]);
         } else if (t.forkedFromTankId && t.forkedFromVersion) {
@@ -604,7 +630,7 @@ export default function TankEditor() {
         // Config: prefer localStorage, then seed from API (tank name + version stats).
         // Always override name from the API — localStorage name can be stale or empty.
         let cfgToSet: TankConfig;
-        const savedCfg = localStorage.getItem(`tankmaze-cfg-${tankId}`);
+        const savedCfg = localStorage.getItem(draftKey('cfg', currentUser?.userId ?? '', tankId));
         if (savedCfg) {
           const parsed = JSON.parse(savedCfg) as TankConfig;
           cfgToSet = { ...parsed, name: t.name || parsed.name || DEFAULT_CONFIG.name };
@@ -709,21 +735,21 @@ export default function TankEditor() {
   // Persist source to localStorage on change (skip while in new-tank mode)
   useEffect(() => {
     if (configLoadedRef.current && tankId && tankId !== 'new' && source) {
-      localStorage.setItem(`tankmaze-src-${tankId}`, source);
+      localStorage.setItem(draftKey('src', currentUser?.userId ?? '', tankId), source);
     }
-  }, [tankId, source]);
+  }, [tankId, source, currentUser]);
 
   useEffect(() => {
     if (configLoadedRef.current && tankId && tankId !== 'new') {
-      localStorage.setItem(`tankmaze-cfg-${tankId}`, JSON.stringify(config));
+      localStorage.setItem(draftKey('cfg', currentUser?.userId ?? '', tankId), JSON.stringify(config));
     }
-  }, [tankId, config]);
+  }, [tankId, config, currentUser]);
 
   useEffect(() => {
     if (configLoadedRef.current && tankId && tankId !== 'new') {
-      localStorage.setItem(`tankmaze-imports-${tankId}`, JSON.stringify(extraImports));
+      localStorage.setItem(draftKey('imports', currentUser?.userId ?? '', tankId), JSON.stringify(extraImports));
     }
-  }, [tankId, extraImports]);
+  }, [tankId, extraImports, currentUser]);
 
   function clearSyntaxMarkers() {
     const editor = editorRef.current;

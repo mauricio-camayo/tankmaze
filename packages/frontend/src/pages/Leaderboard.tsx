@@ -6,7 +6,7 @@ import { avatarSrc } from '../components/AvatarPicker';
 import type { RankingEntry } from '../types';
 
 const DECAY_DAYS = 90;
-const PAGE_SIZE = 20;
+const PAGE_SIZE = Number(import.meta.env.VITE_LEADERBOARD_PAGE_SIZE) || 20;
 const COLS = '48px 32px 1fr 24px 140px 88px 60px 50px 110px';
 
 // Author's own profile picture (item 213) — distinct from the tank avatar

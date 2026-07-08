@@ -185,6 +185,22 @@ func (srv *server) route(w http.ResponseWriter, r *http.Request) {
 	case method == "GET" && n == 3 && parts[0] == "matches" && parts[2] == "ticks":
 		srv.getMatchTicks(w, r, parts[1])
 
+	// Auth
+	case method == "POST" && rawPath == "auth/forgot-password":
+		srv.forgotPassword(w, r)
+
+	// Friends
+	case method == "GET" && rawPath == "friends":
+		srv.listFriends(w)
+	case method == "POST" && rawPath == "friends/requests":
+		srv.sendFriendRequest(w, r)
+	case method == "POST" && n == 4 && parts[0] == "friends" && parts[1] == "requests" && parts[3] == "accept":
+		srv.respondFriendRequest(w, parts[2], true)
+	case method == "POST" && n == 4 && parts[0] == "friends" && parts[1] == "requests" && parts[3] == "reject":
+		srv.respondFriendRequest(w, parts[2], false)
+	case method == "DELETE" && n == 2 && parts[0] == "friends":
+		srv.removeFriend(w, parts[1])
+
 	// Rankings / Game Days
 	case method == "GET" && rawPath == "rankings":
 		srv.getRankings(w, r)
@@ -935,7 +951,38 @@ func (srv *server) getMatchTicks(w http.ResponseWriter, _ *http.Request, matchID
 	jsonOK(w, map[string]string{"matchId": matchID, "note": "use WebSocket for ticks in local mode"})
 }
 
+// ── Auth ─────────────────────────────────────────────────────────────────────
+
+// forgotPassword is a local-dev stand-in for item 217's real backend, which
+// self-invokes forgot-password-worker asynchronously and never sends a real
+// email — there is no Cognito/SES here, so this just logs what would happen
+// and always responds 202, matching the enumeration-safe contract's shape
+// for frontend integration testing.
+func (srv *server) forgotPassword(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Email string `json:"email"`
+	}
+	if err := readJSON(r, &body); err != nil || strings.TrimSpace(body.Email) == "" {
+		jsonErr(w, http.StatusBadRequest, "email required")
+		return
+	}
+	email := strings.TrimSpace(body.Email)
+	found := false
+	for _, u := range srv.store.listUsers() {
+		if u.Email == email {
+			found = true
+			break
+		}
+	}
+	log.Printf("[local] forgot-password requested for %s (account found: %v) — no real email sent in local dev", email, found)
+	w.WriteHeader(http.StatusAccepted)
+}
+
 // ── Rankings / Game Days ────────────────────────────────────────────────────
+
+// aiTankAvatarURL mirrors tank-api's item 218 fix — the Leaderboard shouldn't
+// show a built-in AI tank's real (seeder) Cognito owner's picture.
+const aiTankAvatarURL = "/avatar.png"
 
 func (srv *server) getRankings(w http.ResponseWriter, _ *http.Request) {
 	tanks := srv.store.scanTanksByScore(localUserID)
@@ -957,12 +1004,19 @@ func (srv *server) getRankings(w http.ResponseWriter, _ *http.Request) {
 	}
 	result := make([]entry, len(tanks))
 	for i, t := range tanks {
+		// Note: this shape has no separate "author name" field (pre-existing
+		// tank-api/localserver rankings shape mismatch, flagged in item 209/213) —
+		// only the author's picture can be overridden here for AI tanks.
+		picture := pictures[t.UserID]
+		if isAITankID(t.TankID) {
+			picture = aiTankAvatarURL
+		}
 		result[i] = entry{
 			Rank:          i + 1,
 			TankID:        t.TankID,
 			Name:          t.Name,
 			UserID:        t.UserID,
-			AuthorPicture: pictures[t.UserID],
+			AuthorPicture: picture,
 			AvatarURL:     t.AvatarURL,
 			GlobalScore:   t.GlobalScore,
 			BestFinish:    t.BestFinish,
@@ -1006,6 +1060,92 @@ func (srv *server) getPublicUserProfile(w http.ResponseWriter, sub string) {
 	jsonOK(w, map[string]interface{}{
 		"sub": sub, "name": u.Name, "picture": u.Picture, "tanks": publicTanks,
 	})
+}
+
+// ── Friends ──────────────────────────────────────────────────────────────────
+
+type friendEntry struct {
+	UserID  string `json:"userId"`
+	Name    string `json:"name"`
+	Picture string `json:"picture,omitempty"`
+}
+
+// resolveUserDisplay falls back to the raw sub when it isn't a known local
+// user — local dev only ever seeds localUserID, so any other id used to
+// exercise the friends API via curl has no name/picture on file.
+func (srv *server) resolveUserDisplay(sub string) (name, picture string) {
+	if u, ok := srv.store.getUser(sub); ok {
+		return u.Name, u.Picture
+	}
+	return sub, ""
+}
+
+func (srv *server) listFriends(w http.ResponseWriter) {
+	rows := srv.store.listFriendships(localUserID)
+	friends := []friendEntry{}
+	incoming := []friendEntry{}
+	outgoing := []friendEntry{}
+	for friendID, f := range rows {
+		name, picture := srv.resolveUserDisplay(friendID)
+		entry := friendEntry{UserID: friendID, Name: name, Picture: picture}
+		switch {
+		case f.Status == "accepted":
+			friends = append(friends, entry)
+		case f.RequestedBy == localUserID:
+			outgoing = append(outgoing, entry)
+		default:
+			incoming = append(incoming, entry)
+		}
+	}
+	jsonOK(w, map[string]interface{}{"friends": friends, "incoming": incoming, "outgoing": outgoing})
+}
+
+func (srv *server) sendFriendRequest(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ToUserID string `json:"toUserId"`
+	}
+	if err := readJSON(r, &body); err != nil || strings.TrimSpace(body.ToUserID) == "" {
+		jsonErr(w, http.StatusBadRequest, "toUserId required")
+		return
+	}
+	toUserID := strings.TrimSpace(body.ToUserID)
+	if toUserID == localUserID {
+		jsonErr(w, http.StatusBadRequest, "cannot friend yourself")
+		return
+	}
+	if existing, ok := srv.store.getFriendship(localUserID, toUserID); ok {
+		if existing.Status == "accepted" {
+			jsonErr(w, http.StatusConflict, "already friends")
+		} else {
+			jsonErr(w, http.StatusConflict, "friend request already pending")
+		}
+		return
+	}
+	srv.store.sendFriendRequest(localUserID, toUserID)
+	jsonOK(w, map[string]string{"status": "pending"})
+}
+
+func (srv *server) respondFriendRequest(w http.ResponseWriter, fromUserID string, accept bool) {
+	existing, ok := srv.store.getFriendship(localUserID, fromUserID)
+	if !ok {
+		jsonErr(w, http.StatusNotFound, "no pending request")
+		return
+	}
+	if existing.Status != "pending" || existing.RequestedBy == localUserID {
+		jsonErr(w, http.StatusConflict, "no pending incoming request from this user")
+		return
+	}
+	if accept {
+		srv.store.acceptFriendRequest(localUserID, fromUserID)
+	} else {
+		srv.store.removeFriendship(localUserID, fromUserID)
+	}
+	jsonOK(w, map[string]string{"status": "ok"})
+}
+
+func (srv *server) removeFriend(w http.ResponseWriter, friendID string) {
+	srv.store.removeFriendship(localUserID, friendID)
+	jsonOK(w, map[string]string{"status": "ok"})
 }
 
 func (srv *server) listGameDays(w http.ResponseWriter) {

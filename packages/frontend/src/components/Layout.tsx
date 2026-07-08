@@ -27,6 +27,14 @@ export default function Layout({ children }: LayoutProps) {
   async function handleSignOut() {
     await signOut();
     setUser(null);
+    // Belt-and-suspenders alongside the per-user draft-key scoping in
+    // TankEditor.tsx (item 222): also wipe any leftover tankmaze-* draft
+    // entries so nothing from this session lingers for the next login on
+    // this browser.
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (key?.startsWith('tankmaze-')) localStorage.removeItem(key);
+    }
     navigate('/login');
   }
 
@@ -56,12 +64,14 @@ export default function Layout({ children }: LayoutProps) {
         <Link to="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 18, textDecoration: 'none', flexShrink: 0 }}>
           <img src="/avatar.png" alt="" width={28} height={28} style={{ display: 'block' }} />
           <span style={{ color: '#e2e8f0' }}>Tank<span style={{ color: '#7c6af7' }}>Maze</span></span>
+          <span style={{ color: '#475569', fontSize: 11, fontWeight: 400 }}>v{import.meta.env.VITE_APP_VERSION}</span>
         </Link>
 
         {/* Desktop nav links (hidden on mobile/tablet via CSS) */}
         <div className="tm-nav-links" style={{ alignItems: 'center', gap: 24 }}>
           <Link to="/leaderboard" style={navLinkStyle}>Leaderboard</Link>
           <Link to="/gamedays" style={navLinkStyle}>Game Days</Link>
+          {user && <Link to="/friends" style={navLinkStyle}>Friends</Link>}
           {user?.isAdmin && (
             <Link to="/admin" style={{ ...navLinkStyle, color: '#f59e0b' }}>Admin</Link>
           )}
@@ -105,6 +115,7 @@ export default function Layout({ children }: LayoutProps) {
           { to: '/dashboard', label: 'Dashboard', color: undefined },
           { to: '/leaderboard', label: 'Leaderboard', color: undefined },
           { to: '/gamedays', label: 'Game Days', color: undefined },
+          { to: '/friends', label: 'Friends', color: undefined },
           { to: '/account', label: 'Account', color: undefined },
           ...(user?.isAdmin ? [
             { to: '/admin', label: 'Admin', color: '#f59e0b' },

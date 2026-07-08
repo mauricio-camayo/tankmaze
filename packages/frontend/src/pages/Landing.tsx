@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { signIn, signInWithGoogle, signInWithFacebook, signUpWithEmail, confirmEmailSignUp, resendConfirmationCode } from '../services/auth';
+import { signIn, signInWithGoogle, signInWithFacebook, signUpWithEmail, confirmEmailSignUp, resendConfirmationCode, confirmPasswordReset } from '../services/auth';
+import { requestPasswordReset } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 
 // Facebook IdP is wired up (CDK + backend) but not yet usable — no real
@@ -29,7 +30,7 @@ const feature = (emoji: string, title: string, desc: string) => (
   </div>
 );
 
-type AuthMode = 'signin' | 'signup' | 'verify';
+type AuthMode = 'signin' | 'signup' | 'verify' | 'forgot' | 'reset';
 
 export default function Landing() {
   const navigate = useNavigate();
@@ -38,8 +39,13 @@ export default function Landing() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
+  const [signupConfirmPassword, setSignupConfirmPassword] = useState('');
   const [pendingEmail, setPendingEmail] = useState('');
   const [code, setCode] = useState('');
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [resetCode, setResetCode] = useState('');
+  const [resetNewPassword, setResetNewPassword] = useState('');
+  const [resetConfirmPassword, setResetConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -120,6 +126,10 @@ export default function Landing() {
     e.preventDefault();
     setError(null);
     setInfo(null);
+    if (signupPassword !== signupConfirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
     setLoading(true);
     try {
       await signUpWithEmail(username, signupPassword);
@@ -146,6 +156,54 @@ export default function Landing() {
       setInfo('Email verified — you can sign in now.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Verification failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Response text is fixed regardless of outcome (item 217) — never reveals
+  // whether the email exists or which auth method the account (if any) uses.
+  const FORGOT_PASSWORD_GENERIC_MESSAGE = 'If that email is in our system, a link to recover your password will be sent.';
+
+  async function handleForgotSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setInfo(null);
+    setLoading(true);
+    try {
+      await requestPasswordReset(forgotEmail);
+      setInfo(FORGOT_PASSWORD_GENERIC_MESSAGE);
+      setMode('reset');
+    } catch {
+      // A thrown error here means the request itself failed (network/backend
+      // issue), not that the email doesn't exist — the backend always 202s
+      // before any lookup happens. Safe to surface distinctly.
+      setError('Something went wrong — please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleResetSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setInfo(null);
+    if (resetNewPassword !== resetConfirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+    setLoading(true);
+    try {
+      await confirmPasswordReset(forgotEmail, resetCode, resetNewPassword);
+      setUsername(forgotEmail);
+      setPassword('');
+      setResetCode('');
+      setResetNewPassword('');
+      setResetConfirmPassword('');
+      setMode('signin');
+      setInfo('Password reset — you can sign in now.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Reset failed');
     } finally {
       setLoading(false);
     }
@@ -217,10 +275,14 @@ export default function Landing() {
           <div style={{ flex: '0 0 320px' }}>
             <div style={{ background: '#1a1a2e', border: '1px solid #2d2d4e', borderRadius: 12, padding: '28px 24px' }}>
               <h2 style={{ margin: '0 0 20px', fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}>
-                {mode === 'signin' ? 'Sign in' : mode === 'signup' ? 'Create account' : 'Verify your email'}
+                {mode === 'signin' ? 'Sign in'
+                  : mode === 'signup' ? 'Create account'
+                  : mode === 'verify' ? 'Verify your email'
+                  : mode === 'forgot' ? 'Reset your password'
+                  : 'Enter reset code'}
               </h2>
 
-              {mode !== 'verify' && (
+              {(mode === 'signin' || mode === 'signup') && (
                 <>
                   <button
                     type="button"
@@ -285,7 +347,16 @@ export default function Landing() {
                     />
                   </div>
                   <div style={{ marginBottom: 16 }}>
-                    <label style={labelStyle}>Password</label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                      <label style={labelStyle}>Password</label>
+                      <button
+                        type="button"
+                        onClick={() => { setForgotEmail(username); setMode('forgot'); setError(null); setInfo(null); }}
+                        style={{ background: 'none', border: 'none', color: '#7c6af7', fontSize: 12, cursor: 'pointer', padding: 0, marginBottom: 4 }}
+                      >
+                        Forgot password?
+                      </button>
+                    </div>
                     <input
                       type="password"
                       value={password}
@@ -338,6 +409,17 @@ export default function Landing() {
                     <p style={{ margin: '4px 0 0', color: '#475569', fontSize: 11 }}>
                       At least 8 characters, with uppercase, lowercase, and a digit.
                     </p>
+                  </div>
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={labelStyle}>Confirm password</label>
+                    <input
+                      type="password"
+                      value={signupConfirmPassword}
+                      onChange={(e) => setSignupConfirmPassword(e.target.value)}
+                      required
+                      minLength={8}
+                      style={inputStyle}
+                    />
                   </div>
                   {error && <p style={{ color: '#f87171', fontSize: 13, margin: '0 0 12px' }}>{error}</p>}
                   <button type="submit" disabled={loading} style={submitButtonStyle(loading)}>
@@ -397,9 +479,115 @@ export default function Landing() {
                 </form>
               )}
 
+              {mode === 'forgot' && (
+                <form onSubmit={handleForgotSubmit}>
+                  <p style={{ color: '#94a3b8', fontSize: 13, lineHeight: 1.6, margin: '0 0 16px' }}>
+                    Enter your account email and we'll send you a way to get back in.
+                  </p>
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={labelStyle}>Email</label>
+                    <input
+                      type="email"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      autoFocus
+                      required
+                      style={inputStyle}
+                    />
+                  </div>
+                  {error && <p style={{ color: '#f87171', fontSize: 13, margin: '0 0 12px' }}>{error}</p>}
+                  {info && <p style={{ color: '#4ade80', fontSize: 13, margin: '0 0 12px' }}>{info}</p>}
+                  <button type="submit" disabled={loading} style={submitButtonStyle(loading)}>
+                    {loading ? 'Sending…' : 'Send reset link'}
+                  </button>
+                  <p style={{ textAlign: 'center', fontSize: 13, color: '#64748b', margin: '16px 0 0' }}>
+                    <button
+                      type="button"
+                      onClick={() => { setMode('reset'); setError(null); setInfo(null); }}
+                      style={{ background: 'none', border: 'none', color: '#7c6af7', fontSize: 13, cursor: 'pointer', padding: 0, fontWeight: 600 }}
+                    >
+                      I already have a code
+                    </button>
+                    {' · '}
+                    <button
+                      type="button"
+                      onClick={() => { setMode('signin'); setError(null); setInfo(null); }}
+                      style={{ background: 'none', border: 'none', color: '#64748b', fontSize: 13, cursor: 'pointer', padding: 0 }}
+                    >
+                      Back to sign in
+                    </button>
+                  </p>
+                </form>
+              )}
+
+              {mode === 'reset' && (
+                <form onSubmit={handleResetSubmit}>
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={labelStyle}>Email</label>
+                    <input
+                      type="email"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      autoFocus
+                      required
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={labelStyle}>Reset code</label>
+                    <input
+                      value={resetCode}
+                      onChange={(e) => setResetCode(e.target.value)}
+                      required
+                      inputMode="numeric"
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={labelStyle}>New password</label>
+                    <input
+                      type="password"
+                      value={resetNewPassword}
+                      onChange={(e) => setResetNewPassword(e.target.value)}
+                      required
+                      minLength={8}
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={labelStyle}>Confirm new password</label>
+                    <input
+                      type="password"
+                      value={resetConfirmPassword}
+                      onChange={(e) => setResetConfirmPassword(e.target.value)}
+                      required
+                      minLength={8}
+                      style={inputStyle}
+                    />
+                  </div>
+                  {error && <p style={{ color: '#f87171', fontSize: 13, margin: '0 0 12px' }}>{error}</p>}
+                  {info && <p style={{ color: '#4ade80', fontSize: 13, margin: '0 0 12px' }}>{info}</p>}
+                  <button type="submit" disabled={loading} style={submitButtonStyle(loading)}>
+                    {loading ? 'Resetting…' : 'Reset password'}
+                  </button>
+                  <p style={{ textAlign: 'center', fontSize: 13, color: '#64748b', margin: '16px 0 0' }}>
+                    <button
+                      type="button"
+                      onClick={() => { setMode('signin'); setError(null); setInfo(null); }}
+                      style={{ background: 'none', border: 'none', color: '#64748b', fontSize: 13, cursor: 'pointer', padding: 0 }}
+                    >
+                      Back to sign in
+                    </button>
+                  </p>
+                </form>
+              )}
+
               <p style={{ marginTop: 20, textAlign: 'center', fontSize: 12, color: '#475569', margin: '20px 0 0' }}>
                 By continuing you agree to our{' '}
                 <Link to="/privacy" style={{ color: '#7c6af7' }}>Privacy Policy</Link>.
+              </p>
+              <p style={{ textAlign: 'center', fontSize: 11, color: '#334155', margin: '8px 0 0' }}>
+                v{import.meta.env.VITE_APP_VERSION}
               </p>
             </div>
           </div>

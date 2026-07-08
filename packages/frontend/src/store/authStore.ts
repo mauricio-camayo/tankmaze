@@ -7,6 +7,7 @@ interface AuthUser {
   picture?: string;
   email?: string;
   isAdmin?: boolean;
+  isFederated?: boolean;
 }
 
 interface AuthStore {

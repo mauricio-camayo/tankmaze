@@ -111,6 +111,18 @@ export interface PublicUserProfile {
   tanks: PublicTankSummary[];
 }
 
+export interface FriendEntry {
+  userId: string;
+  name: string;
+  picture?: string;
+}
+
+export interface FriendsResponse {
+  friends: FriendEntry[];
+  incoming: FriendEntry[];
+  outgoing: FriendEntry[];
+}
+
 export interface GameDayPhaseStatus {
   status: 'upcoming' | 'running' | 'complete' | 'cancelled';
   startedAt: number | null;

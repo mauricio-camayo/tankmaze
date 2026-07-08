@@ -16,6 +16,7 @@ import AdminUsers from './pages/admin/Users';
 import AdminTanks from './pages/admin/Tanks';
 import AdminAdConfig from './pages/admin/AdConfig';
 import Account from './pages/Account';
+import Friends from './pages/Friends';
 import Upgrade from './pages/Upgrade';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 
@@ -71,6 +72,7 @@ const router = createBrowserRouter([
       { path: '/tanks/:tankId', element: <TankDetail /> },
       { path: '/tanks/:tankId/edit', element: <TankEditor /> },
       { path: '/account', element: <Account /> },
+      { path: '/friends', element: <Friends /> },
       { path: '/upgrade', element: <Upgrade /> },
     ],
   },
@@ -102,7 +104,7 @@ export default function App() {
       getAuthUser().then(async (u) => {
         if (u) {
           const profile = await getUserProfile();
-          setUser({ userId: profile.sub ?? u.userId, username: u.username, name: profile.name, picture: profile.picture, email: profile.email, isAdmin: profile.isAdmin });
+          setUser({ userId: profile.sub ?? u.userId, username: u.username, name: profile.name, picture: profile.picture, email: profile.email, isAdmin: profile.isAdmin, isFederated: profile.isFederated });
         } else {
           setUser(null);
         }

@@ -8,6 +8,8 @@ import {
   getCurrentUser,
   fetchAuthSession,
   signInWithRedirect,
+  updatePassword as amplifyUpdatePassword,
+  confirmResetPassword as amplifyConfirmResetPassword,
 } from 'aws-amplify/auth';
 
 const LOCAL_DEV = import.meta.env.VITE_LOCAL_DEV === 'true';
@@ -81,8 +83,8 @@ export async function getAuthUser() {
   }
 }
 
-export async function getUserProfile(): Promise<{ sub?: string; name?: string; picture?: string; email?: string; isAdmin?: boolean }> {
-  if (LOCAL_DEV) return { name: 'Local User', email: 'dev@localhost', isAdmin: true };
+export async function getUserProfile(): Promise<{ sub?: string; name?: string; picture?: string; email?: string; isAdmin?: boolean; isFederated?: boolean }> {
+  if (LOCAL_DEV) return { name: 'Local User', email: 'dev@localhost', isAdmin: true, isFederated: false };
   try {
     const session = await fetchAuthSession();
     const payload = session.tokens?.idToken?.payload;
@@ -94,10 +96,29 @@ export async function getUserProfile(): Promise<{ sub?: string; name?: string; p
       picture: payload['picture'] as string | undefined,
       email: payload['email'] as string | undefined,
       isAdmin: groups?.includes('platform-admin') ?? false,
+      // Federated (Google/Facebook) sign-ins carry an "identities" claim on
+      // the ID token; native email+password Cognito users never have one —
+      // used to hide the password-change section for accounts with no
+      // Cognito password to change (item 216).
+      isFederated: payload['identities'] != null,
     };
   } catch {
     return {};
   }
+}
+
+export async function changePassword(oldPassword: string, newPassword: string) {
+  if (LOCAL_DEV) return;
+  return amplifyUpdatePassword({ oldPassword, newPassword });
+}
+
+// Applies the code from a forgot-password email — distinct from item 217's
+// own /auth/forgot-password trigger (services/api.ts's requestPasswordReset),
+// which is the enumeration-safe step. By the time a user has a real code in
+// hand, enumeration safety no longer applies, so this calls Cognito directly.
+export async function confirmPasswordReset(email: string, code: string, newPassword: string) {
+  if (LOCAL_DEV) return;
+  return amplifyConfirmResetPassword({ username: email, confirmationCode: code, newPassword });
 }
 
 export async function getIdToken(): Promise<string | null> {

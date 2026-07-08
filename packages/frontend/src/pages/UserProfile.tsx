@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import Layout, { cardStyle } from '../components/Layout';
-import { getPublicUserProfile } from '../services/api';
+import Layout, { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
+import { getPublicUserProfile, listFriends, sendFriendRequest, acceptFriendRequest, rejectFriendRequest, removeFriend } from '../services/api';
 import { avatarSrc } from '../components/AvatarPicker';
+import { useAuthStore } from '../store/authStore';
 import type { PublicUserProfile } from '../types';
+
+type FriendStatus = 'none' | 'friends' | 'incoming' | 'outgoing';
 
 function relativeTime(ts: number | null): string {
   if (!ts) return '—';
@@ -24,9 +27,13 @@ function ordinal(n: number | null): string {
 
 export default function UserProfile() {
   const { sub } = useParams<{ sub: string }>();
+  const currentUser = useAuthStore((s) => s.user);
   const [profile, setProfile] = useState<PublicUserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [friendStatus, setFriendStatus] = useState<FriendStatus>('none');
+  const [friendBusy, setFriendBusy] = useState(false);
+  const [friendError, setFriendError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!sub) return;
@@ -35,6 +42,31 @@ export default function UserProfile() {
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
   }, [sub]);
+
+  function refreshFriendStatus() {
+    if (!sub || !currentUser || sub === currentUser.userId) return;
+    listFriends().then((data) => {
+      if (data.friends.some((f) => f.userId === sub)) setFriendStatus('friends');
+      else if (data.incoming.some((f) => f.userId === sub)) setFriendStatus('incoming');
+      else if (data.outgoing.some((f) => f.userId === sub)) setFriendStatus('outgoing');
+      else setFriendStatus('none');
+    }).catch(() => { /* leave as 'none' — non-critical */ });
+  }
+
+  useEffect(refreshFriendStatus, [sub, currentUser]);
+
+  async function handleFriendAction(action: () => Promise<unknown>) {
+    setFriendBusy(true);
+    setFriendError(null);
+    try {
+      await action();
+      refreshFriendStatus();
+    } catch (e) {
+      setFriendError(e instanceof Error ? e.message : 'Action failed');
+    } finally {
+      setFriendBusy(false);
+    }
+  }
 
   if (loading) return <Layout><p style={{ color: '#64748b' }}>Loading…</p></Layout>;
   if (error || !profile) return <Layout><p style={{ color: '#f87171' }}>{error ?? 'User not found'}</p></Layout>;
@@ -58,13 +90,63 @@ export default function UserProfile() {
             {profile.name.charAt(0).toUpperCase()}
           </div>
         )}
-        <div>
+        <div style={{ flex: 1 }}>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#e2e8f0', margin: 0 }}>{profile.name}</h1>
           <p style={{ color: '#64748b', fontSize: 13, margin: '2px 0 0' }}>
             {profile.tanks.length} tank{profile.tanks.length === 1 ? '' : 's'}
           </p>
         </div>
+        {currentUser && sub !== currentUser.userId && (
+          <div>
+            {friendStatus === 'none' && (
+              <button
+                onClick={() => handleFriendAction(() => sendFriendRequest(sub!))}
+                disabled={friendBusy}
+                style={primaryButtonStyle}
+              >
+                Add friend
+              </button>
+            )}
+            {friendStatus === 'outgoing' && (
+              <button
+                onClick={() => handleFriendAction(() => removeFriend(sub!))}
+                disabled={friendBusy}
+                style={ghostButtonStyle}
+              >
+                Cancel request
+              </button>
+            )}
+            {friendStatus === 'incoming' && (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => handleFriendAction(() => acceptFriendRequest(sub!))}
+                  disabled={friendBusy}
+                  style={primaryButtonStyle}
+                >
+                  Accept
+                </button>
+                <button
+                  onClick={() => handleFriendAction(() => rejectFriendRequest(sub!))}
+                  disabled={friendBusy}
+                  style={ghostButtonStyle}
+                >
+                  Decline
+                </button>
+              </div>
+            )}
+            {friendStatus === 'friends' && (
+              <button
+                onClick={() => handleFriendAction(() => removeFriend(sub!))}
+                disabled={friendBusy}
+                style={{ ...ghostButtonStyle, borderColor: '#7f1d1d', color: '#f87171' }}
+              >
+                Remove friend
+              </button>
+            )}
+          </div>
+        )}
       </div>
+      {friendError && <p style={{ color: '#f87171', fontSize: 13, margin: '0 0 16px' }}>{friendError}</p>}
 
       {profile.tanks.length === 0 ? (
         <div style={{ ...cardStyle, color: '#64748b', textAlign: 'center', padding: '40px 24px' }}>

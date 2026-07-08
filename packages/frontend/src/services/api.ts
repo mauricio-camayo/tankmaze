@@ -1,5 +1,5 @@
 import { getIdToken } from './auth';
-import type { Tank, TankVersion, Match, RankingEntry, GameDay, GameMap, UserSettings, PublicUserProfile } from '../types';
+import type { Tank, TankVersion, Match, RankingEntry, GameDay, GameMap, UserSettings, PublicUserProfile, FriendsResponse } from '../types';
 
 const BASE = (import.meta.env.VITE_API_ENDPOINT as string) ?? '';
 
@@ -17,7 +17,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new Error(`${res.status} ${res.statusText}: ${body}`);
   }
   if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  // Some 202 responses (e.g. forgotPassword) send no body at all — guard
+  // against res.json() throwing on an empty string.
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 // Tanks
@@ -105,6 +108,23 @@ export const getMatchTicks = (matchId: string) =>
 // Rankings
 export const getRankings = () => request<RankingEntry[]>('/rankings');
 export const getPublicUserProfile = (sub: string) => request<PublicUserProfile>(`/users/${sub}`);
+
+// Auth — enumeration-safe forgot-password trigger (item 217). Always
+// resolves once the backend acks 202; never reveals whether the email
+// exists or which branch (native/IdP/unknown) the backend took.
+export const requestPasswordReset = (email: string) =>
+  request<void>('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) });
+
+// Friends (item 223)
+export const listFriends = () => request<FriendsResponse>('/friends');
+export const sendFriendRequest = (toUserId: string) =>
+  request<{ status: string }>('/friends/requests', { method: 'POST', body: JSON.stringify({ toUserId }) });
+export const acceptFriendRequest = (fromUserId: string) =>
+  request<{ status: string }>(`/friends/requests/${fromUserId}/accept`, { method: 'POST' });
+export const rejectFriendRequest = (fromUserId: string) =>
+  request<{ status: string }>(`/friends/requests/${fromUserId}/reject`, { method: 'POST' });
+export const removeFriend = (friendId: string) =>
+  request<{ status: string }>(`/friends/${friendId}`, { method: 'DELETE' });
 
 // GameDay
 export const listGameDays = () => request<GameDay[]>('/gamedays');

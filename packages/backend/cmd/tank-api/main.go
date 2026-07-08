@@ -34,6 +34,12 @@
 //	PATCH  /admin/tanks/{id}                   – rename any tank (admin only)
 //	DELETE /admin/tanks/{id}                   – force-delete any tank (admin only)
 //	POST   /admin/tanks/{id}/versions/{v}/reset-compile – force-reset stuck "compiling" status (admin only)
+//	POST   /auth/forgot-password               – enumeration-safe forgot-password trigger (no auth required, always 202)
+//	GET    /friends                             – list caller's friends + incoming/outgoing requests
+//	POST   /friends/requests                    – send a friend request ({toUserId})
+//	POST   /friends/requests/{fromUserId}/accept – accept an incoming friend request
+//	POST   /friends/requests/{fromUserId}/reject – reject an incoming friend request (or cancel an outgoing one, from the other side)
+//	DELETE /friends/{friendId}                  – remove a friend, or cancel your own outgoing request
 package main
 
 import (
@@ -208,6 +214,7 @@ type handler struct {
 	schedulerRoleArn       string
 	schedulerDLQArn        string
 	tournamentSchedulerArn string
+	forgotPasswordWorkerFn string
 }
 
 var h *handler
@@ -245,6 +252,7 @@ func main() {
 		schedulerRoleArn:       os.Getenv("SCHEDULER_INVOKE_ROLE_ARN"),
 		schedulerDLQArn:        os.Getenv("SCHEDULER_DLQ_ARN"),
 		tournamentSchedulerArn: os.Getenv("TOURNAMENT_SCHEDULER_FUNCTION"),
+		forgotPasswordWorkerFn: os.Getenv("FORGOT_PASSWORD_WORKER_FUNCTION"),
 	}
 
 	lambda.Start(h.handle)
@@ -294,6 +302,22 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 		return h.getMatch(ctx, req, parts[1])
 	case method == "GET" && len(parts) == 3 && parts[0] == "matches" && parts[2] == "ticks":
 		return h.getMatchTicks(ctx, req, parts[1])
+
+	// Auth
+	case method == "POST" && rawPath == "auth/forgot-password":
+		return h.forgotPassword(ctx, req)
+
+	// Friends
+	case method == "GET" && rawPath == "friends":
+		return h.listFriends(ctx, req)
+	case method == "POST" && rawPath == "friends/requests":
+		return h.sendFriendRequest(ctx, req)
+	case method == "POST" && len(parts) == 4 && parts[0] == "friends" && parts[1] == "requests" && parts[3] == "accept":
+		return h.respondFriendRequest(ctx, req, parts[2], true)
+	case method == "POST" && len(parts) == 4 && parts[0] == "friends" && parts[1] == "requests" && parts[3] == "reject":
+		return h.respondFriendRequest(ctx, req, parts[2], false)
+	case method == "DELETE" && len(parts) == 2 && parts[0] == "friends":
+		return h.removeFriend(ctx, req, parts[1])
 
 	// Rankings and Game Days
 	case method == "GET" && rawPath == "rankings":
@@ -851,7 +875,7 @@ func (h *handler) getVersionSource(ctx context.Context, req events.APIGatewayV2H
 	if err != nil {
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
-	isAiTank := tankID == h.scoutTankID || tankID == h.bruiserTankID || tankID == h.rangerTankID || tankID == h.randyTankID
+	isAiTank := h.isAiTankID(tankID)
 	if tank.UserID != uid && !isAiTank {
 		return errResp(http.StatusForbidden, "forbidden"), nil
 	}
@@ -1417,7 +1441,50 @@ func (h *handler) getMatchTicks(ctx context.Context, req events.APIGatewayV2HTTP
 	}, nil
 }
 
+// ---- Auth --------------------------------------------------------------
+
+// forgotPassword is deliberately timing-safe (item 217): it always returns
+// 202 immediately, before any Cognito lookup, IdP branch decision, or email
+// send happens. The actual work — looking up the email, deciding whether the
+// account is native email+password or a Google/Facebook IdP account, and
+// sending the appropriate email — runs in the background via an async
+// (fire-and-forget) invocation of forgot-password-worker, so response timing
+// never depends on which branch runs or whether the email exists at all.
+func (h *handler) forgotPassword(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	var body struct {
+		Email string `json:"email"`
+	}
+	if err := json.Unmarshal([]byte(req.Body), &body); err != nil || strings.TrimSpace(body.Email) == "" {
+		return errResp(http.StatusBadRequest, "email required"), nil
+	}
+	payload, _ := json.Marshal(map[string]string{"email": strings.TrimSpace(body.Email)})
+	if _, err := h.lambdaSvc.Invoke(ctx, &lambdasvc.InvokeInput{
+		FunctionName:   aws.String(h.forgotPasswordWorkerFn),
+		InvocationType: ltypes.InvocationTypeEvent,
+		Payload:        payload,
+	}); err != nil {
+		log.Printf("invoke forgot-password-worker: %v", err)
+	}
+	return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusAccepted}, nil
+}
+
 // ---- Rankings and Game Days -------------------------------------------------
+
+// aiTankAuthorName and aiTankAvatarURL are what the Leaderboard shows for
+// built-in AI tanks (item 218) instead of resolving whatever real Cognito
+// account happens to own the seeded tank record.
+const (
+	aiTankAuthorName = "TankMaze AI-Tank"
+	aiTankAvatarURL  = "/avatar.png"
+)
+
+// isAiTankID reports whether tankID belongs to one of the built-in AI tanks
+// (Scout/Bruiser/Ranger/Randy), checked both by the well-known "builtin-"
+// prefix and by matching the configured env-var IDs directly.
+func (h *handler) isAiTankID(tankID string) bool {
+	return strings.HasPrefix(tankID, "builtin-") ||
+		tankID == h.scoutTankID || tankID == h.bruiserTankID || tankID == h.rangerTankID || tankID == h.randyTankID
+}
 
 func (h *handler) getRankings(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	tanks, err := h.store.ScanTanksByScore(ctx)
@@ -1444,16 +1511,24 @@ func (h *handler) getRankings(ctx context.Context, req events.APIGatewayV2HTTPRe
 	pictureCache := make(map[string]string)
 	result := make([]entry, len(tanks))
 	for i, t := range tanks {
-		picture, cached := pictureCache[t.UserID]
-		if !cached {
-			picture = h.lookupUserPicture(ctx, t.UserID)
-			pictureCache[t.UserID] = picture
+		authorUsername := authorNameOrID(t)
+		var picture string
+		if h.isAiTankID(t.TankID) {
+			authorUsername = aiTankAuthorName
+			picture = aiTankAvatarURL
+		} else {
+			cached, ok := pictureCache[t.UserID]
+			if !ok {
+				cached = h.lookupUserPicture(ctx, t.UserID)
+				pictureCache[t.UserID] = cached
+			}
+			picture = cached
 		}
 		result[i] = entry{
 			Rank:           i + 1,
 			TankID:         t.TankID,
 			TankName:       t.Name,
-			AuthorUsername: authorNameOrID(t),
+			AuthorUsername: authorUsername,
 			AuthorUserID:   t.UserID,
 			AuthorPicture:  picture,
 			AvatarURL:      t.AvatarURL,
@@ -1545,6 +1620,145 @@ func (h *handler) getPublicUserProfile(ctx context.Context, sub string) (events.
 		"picture": picture,
 		"tanks":   publicTanks,
 	}), nil
+}
+
+// ---- Friends (item 223) --------------------------------------------------
+
+// resolveUserDisplay returns the same {name, picture} a viewer would see on
+// that user's public profile (getPublicUserProfile) — reused here so a
+// friends list never has to duplicate that name/picture resolution logic.
+func (h *handler) resolveUserDisplay(ctx context.Context, sub string) (name, picture string) {
+	name = sub
+	if tanks, err := h.store.ListTanksByUser(ctx, sub); err == nil {
+		for _, t := range tanks {
+			if t.AuthorName != "" {
+				name = t.AuthorName
+				break
+			}
+		}
+	}
+	return name, h.lookupUserPicture(ctx, sub)
+}
+
+type friendEntry struct {
+	UserID  string `json:"userId"`
+	Name    string `json:"name"`
+	Picture string `json:"picture,omitempty"`
+}
+
+// listFriends buckets the caller's friendships into accepted friends,
+// requests they've received (incoming), and requests they've sent
+// (outgoing) — a single Query against the caller's own partition per
+// db.ListFriendships's dual-item design.
+func (h *handler) listFriends(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	uid := userID(req)
+	if uid == "" {
+		return errResp(http.StatusUnauthorized, "unauthorized"), nil
+	}
+	rows, err := h.store.ListFriendships(ctx, uid)
+	if err != nil {
+		log.Printf("listFriends: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	friends := []friendEntry{}
+	incoming := []friendEntry{}
+	outgoing := []friendEntry{}
+	for _, f := range rows {
+		name, picture := h.resolveUserDisplay(ctx, f.FriendID)
+		entry := friendEntry{UserID: f.FriendID, Name: name, Picture: picture}
+		switch {
+		case f.Status == db.FriendshipAccepted:
+			friends = append(friends, entry)
+		case f.RequestedBy == uid:
+			outgoing = append(outgoing, entry)
+		default:
+			incoming = append(incoming, entry)
+		}
+	}
+	return jsonResp(http.StatusOK, map[string]interface{}{
+		"friends":  friends,
+		"incoming": incoming,
+		"outgoing": outgoing,
+	}), nil
+}
+
+func (h *handler) sendFriendRequest(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	uid := userID(req)
+	if uid == "" {
+		return errResp(http.StatusUnauthorized, "unauthorized"), nil
+	}
+	var body struct {
+		ToUserID string `json:"toUserId"`
+	}
+	if err := json.Unmarshal([]byte(req.Body), &body); err != nil || strings.TrimSpace(body.ToUserID) == "" {
+		return errResp(http.StatusBadRequest, "toUserId required"), nil
+	}
+	toUserID := strings.TrimSpace(body.ToUserID)
+	if toUserID == uid {
+		return errResp(http.StatusBadRequest, "cannot friend yourself"), nil
+	}
+	existing, err := h.store.GetFriendship(ctx, uid, toUserID)
+	if err != nil && !errors.Is(err, db.ErrNotFound) {
+		log.Printf("sendFriendRequest lookup: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	if err == nil {
+		if existing.Status == db.FriendshipAccepted {
+			return errResp(http.StatusConflict, "already friends"), nil
+		}
+		return errResp(http.StatusConflict, "friend request already pending"), nil
+	}
+	if err := h.store.SendFriendRequest(ctx, uid, toUserID); err != nil {
+		log.Printf("sendFriendRequest: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	return jsonResp(http.StatusCreated, map[string]string{"status": "pending"}), nil
+}
+
+// respondFriendRequest handles both accept and reject — a rejected request
+// and a cancelled outgoing request are the same operation on this data model
+// (delete both sides of the pairing), so reject reuses RemoveFriendship.
+func (h *handler) respondFriendRequest(ctx context.Context, req events.APIGatewayV2HTTPRequest, fromUserID string, accept bool) (events.APIGatewayV2HTTPResponse, error) {
+	uid := userID(req)
+	if uid == "" {
+		return errResp(http.StatusUnauthorized, "unauthorized"), nil
+	}
+	existing, err := h.store.GetFriendship(ctx, uid, fromUserID)
+	if errors.Is(err, db.ErrNotFound) {
+		return errResp(http.StatusNotFound, "no pending request"), nil
+	}
+	if err != nil {
+		log.Printf("respondFriendRequest lookup: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	if existing.Status != db.FriendshipPending || existing.RequestedBy == uid {
+		return errResp(http.StatusConflict, "no pending incoming request from this user"), nil
+	}
+	if accept {
+		if err := h.store.AcceptFriendRequest(ctx, uid, fromUserID); err != nil {
+			log.Printf("acceptFriendRequest: %v", err)
+			return errResp(http.StatusInternalServerError, "internal error"), nil
+		}
+	} else if err := h.store.RemoveFriendship(ctx, uid, fromUserID); err != nil {
+		log.Printf("rejectFriendRequest: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	return jsonResp(http.StatusOK, map[string]string{"status": "ok"}), nil
+}
+
+// removeFriend deletes an accepted friendship — also reused by the frontend
+// for withdrawing an outgoing request the current user sent (same underlying
+// operation, see respondFriendRequest's comment).
+func (h *handler) removeFriend(ctx context.Context, req events.APIGatewayV2HTTPRequest, friendID string) (events.APIGatewayV2HTTPResponse, error) {
+	uid := userID(req)
+	if uid == "" {
+		return errResp(http.StatusUnauthorized, "unauthorized"), nil
+	}
+	if err := h.store.RemoveFriendship(ctx, uid, friendID); err != nil {
+		log.Printf("removeFriend: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	return jsonResp(http.StatusOK, map[string]string{"status": "ok"}), nil
 }
 
 func (h *handler) listGameDays(ctx context.Context) (events.APIGatewayV2HTTPResponse, error) {
@@ -2324,10 +2538,18 @@ func (h *handler) adminListUsers(ctx context.Context, req events.APIGatewayV2HTT
 		if us, err := h.store.GetUserSettings(ctx, sub); err == nil {
 			tier = us.Tier
 		}
+		email := cognitoAttr(u.Attributes, "email")
+		// Prefer the display name set via PATCH /me/profile (item 200, stored
+		// as given_name) over falling back to email — distinct from item 220,
+		// which is about the client not refreshing a saved name.
+		name := cognitoAttr(u.Attributes, "given_name")
+		if name == "" {
+			name = email
+		}
 		users = append(users, adminUserResp{
 			Sub:     sub,
-			Email:   cognitoAttr(u.Attributes, "email"),
-			Name:    cognitoAttr(u.Attributes, "name"),
+			Email:   email,
+			Name:    name,
 			Enabled: u.Enabled,
 			IsAdmin: adminSubs[sub],
 			Tier:    tier,

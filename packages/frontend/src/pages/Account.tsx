@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Layout, { cardStyle, primaryButtonStyle } from '../components/Layout';
 import { getMySettings, listTanks, updateMyProfile, uploadProfilePicture } from '../services/api';
+import { changePassword } from '../services/auth';
 import { ALLOWED_IMAGE_TYPES, MAX_AVATAR_BYTES, readFileAsBase64 } from '../components/AvatarPicker';
 import { useAuthStore } from '../store/authStore';
 import type { UserSettings } from '../types';
@@ -74,6 +75,13 @@ export default function Account() {
   const [pictureError, setPictureError] = useState<string | null>(null);
   const pictureInputRef = useRef<HTMLInputElement>(null);
 
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordSaved, setPasswordSaved] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+
   useEffect(() => {
     Promise.all([getMySettings(), listTanks()])
       .then(([s, tanks]) => {
@@ -82,6 +90,32 @@ export default function Account() {
       })
       .catch((e) => setError(e.message));
   }, []);
+
+  async function handleChangePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setPasswordError(null);
+    setPasswordSaved(false);
+    // Leaving current password blank simply means "not changing it now" —
+    // this form is independent from the profile Save above, so nothing else
+    // is blocked by skipping it.
+    if (!currentPassword) return;
+    if (newPassword !== confirmNewPassword) {
+      setPasswordError('New passwords do not match');
+      return;
+    }
+    setChangingPassword(true);
+    try {
+      await changePassword(currentPassword, newPassword);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmNewPassword('');
+      setPasswordSaved(true);
+    } catch (e) {
+      setPasswordError(e instanceof Error ? e.message : 'Failed to change password');
+    } finally {
+      setChangingPassword(false);
+    }
+  }
 
   async function handleSaveProfile() {
     const trimmed = name.trim();
@@ -193,11 +227,17 @@ export default function Account() {
           <input
             value={name}
             onChange={(e) => { setName(e.target.value); setSaved(false); }}
+            placeholder="Add your name"
             style={{
               width: '100%', background: '#0f0f1a', border: '1px solid #2d2d4e', borderRadius: 6,
               color: '#e2e8f0', padding: '8px 10px', fontSize: 14, boxSizing: 'border-box',
             }}
           />
+          {!name && (
+            <p style={{ margin: '4px 0 0', color: '#475569', fontSize: 11 }}>
+              No name set yet — add one so other players see it instead of your account ID.
+            </p>
+          )}
         </div>
 
         <div style={{ marginBottom: 20 }}>
@@ -224,6 +264,69 @@ export default function Account() {
           {saving ? 'Saving…' : 'Save changes'}
         </button>
       </div>
+
+      {/* Password change — email+password accounts only; Google/Facebook
+          sign-ins have no Cognito password to change. */}
+      {!user?.isFederated && (
+        <div style={{ ...cardStyle, marginBottom: 20 }}>
+          <h2 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 700, color: '#e2e8f0' }}>Change password</h2>
+          <p style={{ margin: '0 0 16px', color: '#64748b', fontSize: 12, lineHeight: 1.5 }}>
+            Leave these fields blank to keep your current password — this doesn't affect saving your name or photo above.
+          </p>
+          <form onSubmit={handleChangePassword}>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 13, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Current password</label>
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={(e) => { setCurrentPassword(e.target.value); setPasswordSaved(false); }}
+                style={{
+                  width: '100%', background: '#0f0f1a', border: '1px solid #2d2d4e', borderRadius: 6,
+                  color: '#e2e8f0', padding: '8px 10px', fontSize: 14, boxSizing: 'border-box',
+                }}
+              />
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 13, color: '#94a3b8', display: 'block', marginBottom: 4 }}>New password</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => { setNewPassword(e.target.value); setPasswordSaved(false); }}
+                minLength={8}
+                style={{
+                  width: '100%', background: '#0f0f1a', border: '1px solid #2d2d4e', borderRadius: 6,
+                  color: '#e2e8f0', padding: '8px 10px', fontSize: 14, boxSizing: 'border-box',
+                }}
+              />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 13, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Confirm new password</label>
+              <input
+                type="password"
+                value={confirmNewPassword}
+                onChange={(e) => { setConfirmNewPassword(e.target.value); setPasswordSaved(false); }}
+                minLength={8}
+                style={{
+                  width: '100%', background: '#0f0f1a', border: '1px solid #2d2d4e', borderRadius: 6,
+                  color: '#e2e8f0', padding: '8px 10px', fontSize: 14, boxSizing: 'border-box',
+                }}
+              />
+            </div>
+            {passwordError && <p style={{ color: '#f87171', fontSize: 13, margin: '0 0 12px' }}>{passwordError}</p>}
+            {passwordSaved && <p style={{ color: '#4ade80', fontSize: 13, margin: '0 0 12px' }}>Password changed.</p>}
+            <button
+              type="submit"
+              disabled={changingPassword || !currentPassword || !newPassword || !confirmNewPassword}
+              style={{
+                ...primaryButtonStyle,
+                opacity: changingPassword || !currentPassword || !newPassword || !confirmNewPassword ? 0.6 : 1,
+              }}
+            >
+              {changingPassword ? 'Changing…' : 'Change password'}
+            </button>
+          </form>
+        </div>
+      )}
 
       {settings && (
         <>

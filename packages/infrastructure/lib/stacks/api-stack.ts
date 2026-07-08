@@ -290,6 +290,7 @@ export class ApiStack extends Stack {
     tables.maps.grantReadWriteData(tankApi);
     tables.platformConfig.grantReadWriteData(tankApi);
     tables.userSettings.grantReadWriteData(tankApi);
+    tables.friendships.grantReadWriteData(tankApi);
     wasmBucket.grantReadWrite(tankApi);
     matchLogsBucket.grantRead(tankApi);
     tankAssetsBucket.grantWrite(tankApi);
@@ -334,6 +335,33 @@ export class ApiStack extends Stack {
       actions: ['iam:PassRole'],
       resources: [schedulerInvokeRole.roleArn],
     }));
+
+    // forgot-password-worker — async-only sibling of tank-api's forgotPassword
+    // handler (item 217). It has no API Gateway integration of its own, so
+    // it's unreachable over HTTP at all, regardless of auth — the only way in
+    // is tank-api's own lambda:InvokeFunction call, which is what keeps the
+    // enumeration-safe 202 contract intact (no request ever reaches the real
+    // lookup/branch logic synchronously).
+    // sesSenderEmail is unset until item 214 (custom SES sender domain)
+    // ships; the worker no-ops the IdP-notice-email branch until then.
+    const sesSenderEmail = this.node.tryGetContext('sesSenderEmail') as string | undefined;
+    const forgotPasswordWorker = goLambda('ForgotPasswordWorker', 'forgot-password-worker', {
+      USER_POOL_ID:        userPoolId,
+      USER_POOL_CLIENT_ID: userPoolClientId,
+      SES_SENDER_EMAIL:    sesSenderEmail ?? '',
+    });
+    forgotPasswordWorker.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['cognito-idp:ListUsers', 'cognito-idp:ForgotPassword'],
+      resources: [`arn:aws:cognito-idp:${this.region}:${this.account}:userpool/${userPoolId}`],
+    }));
+    // No verified SES identity exists yet (item 214) to scope this to; the
+    // code-level guard on an empty sesSender keeps this inert until then.
+    forgotPasswordWorker.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+      resources: ['*'],
+    }));
+    forgotPasswordWorker.grantInvoke(tankApi);
+    tankApi.addEnvironment('FORGOT_PASSWORD_WORKER_FUNCTION', forgotPasswordWorker.functionArn);
 
     // ---- WebSocket API (observer) --------------------------------------
 
@@ -460,6 +488,13 @@ export class ApiStack extends Stack {
         integration: tankApiIntegration,
       });
     }
+    // Public POST route — enumeration-safe forgot-password trigger (item 217).
+    // No authorizer: this must be reachable by a not-yet-signed-in visitor.
+    httpApi.addRoutes({
+      path: '/auth/forgot-password',
+      methods: [apigwv2.HttpMethod.POST],
+      integration: tankApiIntegration,
+    });
 
     // All other routes require a valid Cognito JWT.
     // Deliberately excludes OPTIONS so managed CORS handles preflight without auth.
