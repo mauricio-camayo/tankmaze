@@ -5,10 +5,9 @@ import { requestPasswordReset } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import './Landing.css';
 
-// Facebook IdP is wired up (CDK + backend) but not yet usable — no real
-// Facebook App exists yet. Flip once FACEBOOK_APP_ID/FACEBOOK_APP_SECRET are
-// set as GitHub secrets and a real login has been verified. See item 189.
-const FACEBOOK_LOGIN_ENABLED = false;
+// Facebook IdP: CDK, backend, and CI wiring all done; FACEBOOK_APP_ID/
+// FACEBOOK_APP_SECRET are set as GitHub secrets. See item 189.
+const FACEBOOK_LOGIN_ENABLED = true;
 
 const spec = (tag: string, body: React.ReactNode) => (
   <div key={tag} className="tm-bp-spec">

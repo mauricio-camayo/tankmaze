@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { signOut } from '../services/auth';
+import { listFriends } from '../services/api';
+import { isUnread } from '../utils/chatUnread';
 import { useAuthStore } from '../store/authStore';
 import { formatNavClock } from '../utils/time';
 import AdSlots from './AdSlots';
@@ -9,17 +11,36 @@ interface LayoutProps {
   children: React.ReactNode;
 }
 
+const CHAT_UNREAD_POLL_MS = 30_000;
+
 export default function Layout({ children }: LayoutProps) {
   const { user, setUser } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
   const [clock, setClock] = useState(() => formatNavClock(new Date()));
   const [menuOpen, setMenuOpen] = useState(false);
+  const [hasUnreadChat, setHasUnreadChat] = useState(false);
 
   useEffect(() => {
     const id = setInterval(() => setClock(formatNavClock(new Date())), 60_000);
     return () => clearInterval(id);
   }, []);
+
+  // Chat unread badge (item 223 Part 2) — low-frequency poll, mirrors the
+  // clock's interval pattern above. No server-side read receipts, so this
+  // just re-derives isUnread() per friend on every tick.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    function check() {
+      listFriends()
+        .then((data) => { if (!cancelled) setHasUnreadChat(data.friends.some(isUnread)); })
+        .catch(() => { /* leave as-is — non-critical */ });
+    }
+    check();
+    const id = setInterval(check, CHAT_UNREAD_POLL_MS);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [user]);
 
   // Close drawer on navigation
   useEffect(() => { setMenuOpen(false); }, [location.pathname]);
@@ -78,7 +99,17 @@ export default function Layout({ children }: LayoutProps) {
         <div className="tm-nav-links" style={{ alignItems: 'center', gap: 24 }}>
           <Link to="/leaderboard" className="tm-navlink" style={navLinkStyle}>Leaderboard</Link>
           <Link to="/gamedays" className="tm-navlink" style={navLinkStyle}>Game Days</Link>
-          {user && <Link to="/friends" className="tm-navlink" style={navLinkStyle}>Friends</Link>}
+          {user && (
+            <Link to="/friends" className="tm-navlink" style={{ ...navLinkStyle, position: 'relative' }}>
+              Friends
+              {hasUnreadChat && (
+                <span style={{
+                  position: 'absolute', top: -2, right: -8, width: 6, height: 6,
+                  borderRadius: '50%', background: 'var(--bp-hazard)',
+                }} />
+              )}
+            </Link>
+          )}
           {user?.isAdmin && (
             <Link to="/admin" className="tm-navlink" style={{ ...navLinkStyle, color: 'var(--bp-hazard)' }}>Admin</Link>
           )}

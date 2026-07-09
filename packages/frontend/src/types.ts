@@ -86,7 +86,7 @@ export interface RankingEntry {
   authorUsername: string;
   authorUserId?: string;
   authorPicture?: string;
-  activeVersion: string;
+  activeVersion?: string;
   avatarUrl?: string;
   globalScore: number;
   bestFinish: number | null;
@@ -115,12 +115,23 @@ export interface FriendEntry {
   userId: string;
   name: string;
   picture?: string;
+  lastMessageAt?: number;
+  lastMessageFromMe?: boolean;
 }
 
 export interface FriendsResponse {
   friends: FriendEntry[];
   incoming: FriendEntry[];
   outgoing: FriendEntry[];
+  blocked: FriendEntry[];
+}
+
+export interface ChatMessage {
+  messageId: string;
+  senderId: string;
+  recipientId: string;
+  body: string;
+  sentAt: number;
 }
 
 export interface GameDayPhaseStatus {

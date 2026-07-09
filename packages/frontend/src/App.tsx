@@ -18,6 +18,7 @@ import AdminTanks from './pages/admin/Tanks';
 import AdminAdConfig from './pages/admin/AdConfig';
 import Account from './pages/Account';
 import Friends from './pages/Friends';
+import Chat from './pages/Chat';
 import Upgrade from './pages/Upgrade';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 
@@ -74,6 +75,7 @@ const router = createBrowserRouter([
       { path: '/tanks/:tankId/edit', element: <TankEditor /> },
       { path: '/account', element: <Account /> },
       { path: '/friends', element: <Friends /> },
+      { path: '/chat/:userId', element: <Chat /> },
       { path: '/upgrade', element: <Upgrade /> },
     ],
   },

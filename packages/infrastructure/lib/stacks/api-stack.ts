@@ -291,6 +291,7 @@ export class ApiStack extends Stack {
     tables.platformConfig.grantReadWriteData(tankApi);
     tables.userSettings.grantReadWriteData(tankApi);
     tables.friendships.grantReadWriteData(tankApi);
+    tables.messages.grantReadWriteData(tankApi);
     wasmBucket.grantReadWrite(tankApi);
     matchLogsBucket.grantRead(tankApi);
     tankAssetsBucket.grantWrite(tankApi);

@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -12,11 +13,19 @@ import (
 	dbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
-// Friendship status values.
+// Friendship status values. FriendshipBlocked (item 226) reuses this same
+// table/dual-item model rather than a separate tankmaze-blocks table — the
+// RequestedBy field is repurposed to mean "who blocked" for a blocked-status
+// row, tracked so only that user can unblock.
 const (
 	FriendshipPending  = "pending"
 	FriendshipAccepted = "accepted"
+	FriendshipBlocked  = "blocked"
 )
+
+// ErrNotBlocker is returned by UnblockUser when the caller isn't the user who
+// placed the block (item 226: "only the blocker can unblock").
+var ErrNotBlocker = errors.New("only the user who placed the block can unblock")
 
 // Friendship is stored as a pair of items — one keyed (userId=A, friendId=B)
 // and one keyed (userId=B, friendId=A) — so a lookup from either side of the
@@ -116,6 +125,51 @@ func (s *Store) RemoveFriendship(ctx context.Context, userID, friendID string) e
 		}
 	}
 	return nil
+}
+
+// BlockUser removes any existing friendship between blockerID and targetID
+// (equivalent to unfriend, per item 226) and writes a blocked-status pair in
+// its place. RequestedBy is repurposed to record who placed the block, so
+// UnblockUser can enforce that only that user may lift it.
+func (s *Store) BlockUser(ctx context.Context, blockerID, targetID string) error {
+	if err := s.RemoveFriendship(ctx, blockerID, targetID); err != nil {
+		return fmt.Errorf("BlockUser remove existing: %w", err)
+	}
+	now := time.Now().Unix()
+	for _, item := range []Friendship{
+		{UserID: blockerID, FriendID: targetID, Status: FriendshipBlocked, RequestedBy: blockerID, CreatedAt: now},
+		{UserID: targetID, FriendID: blockerID, Status: FriendshipBlocked, RequestedBy: blockerID, CreatedAt: now},
+	} {
+		av, err := attributevalue.MarshalMap(item)
+		if err != nil {
+			return fmt.Errorf("BlockUser marshal: %w", err)
+		}
+		if _, err := s.db.PutItem(ctx, &dynamodb.PutItemInput{
+			TableName: aws.String(s.friendshipsTable),
+			Item:      av,
+		}); err != nil {
+			return fmt.Errorf("BlockUser put: %w", err)
+		}
+	}
+	return nil
+}
+
+// UnblockUser removes a blocked-status pair, but only if callerID is the one
+// who placed the block. Returns ErrNotFound if there's no block between the
+// two users, or ErrNotBlocker if callerID was the one who got blocked rather
+// than the one who did the blocking.
+func (s *Store) UnblockUser(ctx context.Context, callerID, targetID string) error {
+	f, err := s.GetFriendship(ctx, callerID, targetID)
+	if err != nil {
+		return err
+	}
+	if f.Status != FriendshipBlocked {
+		return ErrNotFound
+	}
+	if f.RequestedBy != callerID {
+		return ErrNotBlocker
+	}
+	return s.RemoveFriendship(ctx, callerID, targetID)
 }
 
 // ListFriendships returns every relationship (pending or accepted, in either

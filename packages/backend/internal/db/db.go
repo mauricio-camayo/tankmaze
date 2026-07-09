@@ -35,6 +35,7 @@ type Store struct {
 	configTable       string
 	userSettingsTable string
 	friendshipsTable  string
+	messagesTable     string
 }
 
 // New creates a Store from a pre-configured DynamoDB client. Table names are
@@ -52,6 +53,7 @@ func New(client *dynamodb.Client) *Store {
 		configTable:       os.Getenv("PLATFORM_CONFIG_TABLE"),
 		userSettingsTable: os.Getenv("USER_SETTINGS_TABLE"),
 		friendshipsTable:  os.Getenv("FRIENDSHIPS_TABLE"),
+		messagesTable:     os.Getenv("MESSAGES_TABLE"),
 	}
 }
 

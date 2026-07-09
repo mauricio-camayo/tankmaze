@@ -1,5 +1,5 @@
 import { getIdToken } from './auth';
-import type { Tank, TankVersion, Match, RankingEntry, GameDay, GameMap, UserSettings, PublicUserProfile, FriendsResponse } from '../types';
+import type { Tank, TankVersion, Match, RankingEntry, GameDay, GameMap, UserSettings, PublicUserProfile, FriendsResponse, ChatMessage } from '../types';
 
 const BASE = (import.meta.env.VITE_API_ENDPOINT as string) ?? '';
 
@@ -134,6 +134,20 @@ export const rejectFriendRequest = (fromUserId: string) =>
   request<{ status: string }>(`/friends/requests/${fromUserId}/reject`, { method: 'POST' });
 export const removeFriend = (friendId: string) =>
   request<{ status: string }>(`/friends/${friendId}`, { method: 'DELETE' });
+
+// Block/unblock (item 226)
+export const blockUser = (targetUserId: string) =>
+  request<{ status: string }>('/friends/block', { method: 'POST', body: JSON.stringify({ targetUserId }) });
+export const unblockUser = (targetUserId: string) =>
+  request<{ status: string }>('/friends/unblock', { method: 'POST', body: JSON.stringify({ targetUserId }) });
+
+// Chat (item 223 Part 2) — accepted friends only. Polling-based rather than
+// WebSocket push: sendMessage/listMessages(since) is called on an interval
+// by pages/Chat.tsx while a conversation is open.
+export const sendMessage = (toUserId: string, body: string) =>
+  request<ChatMessage>('/messages', { method: 'POST', body: JSON.stringify({ toUserId, body }) });
+export const listMessages = (userId: string, since?: string) =>
+  request<ChatMessage[]>(`/messages/${userId}${since ? `?since=${encodeURIComponent(since)}` : ''}`);
 
 // GameDay
 export const listGameDays = () => request<GameDay[]>('/gamedays');

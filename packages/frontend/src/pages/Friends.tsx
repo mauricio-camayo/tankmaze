@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Layout, { cardStyle, ghostButtonStyle, primaryButtonStyle } from '../components/Layout';
 import { listFriends, acceptFriendRequest, rejectFriendRequest, removeFriend } from '../services/api';
+import { isUnread } from '../utils/chatUnread';
 import type { FriendEntry, FriendsResponse } from '../types';
 
 function FriendAvatar({ name, picture }: { name: string; picture?: string }) {
@@ -121,13 +122,24 @@ export default function Friends() {
                   key={entry.userId}
                   entry={entry}
                   actions={
-                    <button
-                      onClick={() => withBusy(entry.userId, () => removeFriend(entry.userId))}
-                      disabled={busyId === entry.userId}
-                      style={{ ...ghostButtonStyle, borderColor: '#3a1a18', color: '#ff8a75' }}
-                    >
-                      Remove
-                    </button>
+                    <>
+                      <Link to={`/chat/${entry.userId}`} style={{ ...ghostButtonStyle, textDecoration: 'none', position: 'relative' }}>
+                        Message
+                        {isUnread(entry) && (
+                          <span style={{
+                            position: 'absolute', top: -3, right: -3, width: 8, height: 8,
+                            borderRadius: '50%', background: '#ff7a29',
+                          }} />
+                        )}
+                      </Link>
+                      <button
+                        onClick={() => withBusy(entry.userId, () => removeFriend(entry.userId))}
+                        disabled={busyId === entry.userId}
+                        style={{ ...ghostButtonStyle, borderColor: '#3a1a18', color: '#ff8a75' }}
+                      >
+                        Remove
+                      </button>
+                    </>
                   }
                 />
               ))

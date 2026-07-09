@@ -200,6 +200,14 @@ func (srv *server) route(w http.ResponseWriter, r *http.Request) {
 		srv.respondFriendRequest(w, parts[2], false)
 	case method == "DELETE" && n == 2 && parts[0] == "friends":
 		srv.removeFriend(w, parts[1])
+	case method == "POST" && rawPath == "friends/block":
+		srv.blockUser(w, r)
+	case method == "POST" && rawPath == "friends/unblock":
+		srv.unblockUser(w, r)
+	case method == "POST" && rawPath == "messages":
+		srv.sendMessage(w, r)
+	case method == "GET" && n == 2 && parts[0] == "messages":
+		srv.listMessages(w, r, parts[1])
 
 	// Rankings / Game Days
 	case method == "GET" && rawPath == "rankings":
@@ -1054,20 +1062,28 @@ func (srv *server) forgotPassword(w http.ResponseWriter, r *http.Request) {
 // aiTankAvatarURL mirrors tank-api's item 218 fix — the Leaderboard shouldn't
 // show a built-in AI tank's real (seeder) Cognito owner's picture.
 const aiTankAvatarURL = "/avatar.png"
+const aiTankAuthorName = "TankMaze AI-Tank"
 
 func (srv *server) getRankings(w http.ResponseWriter, _ *http.Request) {
 	tanks := srv.store.scanTanksByScore(localUserID)
+	// Item 209/213/227: shape now matches tank-api's real getRankings
+	// exactly (tankName/authorUsername/authorUserId/activeVersion), fixing
+	// the previously-tracked mismatch that left these fields blank/undefined
+	// in local dev (and crashed item 37's Challenge search, which reads
+	// tankName/authorUsername directly).
 	type entry struct {
-		Rank          int    `json:"rank"`
-		TankID        string `json:"tankId"`
-		Name          string `json:"name"`
-		UserID        string `json:"userId"`
-		AuthorPicture string `json:"authorPicture,omitempty"`
-		AvatarURL     string `json:"avatarUrl,omitempty"`
-		GlobalScore   int    `json:"globalScore"`
-		BestFinish    *int   `json:"bestFinish"`
-		GameDaysCount int    `json:"gameDaysCount"`
-		LastActiveAt  int64  `json:"lastActiveAt"`
+		Rank           int    `json:"rank"`
+		TankID         string `json:"tankId"`
+		TankName       string `json:"tankName"`
+		AuthorUsername string `json:"authorUsername"`
+		AuthorUserID   string `json:"authorUserId,omitempty"`
+		AuthorPicture  string `json:"authorPicture,omitempty"`
+		AvatarURL      string `json:"avatarUrl,omitempty"`
+		ActiveVersion  string `json:"activeVersion,omitempty"`
+		GlobalScore    int    `json:"globalScore"`
+		BestFinish     *int   `json:"bestFinish"`
+		GameDaysCount  int    `json:"gameDaysCount"`
+		LastActiveAt   int64  `json:"lastActiveAt"`
 	}
 	pictures := make(map[string]string)
 	for _, u := range srv.store.listUsers() {
@@ -1075,27 +1091,49 @@ func (srv *server) getRankings(w http.ResponseWriter, _ *http.Request) {
 	}
 	result := make([]entry, len(tanks))
 	for i, t := range tanks {
-		// Note: this shape has no separate "author name" field (pre-existing
-		// tank-api/localserver rankings shape mismatch, flagged in item 209/213) —
-		// only the author's picture can be overridden here for AI tanks.
 		picture := pictures[t.UserID]
+		authorUsername := t.AuthorName
+		if authorUsername == "" {
+			authorUsername = t.UserID
+		}
 		if isAITankID(t.TankID) {
 			picture = aiTankAvatarURL
+			authorUsername = aiTankAuthorName
 		}
 		result[i] = entry{
-			Rank:          i + 1,
-			TankID:        t.TankID,
-			Name:          t.Name,
-			UserID:        t.UserID,
-			AuthorPicture: picture,
-			AvatarURL:     t.AvatarURL,
-			GlobalScore:   t.GlobalScore,
-			BestFinish:    t.BestFinish,
-			GameDaysCount: t.GameDaysCount,
-			LastActiveAt:  t.LastActiveAt,
+			Rank:           i + 1,
+			TankID:         t.TankID,
+			TankName:       t.Name,
+			AuthorUsername: authorUsername,
+			AuthorUserID:   t.UserID,
+			AuthorPicture:  picture,
+			AvatarURL:      t.AvatarURL,
+			ActiveVersion:  latestMajorVersion(srv.store.listVersionsByTank(t.TankID)),
+			GlobalScore:    t.GlobalScore,
+			BestFinish:     t.BestFinish,
+			GameDaysCount:  t.GameDaysCount,
+			LastActiveAt:   t.LastActiveAt,
 		}
 	}
 	jsonOK(w, result)
+}
+
+// latestMajorVersion mirrors tank-api's helper of the same name (item 227):
+// the highest-numbered major version among versions, or "" if none exist.
+func latestMajorVersion(versions []db.TankVersion) string {
+	best := ""
+	bestNum := -1
+	for _, v := range versions {
+		if v.VersionType != "major" {
+			continue
+		}
+		maj, _, _, ok := parseVersion(v.Version)
+		if !ok || maj <= bestNum {
+			continue
+		}
+		best, bestNum = v.Version, maj
+	}
+	return best
 }
 
 // getPublicUserProfile mirrors tank-api's GET /users/{sub} (item 210). Local
@@ -1136,9 +1174,11 @@ func (srv *server) getPublicUserProfile(w http.ResponseWriter, sub string) {
 // ── Friends ──────────────────────────────────────────────────────────────────
 
 type friendEntry struct {
-	UserID  string `json:"userId"`
-	Name    string `json:"name"`
-	Picture string `json:"picture,omitempty"`
+	UserID            string `json:"userId"`
+	Name              string `json:"name"`
+	Picture           string `json:"picture,omitempty"`
+	LastMessageAt     *int64 `json:"lastMessageAt,omitempty"`
+	LastMessageFromMe bool   `json:"lastMessageFromMe,omitempty"`
 }
 
 // resolveUserDisplay falls back to the raw sub when it isn't a known local
@@ -1156,11 +1196,21 @@ func (srv *server) listFriends(w http.ResponseWriter) {
 	friends := []friendEntry{}
 	incoming := []friendEntry{}
 	outgoing := []friendEntry{}
+	blocked := []friendEntry{}
 	for friendID, f := range rows {
 		name, picture := srv.resolveUserDisplay(friendID)
 		entry := friendEntry{UserID: friendID, Name: name, Picture: picture}
 		switch {
+		case f.Status == "blocked":
+			if f.RequestedBy == localUserID {
+				blocked = append(blocked, entry)
+			}
 		case f.Status == "accepted":
+			if last, ok := srv.store.getLatestMessage(db.ConversationID(localUserID, friendID)); ok {
+				sentAt := last.SentAt
+				entry.LastMessageAt = &sentAt
+				entry.LastMessageFromMe = last.SenderID == localUserID
+			}
 			friends = append(friends, entry)
 		case f.RequestedBy == localUserID:
 			outgoing = append(outgoing, entry)
@@ -1168,7 +1218,7 @@ func (srv *server) listFriends(w http.ResponseWriter) {
 			incoming = append(incoming, entry)
 		}
 	}
-	jsonOK(w, map[string]interface{}{"friends": friends, "incoming": incoming, "outgoing": outgoing})
+	jsonOK(w, map[string]interface{}{"friends": friends, "incoming": incoming, "outgoing": outgoing, "blocked": blocked})
 }
 
 func (srv *server) sendFriendRequest(w http.ResponseWriter, r *http.Request) {
@@ -1185,9 +1235,12 @@ func (srv *server) sendFriendRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if existing, ok := srv.store.getFriendship(localUserID, toUserID); ok {
-		if existing.Status == "accepted" {
+		switch {
+		case existing.Status == "blocked":
+			jsonErr(w, http.StatusForbidden, "unable to send friend request")
+		case existing.Status == "accepted":
 			jsonErr(w, http.StatusConflict, "already friends")
-		} else {
+		default:
 			jsonErr(w, http.StatusConflict, "friend request already pending")
 		}
 		return
@@ -1217,6 +1270,98 @@ func (srv *server) respondFriendRequest(w http.ResponseWriter, fromUserID string
 func (srv *server) removeFriend(w http.ResponseWriter, friendID string) {
 	srv.store.removeFriendship(localUserID, friendID)
 	jsonOK(w, map[string]string{"status": "ok"})
+}
+
+func (srv *server) blockUser(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		TargetUserID string `json:"targetUserId"`
+	}
+	if err := readJSON(r, &body); err != nil || strings.TrimSpace(body.TargetUserID) == "" {
+		jsonErr(w, http.StatusBadRequest, "targetUserId required")
+		return
+	}
+	targetUserID := strings.TrimSpace(body.TargetUserID)
+	if targetUserID == localUserID {
+		jsonErr(w, http.StatusBadRequest, "cannot block yourself")
+		return
+	}
+	srv.store.blockUser(localUserID, targetUserID)
+	jsonOK(w, map[string]string{"status": "blocked"})
+}
+
+func (srv *server) unblockUser(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		TargetUserID string `json:"targetUserId"`
+	}
+	if err := readJSON(r, &body); err != nil || strings.TrimSpace(body.TargetUserID) == "" {
+		jsonErr(w, http.StatusBadRequest, "targetUserId required")
+		return
+	}
+	found, isBlocker := srv.store.unblockUser(localUserID, strings.TrimSpace(body.TargetUserID))
+	if !found {
+		jsonErr(w, http.StatusNotFound, "no block exists")
+		return
+	}
+	if !isBlocker {
+		jsonErr(w, http.StatusForbidden, "only the user who placed the block can unblock")
+		return
+	}
+	jsonOK(w, map[string]string{"status": "ok"})
+}
+
+const maxMessageBodyLen = 2000
+
+// canMessage mirrors tank-api's helper of the same name: accepted-friends
+// only. Blocking always clears the friendship first, so no separate check.
+func (srv *server) canMessage(otherID string) bool {
+	f, ok := srv.store.getFriendship(localUserID, otherID)
+	return ok && f.Status == "accepted"
+}
+
+func (srv *server) sendMessage(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ToUserID string `json:"toUserId"`
+		Body     string `json:"body"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		jsonErr(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	toUserID := strings.TrimSpace(body.ToUserID)
+	text := strings.TrimSpace(body.Body)
+	if toUserID == "" || text == "" {
+		jsonErr(w, http.StatusBadRequest, "toUserId and body are required")
+		return
+	}
+	if len(text) > maxMessageBodyLen {
+		jsonErr(w, http.StatusBadRequest, fmt.Sprintf("body exceeds %d characters", maxMessageBodyLen))
+		return
+	}
+	if !srv.canMessage(toUserID) {
+		jsonErr(w, http.StatusForbidden, "you can only message accepted friends")
+		return
+	}
+	msg := srv.store.sendMessage(localUserID, toUserID, text)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(msg)
+}
+
+func (srv *server) listMessages(w http.ResponseWriter, r *http.Request, otherUserID string) {
+	if !srv.canMessage(otherUserID) {
+		jsonErr(w, http.StatusForbidden, "you can only view messages with accepted friends")
+		return
+	}
+	since := r.URL.Query().Get("since")
+	limit := 50
+	if since != "" {
+		limit = 200
+	}
+	messages := srv.store.listMessages(db.ConversationID(localUserID, otherUserID), since, limit)
+	if messages == nil {
+		messages = []db.Message{}
+	}
+	jsonOK(w, messages)
 }
 
 func (srv *server) listGameDays(w http.ResponseWriter) {

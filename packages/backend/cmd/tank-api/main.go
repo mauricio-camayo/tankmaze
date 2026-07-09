@@ -41,6 +41,10 @@
 //	POST   /friends/requests/{fromUserId}/accept – accept an incoming friend request
 //	POST   /friends/requests/{fromUserId}/reject – reject an incoming friend request (or cancel an outgoing one, from the other side)
 //	DELETE /friends/{friendId}                  – remove a friend, or cancel your own outgoing request
+//	POST   /friends/block                       – block a user ({targetUserId}); removes any friendship, blocks future requests (item 226)
+//	POST   /friends/unblock                     – unblock a user ({targetUserId}); only the user who placed the block may call this
+//	POST   /messages                            – send a chat message ({toUserId, body}); accepted-friends only (item 223 Part 2)
+//	GET    /messages/{userId}                   – conversation history with that user; ?since=<messageId> for polling new messages only
 package main
 
 import (
@@ -320,6 +324,14 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 		return h.respondFriendRequest(ctx, req, parts[2], false)
 	case method == "DELETE" && len(parts) == 2 && parts[0] == "friends":
 		return h.removeFriend(ctx, req, parts[1])
+	case method == "POST" && rawPath == "friends/block":
+		return h.blockUser(ctx, req)
+	case method == "POST" && rawPath == "friends/unblock":
+		return h.unblockUser(ctx, req)
+	case method == "POST" && rawPath == "messages":
+		return h.sendMessage(ctx, req)
+	case method == "GET" && len(parts) == 2 && parts[0] == "messages":
+		return h.listMessages(ctx, req, parts[1])
 
 	// Rankings and Game Days
 	case method == "GET" && rawPath == "rankings":
@@ -1604,6 +1616,7 @@ func (h *handler) getRankings(ctx context.Context, req events.APIGatewayV2HTTPRe
 		AuthorUserID   string `json:"authorUserId,omitempty"`
 		AuthorPicture  string `json:"authorPicture,omitempty"`
 		AvatarURL      string `json:"avatarUrl,omitempty"`
+		ActiveVersion  string `json:"activeVersion,omitempty"`
 		GlobalScore    int    `json:"globalScore"`
 		BestFinish     *int   `json:"bestFinish"`
 		GameDays       int    `json:"gameDays"`
@@ -1628,6 +1641,15 @@ func (h *handler) getRankings(ctx context.Context, req events.APIGatewayV2HTTPRe
 			}
 			picture = cached
 		}
+		// Item 227: activeVersion was declared on the frontend type and
+		// displayed on Leaderboard.tsx, but never actually populated here —
+		// the latest major version is the same one getTank's public view
+		// (and now item 37's Challenge flow) treats as "the" challengeable
+		// version, so reuse that definition rather than inventing a new one.
+		var activeVersion string
+		if versions, err := h.store.ListVersionsByTank(ctx, t.TankID); err == nil {
+			activeVersion = latestMajorVersion(versions)
+		}
 		result[i] = entry{
 			Rank:           i + 1,
 			TankID:         t.TankID,
@@ -1636,6 +1658,7 @@ func (h *handler) getRankings(ctx context.Context, req events.APIGatewayV2HTTPRe
 			AuthorUserID:   t.UserID,
 			AuthorPicture:  picture,
 			AvatarURL:      t.AvatarURL,
+			ActiveVersion:  activeVersion,
 			GlobalScore:    t.GlobalScore,
 			BestFinish:     t.BestFinish,
 			GameDays:       t.GameDaysCount,
@@ -1643,6 +1666,25 @@ func (h *handler) getRankings(ctx context.Context, req events.APIGatewayV2HTTPRe
 		}
 	}
 	return jsonResp(http.StatusOK, result), nil
+}
+
+// latestMajorVersion returns the highest-numbered major version string in
+// versions (e.g. "v3"), or "" if the tank has no promoted major version yet.
+// Shared by getRankings (item 227) and getTank's public-view major selection.
+func latestMajorVersion(versions []db.TankVersion) string {
+	best := ""
+	bestNum := -1
+	for _, v := range versions {
+		if v.VersionType != "major" {
+			continue
+		}
+		maj, _, _, ok := parseVersion(v.Version)
+		if !ok || maj <= bestNum {
+			continue
+		}
+		best, bestNum = v.Version, maj
+	}
+	return best
 }
 
 // publicTankSummary is the subset of a Tank record safe to show on another
@@ -1759,6 +1801,13 @@ type friendEntry struct {
 	UserID  string `json:"userId"`
 	Name    string `json:"name"`
 	Picture string `json:"picture,omitempty"`
+	// LastMessageAt/LastMessageFromMe (item 223 chat) are only populated for
+	// accepted friends — the frontend uses them to render an unread badge
+	// without a separate read-receipt schema: it's "unread" if there's a
+	// message not from me newer than this conversation's locally-stored
+	// last-seen timestamp.
+	LastMessageAt     *int64 `json:"lastMessageAt,omitempty"`
+	LastMessageFromMe bool   `json:"lastMessageFromMe,omitempty"`
 }
 
 // listFriends buckets the caller's friendships into accepted friends,
@@ -1778,11 +1827,23 @@ func (h *handler) listFriends(ctx context.Context, req events.APIGatewayV2HTTPRe
 	friends := []friendEntry{}
 	incoming := []friendEntry{}
 	outgoing := []friendEntry{}
+	blocked := []friendEntry{}
 	for _, f := range rows {
 		name, picture := h.resolveUserDisplay(ctx, f.FriendID)
 		entry := friendEntry{UserID: f.FriendID, Name: name, Picture: picture}
 		switch {
+		case f.Status == db.FriendshipBlocked:
+			// Item 226: only surface blocks the caller placed — a user they
+			// blocked has no reason to see it reflected in their own list.
+			if f.RequestedBy == uid {
+				blocked = append(blocked, entry)
+			}
 		case f.Status == db.FriendshipAccepted:
+			if last, err := h.store.GetLatestMessage(ctx, db.ConversationID(uid, f.FriendID)); err == nil {
+				sentAt := last.SentAt
+				entry.LastMessageAt = &sentAt
+				entry.LastMessageFromMe = last.SenderID == uid
+			}
 			friends = append(friends, entry)
 		case f.RequestedBy == uid:
 			outgoing = append(outgoing, entry)
@@ -1794,6 +1855,7 @@ func (h *handler) listFriends(ctx context.Context, req events.APIGatewayV2HTTPRe
 		"friends":  friends,
 		"incoming": incoming,
 		"outgoing": outgoing,
+		"blocked":  blocked,
 	}), nil
 }
 
@@ -1818,6 +1880,11 @@ func (h *handler) sendFriendRequest(ctx context.Context, req events.APIGatewayV2
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
 	if err == nil {
+		if existing.Status == db.FriendshipBlocked {
+			// Item 226: deliberately generic — doesn't reveal to the sender
+			// which of the two of them placed the block.
+			return errResp(http.StatusForbidden, "unable to send friend request"), nil
+		}
 		if existing.Status == db.FriendshipAccepted {
 			return errResp(http.StatusConflict, "already friends"), nil
 		}
@@ -1874,6 +1941,142 @@ func (h *handler) removeFriend(ctx context.Context, req events.APIGatewayV2HTTPR
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
 	return jsonResp(http.StatusOK, map[string]string{"status": "ok"}), nil
+}
+
+// blockUser is POST /friends/block (item 226). Removes any existing
+// friendship (equivalent to unfriend) and replaces it with a blocked-status
+// pairing that also stops the target from sending a new friend request.
+func (h *handler) blockUser(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	uid := userID(req)
+	if uid == "" {
+		return errResp(http.StatusUnauthorized, "unauthorized"), nil
+	}
+	var body struct {
+		TargetUserID string `json:"targetUserId"`
+	}
+	if err := json.Unmarshal([]byte(req.Body), &body); err != nil || strings.TrimSpace(body.TargetUserID) == "" {
+		return errResp(http.StatusBadRequest, "targetUserId required"), nil
+	}
+	targetUserID := strings.TrimSpace(body.TargetUserID)
+	if targetUserID == uid {
+		return errResp(http.StatusBadRequest, "cannot block yourself"), nil
+	}
+	if err := h.store.BlockUser(ctx, uid, targetUserID); err != nil {
+		log.Printf("blockUser: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	return jsonResp(http.StatusOK, map[string]string{"status": "blocked"}), nil
+}
+
+// unblockUser is POST /friends/unblock (item 226) — only the user who placed
+// the block may lift it.
+func (h *handler) unblockUser(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	uid := userID(req)
+	if uid == "" {
+		return errResp(http.StatusUnauthorized, "unauthorized"), nil
+	}
+	var body struct {
+		TargetUserID string `json:"targetUserId"`
+	}
+	if err := json.Unmarshal([]byte(req.Body), &body); err != nil || strings.TrimSpace(body.TargetUserID) == "" {
+		return errResp(http.StatusBadRequest, "targetUserId required"), nil
+	}
+	targetUserID := strings.TrimSpace(body.TargetUserID)
+	err := h.store.UnblockUser(ctx, uid, targetUserID)
+	if errors.Is(err, db.ErrNotFound) {
+		return errResp(http.StatusNotFound, "no block exists"), nil
+	}
+	if errors.Is(err, db.ErrNotBlocker) {
+		return errResp(http.StatusForbidden, "only the user who placed the block can unblock"), nil
+	}
+	if err != nil {
+		log.Printf("unblockUser: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	return jsonResp(http.StatusOK, map[string]string{"status": "ok"}), nil
+}
+
+const maxMessageBodyLen = 2000
+
+// canMessage reports whether uid and otherID are accepted friends —
+// blocking (item 226) always clears the friendship first, so an "accepted"
+// status already implies no block exists between them; no separate check
+// needed.
+func (h *handler) canMessage(ctx context.Context, uid, otherID string) (bool, error) {
+	f, err := h.store.GetFriendship(ctx, uid, otherID)
+	if errors.Is(err, db.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return f.Status == db.FriendshipAccepted, nil
+}
+
+// sendMessage is POST /messages (item 223 Part 2 chat): {toUserId, body}.
+func (h *handler) sendMessage(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	uid := userID(req)
+	if uid == "" {
+		return errResp(http.StatusUnauthorized, "unauthorized"), nil
+	}
+	var body struct {
+		ToUserID string `json:"toUserId"`
+		Body     string `json:"body"`
+	}
+	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
+		return errResp(http.StatusBadRequest, "invalid request body"), nil
+	}
+	toUserID := strings.TrimSpace(body.ToUserID)
+	text := strings.TrimSpace(body.Body)
+	if toUserID == "" || text == "" {
+		return errResp(http.StatusBadRequest, "toUserId and body are required"), nil
+	}
+	if len(text) > maxMessageBodyLen {
+		return errResp(http.StatusBadRequest, fmt.Sprintf("body exceeds %d characters", maxMessageBodyLen)), nil
+	}
+	ok, err := h.canMessage(ctx, uid, toUserID)
+	if err != nil {
+		log.Printf("sendMessage friendship check: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	if !ok {
+		return errResp(http.StatusForbidden, "you can only message accepted friends"), nil
+	}
+	msg, err := h.store.SendMessage(ctx, uid, toUserID, text)
+	if err != nil {
+		log.Printf("sendMessage: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	return jsonResp(http.StatusCreated, msg), nil
+}
+
+// listMessages is GET /messages/{userId}?since=<messageId> (item 223 Part 2).
+// Without "since", returns the most recent page of history; with it, only
+// messages after that cursor — the polling case.
+func (h *handler) listMessages(ctx context.Context, req events.APIGatewayV2HTTPRequest, otherUserID string) (events.APIGatewayV2HTTPResponse, error) {
+	uid := userID(req)
+	if uid == "" {
+		return errResp(http.StatusUnauthorized, "unauthorized"), nil
+	}
+	ok, err := h.canMessage(ctx, uid, otherUserID)
+	if err != nil {
+		log.Printf("listMessages friendship check: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	if !ok {
+		return errResp(http.StatusForbidden, "you can only view messages with accepted friends"), nil
+	}
+	since := req.QueryStringParameters["since"]
+	limit := int32(50)
+	if since != "" {
+		limit = 200 // polling: don't miss a burst of messages between polls
+	}
+	messages, err := h.store.ListMessages(ctx, db.ConversationID(uid, otherUserID), since, limit)
+	if err != nil {
+		log.Printf("listMessages: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	return jsonResp(http.StatusOK, messages), nil
 }
 
 func (h *handler) listGameDays(ctx context.Context) (events.APIGatewayV2HTTPResponse, error) {

@@ -22,6 +22,7 @@ export interface TableSet {
   platformConfig: dynamodb.Table;
   userSettings: dynamodb.Table;
   friendships: dynamodb.Table;
+  messages: dynamodb.Table;
 }
 
 // Env var map for Lambda functions
@@ -37,6 +38,7 @@ export function tableEnvVars(t: TableSet): Record<string, string> {
     PLATFORM_CONFIG_TABLE:  t.platformConfig.tableName,
     USER_SETTINGS_TABLE:    t.userSettings.tableName,
     FRIENDSHIPS_TABLE:      t.friendships.tableName,
+    MESSAGES_TABLE:         t.messages.tableName,
   };
 }
 
@@ -153,7 +155,23 @@ export class StorageStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN,
     });
 
-    this.tables = { tanks, tankVersions, matches, connections, gamedays, rankings, maps, platformConfig, userSettings, friendships };
+    // Messages (item 223 Part 2) — keyed by a stable conversation ID (the
+    // two participants' user IDs, sorted and joined), sorted by a
+    // lexicographically-time-ordered messageId so a Query naturally returns
+    // history in order and supports an efficient "since" cursor for
+    // polling. 30-day retention via TTL, no manual delete UI (per the
+    // item's resolved retention question).
+    const messages = new dynamodb.Table(this, 'MessagesTable', {
+      tableName: 'tankmaze-messages',
+      partitionKey: { name: 'conversationId', type: dynamodb.AttributeType.STRING },
+      sortKey:      { name: 'messageId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: true,
+      timeToLiveAttribute: 'ttl',
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    this.tables = { tanks, tankVersions, matches, connections, gamedays, rankings, maps, platformConfig, userSettings, friendships, messages };
 
     // ---- S3 buckets ----------------------------------------------------
 

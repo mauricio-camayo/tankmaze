@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import Layout, { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
-import { getPublicUserProfile, listFriends, sendFriendRequest, acceptFriendRequest, rejectFriendRequest, removeFriend } from '../services/api';
+import { getPublicUserProfile, listFriends, sendFriendRequest, acceptFriendRequest, rejectFriendRequest, removeFriend, blockUser, unblockUser } from '../services/api';
 import { avatarSrc } from '../components/AvatarPicker';
 import { useAuthStore } from '../store/authStore';
 import type { PublicUserProfile } from '../types';
 
-type FriendStatus = 'none' | 'friends' | 'incoming' | 'outgoing';
+// 'blocked' means the CURRENT viewer placed the block — only the blocker
+// sees this state (item 226); the blocked party just sees a normal profile
+// and their actions fail generically, so as not to reveal the block.
+type FriendStatus = 'none' | 'friends' | 'incoming' | 'outgoing' | 'blocked';
 
 function relativeTime(ts: number | null): string {
   if (!ts) return '—';
@@ -46,7 +49,8 @@ export default function UserProfile() {
   function refreshFriendStatus() {
     if (!sub || !currentUser || sub === currentUser.userId) return;
     listFriends().then((data) => {
-      if (data.friends.some((f) => f.userId === sub)) setFriendStatus('friends');
+      if (data.blocked.some((f) => f.userId === sub)) setFriendStatus('blocked');
+      else if (data.friends.some((f) => f.userId === sub)) setFriendStatus('friends');
       else if (data.incoming.some((f) => f.userId === sub)) setFriendStatus('incoming');
       else if (data.outgoing.some((f) => f.userId === sub)) setFriendStatus('outgoing');
       else setFriendStatus('none');
@@ -97,51 +101,72 @@ export default function UserProfile() {
           </p>
         </div>
         {currentUser && sub !== currentUser.userId && (
-          <div>
-            {friendStatus === 'none' && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+            {friendStatus === 'blocked' ? (
               <button
-                onClick={() => handleFriendAction(() => sendFriendRequest(sub!))}
-                disabled={friendBusy}
-                style={primaryButtonStyle}
-              >
-                Add friend
-              </button>
-            )}
-            {friendStatus === 'outgoing' && (
-              <button
-                onClick={() => handleFriendAction(() => removeFriend(sub!))}
+                onClick={() => handleFriendAction(() => unblockUser(sub!))}
                 disabled={friendBusy}
                 style={ghostButtonStyle}
               >
-                Cancel request
+                Blocked · Unblock
               </button>
-            )}
-            {friendStatus === 'incoming' && (
-              <div style={{ display: 'flex', gap: 8 }}>
+            ) : (
+              <>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {friendStatus === 'none' && (
+                    <button
+                      onClick={() => handleFriendAction(() => sendFriendRequest(sub!))}
+                      disabled={friendBusy}
+                      style={primaryButtonStyle}
+                    >
+                      Add friend
+                    </button>
+                  )}
+                  {friendStatus === 'outgoing' && (
+                    <button
+                      onClick={() => handleFriendAction(() => removeFriend(sub!))}
+                      disabled={friendBusy}
+                      style={ghostButtonStyle}
+                    >
+                      Cancel request
+                    </button>
+                  )}
+                  {friendStatus === 'incoming' && (
+                    <>
+                      <button
+                        onClick={() => handleFriendAction(() => acceptFriendRequest(sub!))}
+                        disabled={friendBusy}
+                        style={primaryButtonStyle}
+                      >
+                        Accept
+                      </button>
+                      <button
+                        onClick={() => handleFriendAction(() => rejectFriendRequest(sub!))}
+                        disabled={friendBusy}
+                        style={ghostButtonStyle}
+                      >
+                        Decline
+                      </button>
+                    </>
+                  )}
+                  {friendStatus === 'friends' && (
+                    <button
+                      onClick={() => handleFriendAction(() => removeFriend(sub!))}
+                      disabled={friendBusy}
+                      style={{ ...ghostButtonStyle, borderColor: '#3a1a18', color: '#ff8a75' }}
+                    >
+                      Remove friend
+                    </button>
+                  )}
+                </div>
                 <button
-                  onClick={() => handleFriendAction(() => acceptFriendRequest(sub!))}
+                  onClick={() => handleFriendAction(() => blockUser(sub!))}
                   disabled={friendBusy}
-                  style={primaryButtonStyle}
+                  style={{ background: 'none', border: 'none', color: '#5b87a3', fontSize: 12, cursor: 'pointer', padding: 0 }}
                 >
-                  Accept
+                  Block user
                 </button>
-                <button
-                  onClick={() => handleFriendAction(() => rejectFriendRequest(sub!))}
-                  disabled={friendBusy}
-                  style={ghostButtonStyle}
-                >
-                  Decline
-                </button>
-              </div>
-            )}
-            {friendStatus === 'friends' && (
-              <button
-                onClick={() => handleFriendAction(() => removeFriend(sub!))}
-                disabled={friendBusy}
-                style={{ ...ghostButtonStyle, borderColor: '#3a1a18', color: '#ff8a75' }}
-              >
-                Remove friend
-              </button>
+              </>
             )}
           </div>
         )}

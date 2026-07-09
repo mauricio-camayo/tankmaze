@@ -1,9 +1,13 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/tankmaze/backend/internal/db"
 )
@@ -36,6 +40,7 @@ type memStore struct {
 	users       map[string]localUser    // sub → user
 	gamedays    map[string]db.GameDay
 	friendships map[string]map[string]localFriendship // userId → friendId → relationship
+	messages    map[string][]db.Message               // conversationId → messages, chronological
 }
 
 func newStore() *memStore {
@@ -49,6 +54,7 @@ func newStore() *memStore {
 		users:       make(map[string]localUser),
 		gamedays:    make(map[string]db.GameDay),
 		friendships: make(map[string]map[string]localFriendship),
+		messages:    make(map[string][]db.Message),
 	}
 	s.users[localUserID] = localUser{
 		Sub:     localUserID,
@@ -604,4 +610,103 @@ func (s *memStore) listFriendships(userID string) map[string]localFriendship {
 		out[k] = v
 	}
 	return out
+}
+
+// blockUser and unblockUser mirror internal/db/friendships.go's BlockUser/
+// UnblockUser (item 226): blocking clears any existing relationship and
+// writes a "blocked" pair with RequestedBy recording who placed it; only
+// that user may unblock.
+func (s *memStore) blockUser(blockerID, targetID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.friendships[blockerID], targetID)
+	delete(s.friendships[targetID], blockerID)
+	if s.friendships[blockerID] == nil {
+		s.friendships[blockerID] = make(map[string]localFriendship)
+	}
+	if s.friendships[targetID] == nil {
+		s.friendships[targetID] = make(map[string]localFriendship)
+	}
+	s.friendships[blockerID][targetID] = localFriendship{Status: "blocked", RequestedBy: blockerID}
+	s.friendships[targetID][blockerID] = localFriendship{Status: "blocked", RequestedBy: blockerID}
+}
+
+// unblockUser returns (found, isBlocker). Callers should treat !found as 404
+// and found && !isBlocker as 403.
+func (s *memStore) unblockUser(callerID, targetID string) (found bool, isBlocker bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f, ok := s.friendships[callerID][targetID]
+	if !ok || f.Status != "blocked" {
+		return false, false
+	}
+	if f.RequestedBy != callerID {
+		return true, false
+	}
+	delete(s.friendships[callerID], targetID)
+	delete(s.friendships[targetID], callerID)
+	return true, true
+}
+
+// sendMessage, listMessages, and getLatestMessage mirror
+// internal/db/messages.go (item 223 Part 2) in memory. No TTL sweep here —
+// local dev's in-memory store is already wiped on restart.
+func (s *memStore) sendMessage(senderID, recipientID, body string) db.Message {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	m := db.Message{
+		MessageID:   newLocalMessageID(now),
+		SenderID:    senderID,
+		RecipientID: recipientID,
+		Body:        body,
+		SentAt:      now.Unix(),
+	}
+	cid := db.ConversationID(senderID, recipientID)
+	s.messages[cid] = append(s.messages[cid], m)
+	return m
+}
+
+func (s *memStore) listMessages(conversationID, sinceMessageID string, limit int) []db.Message {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	all := s.messages[conversationID]
+	var out []db.Message
+	if sinceMessageID == "" {
+		start := 0
+		if len(all) > limit {
+			start = len(all) - limit
+		}
+		out = append(out, all[start:]...)
+		return out
+	}
+	for _, m := range all {
+		if m.MessageID > sinceMessageID {
+			out = append(out, m)
+		}
+	}
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out
+}
+
+func (s *memStore) getLatestMessage(conversationID string) (db.Message, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	all := s.messages[conversationID]
+	if len(all) == 0 {
+		return db.Message{}, false
+	}
+	return all[len(all)-1], true
+}
+
+// newLocalMessageID mirrors internal/db/messages.go's newMessageID: a
+// zero-padded-millis prefix keeps messages sortable by string comparison
+// even though the in-memory store doesn't actually need that (it appends in
+// order) — kept for shape parity with the real backend's messageId format.
+func newLocalMessageID(t time.Time) string {
+	buf := make([]byte, 4)
+	_, _ = rand.Read(buf)
+	return fmt.Sprintf("%020d-%s", t.UnixMilli(), hex.EncodeToString(buf))
 }
