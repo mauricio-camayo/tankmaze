@@ -6,6 +6,7 @@
 //	GET    /tanks                              – list caller's tanks
 //	GET    /tanks/{id}                         – tank detail + version history
 //	PUT    /tanks/{id}/avatar                  – upload a custom avatar image (owner only, PNG/JPEG, max 512KB)
+//	GET    /me/profile                          – caller's durable display name (item 225; survives federated IdP re-login, unlike the ID token's given_name claim)
 //	PUT    /me/profile/picture                 – upload a custom profile picture (PNG/JPEG, max 512KB)
 //	POST   /tanks/{id}/versions               – submit Go source → triggers CodeBuild
 //	GET    /tanks/{id}/versions/{v}/status    – poll compile status
@@ -13,7 +14,7 @@
 //	POST   /tanks/{id}/versions/{v}/register  – register major for a Game Day
 //	DELETE /tanks/{id}/versions/{v}/register  – withdraw Game Day registration
 //	POST   /tanks/{id}/score-transfer         – transfer Global Score to another tank
-//	POST   /matches                            – start a test match
+//	POST   /matches                            – start a match; opponent.type is "ai", "own", "informal" (item 37, challenge another author's tank), or "rematch" (item 37, re-run a previous ranked match by opponent.matchId) — all unranked
 //	GET    /matches/{id}                       – match metadata + result
 //	GET    /matches/{id}/ticks                 – redirect to pre-signed S3 tick log URL
 //	GET    /rankings                           – global leaderboard
@@ -126,10 +127,11 @@ type startMatchBody struct {
 }
 
 type opponentSpec struct {
-	Type    string `json:"type"`              // "ai" | "own"
-	Name    string `json:"name,omitempty"`    // ai: "scout" | "bruiser"
-	TankID  string `json:"tankId,omitempty"`  // own: opponent tank
-	Version string `json:"version,omitempty"` // own: opponent version
+	Type    string `json:"type"`              // "ai" | "own" | "informal" | "rematch"
+	Name    string `json:"name,omitempty"`    // ai: "scout" | "bruiser" | "ranger" | "randy"
+	TankID  string `json:"tankId,omitempty"`  // own/informal: opponent tank
+	Version string `json:"version,omitempty"` // own/informal: opponent version
+	MatchID string `json:"matchId,omitempty"` // rematch: the original ranked match to re-run
 }
 
 type createGameDayBody struct {
@@ -354,6 +356,8 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 		return h.patchMySettings(ctx, req)
 
 	// User profile
+	case method == "GET" && rawPath == "me/profile":
+		return h.getMyProfile(ctx, req)
 	case method == "PATCH" && rawPath == "me/profile":
 		return h.patchMyProfile(ctx, req)
 	case method == "PUT" && rawPath == "me/profile/picture":
@@ -1278,6 +1282,16 @@ func (h *handler) startMatch(ctx context.Context, req events.APIGatewayV2HTTPReq
 	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
 		return errResp(http.StatusBadRequest, "invalid request body"), nil
 	}
+
+	// Rematch (item 37) derives both sides entirely from the original ranked
+	// match rather than from body.TankID/Version, so it's handled as its own
+	// branch before the "caller's own tank" checks below (which assume
+	// body.TankID names the caller's tank — not true for a rematch, where
+	// the caller might be either TankA or TankB of the original match).
+	if body.Opponent.Type == "rematch" {
+		return h.startRematch(ctx, uid, body)
+	}
+
 	if body.TankID == "" || body.Version == "" {
 		return errResp(http.StatusBadRequest, "tankId and version are required"), nil
 	}
@@ -1350,8 +1364,39 @@ func (h *handler) startMatch(ctx context.Context, req events.APIGatewayV2HTTPReq
 		oppTankID, oppVersion = body.Opponent.TankID, body.Opponent.Version
 		matchType = "test-own"
 
+	case "informal":
+		// Item 37: same shape as "own", except the opponent tank is
+		// deliberately *not* required to belong to the caller — that's the
+		// whole point of an Informal match (challenging another author).
+		if body.Opponent.TankID == "" || body.Opponent.Version == "" {
+			return errResp(http.StatusBadRequest, "opponent tankId and version required for type=informal"), nil
+		}
+		if _, err := h.store.GetTank(ctx, body.Opponent.TankID); errors.Is(err, db.ErrNotFound) {
+			return errResp(http.StatusNotFound, "opponent tank not found"), nil
+		} else if err != nil {
+			return errResp(http.StatusInternalServerError, "internal error"), nil
+		}
+		oppVer, err := h.store.GetVersion(ctx, body.Opponent.TankID, body.Opponent.Version)
+		if errors.Is(err, db.ErrNotFound) {
+			return errResp(http.StatusNotFound, "opponent version not found"), nil
+		}
+		if err != nil {
+			return errResp(http.StatusInternalServerError, "internal error"), nil
+		}
+		if oppVer.CompileStatus != "ready" {
+			return errResp(http.StatusBadRequest, "opponent version is not ready"), nil
+		}
+		oppTankID, oppVersion = body.Opponent.TankID, body.Opponent.Version
+		matchType = "informal"
+
 	default:
-		return errResp(http.StatusBadRequest, "opponent type must be 'ai' or 'own'"), nil
+		return errResp(http.StatusBadRequest, "opponent type must be 'ai', 'own', 'informal', or 'rematch'"), nil
+	}
+
+	// Informal and Ranked matches always use a randomly generated maze
+	// (§6.4) — map selection is a Test-match-only feature.
+	if matchType == "informal" && body.MapID != "" {
+		return errResp(http.StatusBadRequest, "map selection is not available for informal matches"), nil
 	}
 
 	var mazeSeed, mapID string
@@ -1390,6 +1435,65 @@ func (h *handler) startMatch(ctx context.Context, req events.APIGatewayV2HTTPReq
 		Payload:        payload,
 	}); err != nil {
 		log.Printf("invoke match-runner for %s: %v", matchID, err)
+	}
+
+	return jsonResp(http.StatusAccepted, map[string]string{"matchId": matchID}), nil
+}
+
+// startRematch is the "rematch" branch of POST /matches (item 37): re-runs a
+// previous ranked Game Day matchup between the exact same two tank/version
+// pairs, unranked, with a freshly generated maze. Either participating
+// author may trigger it — there's no separate invite/accept step, mirroring
+// how Informal and Test matches also start immediately on request.
+func (h *handler) startRematch(ctx context.Context, uid string, body startMatchBody) (events.APIGatewayV2HTTPResponse, error) {
+	if body.Opponent.MatchID == "" {
+		return errResp(http.StatusBadRequest, "opponent matchId is required for type=rematch"), nil
+	}
+	orig, err := h.store.GetMatch(ctx, body.Opponent.MatchID)
+	if errors.Is(err, db.ErrNotFound) {
+		return errResp(http.StatusNotFound, "match not found"), nil
+	}
+	if err != nil {
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	if orig.MatchType != "ranked" {
+		return errResp(http.StatusBadRequest, "rematch is only available for ranked Game Day matches"), nil
+	}
+	tankA, err := h.store.GetTank(ctx, orig.TankA.TankID)
+	if err != nil {
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	tankB, err := h.store.GetTank(ctx, orig.TankB.TankID)
+	if err != nil {
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	if tankA.UserID != uid && tankB.UserID != uid {
+		return errResp(http.StatusForbidden, "you did not participate in this match"), nil
+	}
+
+	matchID := newUUID()
+	match := db.Match{
+		MatchID:   matchID,
+		MatchType: "rematch",
+		Status:    "scheduled",
+		MazeSeed:  strconv.FormatInt(rand.Int63(), 10),
+		TankA:     orig.TankA,
+		TankB:     orig.TankB,
+		CreatedAt: time.Now().Unix(),
+		TTL:       time.Now().AddDate(0, 0, testMatchTTLDays).Unix(),
+	}
+	if err := h.store.PutMatch(ctx, match); err != nil {
+		log.Printf("put rematch: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+
+	payload, _ := json.Marshal(map[string]string{"matchId": matchID})
+	if _, err := h.lambdaSvc.Invoke(ctx, &lambdasvc.InvokeInput{
+		FunctionName:   aws.String(h.matchRunnerFunc),
+		InvocationType: ltypes.InvocationTypeEvent,
+		Payload:        payload,
+	}); err != nil {
+		log.Printf("invoke match-runner for rematch %s: %v", matchID, err)
 	}
 
 	return jsonResp(http.StatusAccepted, map[string]string{"matchId": matchID}), nil
@@ -1587,11 +1691,17 @@ func (h *handler) getPublicUserProfile(ctx context.Context, sub string) (events.
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
 
+	// Name resolution order matches getMyProfile/resolveUserDisplay (item
+	// 225): UserSettings.DisplayName first, tanks' authorName as fallback.
 	name := sub
-	for _, t := range tanks {
-		if t.AuthorName != "" {
-			name = t.AuthorName
-			break
+	if us, err := h.store.GetUserSettings(ctx, sub); err == nil && us.DisplayName != "" {
+		name = us.DisplayName
+	} else {
+		for _, t := range tanks {
+			if t.AuthorName != "" {
+				name = t.AuthorName
+				break
+			}
 		}
 	}
 
@@ -1627,9 +1737,14 @@ func (h *handler) getPublicUserProfile(ctx context.Context, sub string) (events.
 // resolveUserDisplay returns the same {name, picture} a viewer would see on
 // that user's public profile (getPublicUserProfile) — reused here so a
 // friends list never has to duplicate that name/picture resolution logic.
+// Name resolution order matches getMyProfile (item 225): UserSettings
+// .DisplayName first, since it's the only copy immune to federated-login
+// resync; tanks' authorName as a fallback for names set before that fix.
 func (h *handler) resolveUserDisplay(ctx context.Context, sub string) (name, picture string) {
 	name = sub
-	if tanks, err := h.store.ListTanksByUser(ctx, sub); err == nil {
+	if us, err := h.store.GetUserSettings(ctx, sub); err == nil && us.DisplayName != "" {
+		name = us.DisplayName
+	} else if tanks, err := h.store.ListTanksByUser(ctx, sub); err == nil {
 		for _, t := range tanks {
 			if t.AuthorName != "" {
 				name = t.AuthorName
@@ -2535,14 +2650,22 @@ func (h *handler) adminListUsers(ctx context.Context, req events.APIGatewayV2HTT
 	for _, u := range usersOut.Users {
 		sub := cognitoAttr(u.Attributes, "sub")
 		tier := db.TierFree
+		displayName := ""
 		if us, err := h.store.GetUserSettings(ctx, sub); err == nil {
 			tier = us.Tier
+			displayName = us.DisplayName
 		}
 		email := cognitoAttr(u.Attributes, "email")
-		// Prefer the display name set via PATCH /me/profile (item 200, stored
-		// as given_name) over falling back to email — distinct from item 220,
-		// which is about the client not refreshing a saved name.
-		name := cognitoAttr(u.Attributes, "given_name")
+		// Prefer UserSettings.DisplayName (item 225) — the only copy immune
+		// to Google/Facebook's IdP attribute mapping re-syncing given_name on
+		// every login — falling back to given_name (set directly for
+		// non-federated accounts, or pre-fix federated ones) and then email.
+		// Distinct from item 220, which is about the client not refreshing a
+		// saved name.
+		name := displayName
+		if name == "" {
+			name = cognitoAttr(u.Attributes, "given_name")
+		}
 		if name == "" {
 			name = email
 		}
@@ -2804,10 +2927,18 @@ func (h *handler) patchMySettings(ctx context.Context, req events.APIGatewayV2HT
 	return jsonResp(http.StatusOK, map[string]string{"tier": us.Tier}), nil
 }
 
-// patchMyProfile updates the caller's display name: the Cognito given_name
-// attribute (source of truth) plus the denormalized authorName copy already
-// stored on each of their tanks (same field the lazy-backfill in getTank
-// populates from JWT claims when empty). Email is immutable here by design.
+// patchMyProfile updates the caller's display name. It writes three copies:
+// the Cognito given_name attribute (kept for backward compatibility and as
+// the JWT-visible value for non-federated accounts), the denormalized
+// authorName copy on each of their tanks (same field the lazy-backfill in
+// getTank populates from JWT claims when empty), and — since item 225 —
+// UserSettings.DisplayName, which is the only one of the three that survives
+// a federated (Google/Facebook) re-login: Cognito's IdP attribute mapping
+// re-applies given_name from the provider on every sign-in, silently
+// reverting it, and a user with no tanks yet has no authorName to fall back
+// on either. DisplayName has neither problem, so it's now the source of
+// truth read by getMyProfile, resolveUserDisplay, getPublicUserProfile, and
+// adminListUsers. Email is immutable here by design.
 func (h *handler) patchMyProfile(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	uid := userID(req)
 	if uid == "" {
@@ -2838,6 +2969,17 @@ func (h *handler) patchMyProfile(ctx context.Context, req events.APIGatewayV2HTT
 		return errResp(http.StatusInternalServerError, "failed to update profile"), nil
 	}
 
+	us, err := h.store.GetUserSettings(ctx, uid)
+	if err != nil {
+		log.Printf("patchMyProfile get settings %s: %v", uid, err)
+	} else {
+		us.UserID = uid
+		us.DisplayName = name
+		if err := h.store.PutUserSettings(ctx, us); err != nil {
+			log.Printf("patchMyProfile put settings %s: %v", uid, err)
+		}
+	}
+
 	tanks, err := h.store.ListTanksByUser(ctx, uid)
 	if err != nil {
 		log.Printf("patchMyProfile list tanks %s: %v", uid, err)
@@ -2849,6 +2991,36 @@ func (h *handler) patchMyProfile(ctx context.Context, req events.APIGatewayV2HTT
 		}
 	}
 
+	return jsonResp(http.StatusOK, map[string]string{"name": name}), nil
+}
+
+// getMyProfile is GET /me/profile (item 225) — returns the caller's durable
+// display name, preferring UserSettings.DisplayName (set by patchMyProfile,
+// immune to federated IdP re-login resync) over the tanks' denormalized
+// authorName (for names set before this fix shipped) over the JWT's own
+// given_name/name/email claim (new users with neither yet set).
+func (h *handler) getMyProfile(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	uid := userID(req)
+	if uid == "" {
+		return errResp(http.StatusUnauthorized, "unauthorized"), nil
+	}
+	name := ""
+	if us, err := h.store.GetUserSettings(ctx, uid); err == nil {
+		name = us.DisplayName
+	}
+	if name == "" {
+		if tanks, err := h.store.ListTanksByUser(ctx, uid); err == nil {
+			for _, t := range tanks {
+				if t.AuthorName != "" {
+					name = t.AuthorName
+					break
+				}
+			}
+		}
+	}
+	if name == "" {
+		name = authorName(req)
+	}
 	return jsonResp(http.StatusOK, map[string]string{"name": name}), nil
 }
 

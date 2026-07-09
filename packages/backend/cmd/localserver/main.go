@@ -236,6 +236,8 @@ func (srv *server) route(w http.ResponseWriter, r *http.Request) {
 		srv.patchMySettings(w, r)
 
 	// User profile
+	case method == "GET" && rawPath == "me/profile":
+		srv.getMyProfile(w)
 	case method == "PATCH" && rawPath == "me/profile":
 		srv.patchMyProfile(w, r)
 	case method == "PUT" && rawPath == "me/profile/picture":
@@ -815,6 +817,7 @@ type opponentSpec struct {
 	Name    string `json:"name,omitempty"`
 	TankID  string `json:"tankId,omitempty"`
 	Version string `json:"version,omitempty"`
+	MatchID string `json:"matchId,omitempty"`
 }
 
 type startMatchBody struct {
@@ -830,6 +833,12 @@ func (srv *server) startMatch(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+
+	if body.Opponent.Type == "rematch" {
+		srv.startRematch(w, body)
+		return
+	}
+
 	if body.TankID == "" || body.Version == "" {
 		jsonErr(w, http.StatusBadRequest, "tankId and version are required")
 		return
@@ -891,8 +900,33 @@ func (srv *server) startMatch(w http.ResponseWriter, r *http.Request) {
 		oppVersion = body.Opponent.Version
 		matchType = "test-own"
 
+	case "informal":
+		// Item 37: identical validation to "own" — the local single-user
+		// server has no real ownership boundary to relax, unlike tank-api.
+		if body.Opponent.TankID == "" || body.Opponent.Version == "" {
+			jsonErr(w, http.StatusBadRequest, "opponent tankId and version required for type=informal")
+			return
+		}
+		oppVer, err := srv.store.getVersion(body.Opponent.TankID, body.Opponent.Version)
+		if errors.Is(err, db.ErrNotFound) {
+			jsonErr(w, http.StatusNotFound, "opponent version not found")
+			return
+		}
+		if oppVer.CompileStatus != "ready" {
+			jsonErr(w, http.StatusBadRequest, "opponent version is not ready")
+			return
+		}
+		oppTankID = body.Opponent.TankID
+		oppVersion = body.Opponent.Version
+		matchType = "informal"
+
 	default:
-		jsonErr(w, http.StatusBadRequest, "opponent type must be 'ai' or 'own'")
+		jsonErr(w, http.StatusBadRequest, "opponent type must be 'ai', 'own', 'informal', or 'rematch'")
+		return
+	}
+
+	if matchType == "informal" && body.MapID != "" {
+		jsonErr(w, http.StatusBadRequest, "map selection is not available for informal matches")
 		return
 	}
 
@@ -916,6 +950,43 @@ func (srv *server) startMatch(w http.ResponseWriter, r *http.Request) {
 		MapID:     mapID,
 		TankA:     db.MatchTank{TankID: body.TankID, Version: body.Version},
 		TankB:     db.MatchTank{TankID: oppTankID, Version: oppVersion},
+		CreatedAt: time.Now().Unix(),
+	}
+	srv.store.putMatch(match)
+
+	go srv.runMatch(matchID)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{"matchId": matchID})
+}
+
+// startRematch mirrors tank-api's "rematch" branch (item 37): re-runs a
+// previous ranked match between the same two tank/version pairs, unranked,
+// with a fresh maze seed.
+func (srv *server) startRematch(w http.ResponseWriter, body startMatchBody) {
+	if body.Opponent.MatchID == "" {
+		jsonErr(w, http.StatusBadRequest, "opponent matchId is required for type=rematch")
+		return
+	}
+	orig, err := srv.store.getMatch(body.Opponent.MatchID)
+	if errors.Is(err, db.ErrNotFound) {
+		jsonErr(w, http.StatusNotFound, "match not found")
+		return
+	}
+	if orig.MatchType != "ranked" {
+		jsonErr(w, http.StatusBadRequest, "rematch is only available for ranked Game Day matches")
+		return
+	}
+
+	matchID := newUUID()
+	match := db.Match{
+		MatchID:   matchID,
+		MatchType: "rematch",
+		Status:    "scheduled",
+		MazeSeed:  strconv.FormatInt(rand.Int63(), 10),
+		TankA:     orig.TankA,
+		TankB:     orig.TankB,
 		CreatedAt: time.Now().Unix(),
 	}
 	srv.store.putMatch(match)
@@ -1766,6 +1837,19 @@ func (srv *server) patchMySettings(w http.ResponseWriter, r *http.Request) {
 }
 
 // ── User profile handlers ──────────────────────────────────────────────────
+
+// getMyProfile mirrors tank-api's GET /me/profile (item 225). The local
+// single-user store has no separate Cognito-attribute-vs-durable-record
+// split — updateUserName already writes the one place localUser.Name lives
+// — so this just returns it, with the same sub-as-last-resort fallback as
+// the real endpoint's authorName(req) claim fallback.
+func (srv *server) getMyProfile(w http.ResponseWriter) {
+	name := localUserID
+	if u, ok := srv.store.getUser(localUserID); ok && u.Name != "" {
+		name = u.Name
+	}
+	jsonOK(w, map[string]string{"name": name})
+}
 
 func (srv *server) patchMyProfile(w http.ResponseWriter, r *http.Request) {
 	var body struct {

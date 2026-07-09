@@ -51,7 +51,7 @@ export interface TankVersion {
   disqualified: boolean;
 }
 
-export type MatchType = 'ranked' | 'test-ai' | 'test-own' | 'informal';
+export type MatchType = 'ranked' | 'test-ai' | 'test-own' | 'informal' | 'rematch';
 export type MatchStatus = 'scheduled' | 'countdown' | 'active' | 'ended';
 
 export interface MatchResult {

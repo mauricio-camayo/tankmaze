@@ -38,6 +38,13 @@ type UserSettings struct {
 	Tier                   string `dynamodbav:"tier"                   json:"tier"`
 	CompilationsThisWindow int    `dynamodbav:"compilationsThisWindow" json:"compilationsThisWindow"`
 	WindowStart            string `dynamodbav:"windowStart"            json:"windowStart"`
+	// DisplayName is the durable source of truth for a user's chosen
+	// in-game name (item 225). Unlike Cognito's given_name attribute, it
+	// survives federated (Google/Facebook) re-logins: the IdP attribute
+	// mapping in auth-stack.ts only ever touches given_name, re-syncing it
+	// to the provider's real name on every sign-in, so given_name can't be
+	// trusted as a durable custom-name store for federated accounts.
+	DisplayName string `dynamodbav:"displayName,omitempty"  json:"displayName,omitempty"`
 }
 
 func userSettingsKey(userID string) map[string]dbtypes.AttributeValue {

@@ -89,7 +89,11 @@ export const transferScore = (tankId: string, targetTankId: string) =>
 // Matches
 export type OpponentSpec =
   | { type: 'ai'; name: string }
-  | { type: 'own'; tankId: string; version: string };
+  | { type: 'own'; tankId: string; version: string }
+  // Item 37: challenge another author's tank to an unranked match.
+  | { type: 'informal'; tankId: string; version: string }
+  // Item 37: re-run a previous ranked Game Day match, unranked.
+  | { type: 'rematch'; matchId: string };
 
 export const startMatch = (
   tankId: string,
@@ -102,6 +106,11 @@ export const startMatch = (
     body: JSON.stringify({ tankId, version, opponent, ...(mapId ? { mapId } : {}) }),
   });
 export const getMatch = (matchId: string) => request<Match>(`/matches/${matchId}`);
+// Rematch (item 37) re-runs a previous ranked match between the same two
+// tank/version pairs — both derived server-side from matchId, so there's no
+// "own tank" to pass, unlike the other opponent types.
+export const rematch = (matchId: string) =>
+  request<Match>('/matches', { method: 'POST', body: JSON.stringify({ opponent: { type: 'rematch', matchId } }) });
 export const getMatchTicks = (matchId: string) =>
   request<unknown>(`/matches/${matchId}/ticks`);
 
@@ -226,6 +235,11 @@ export const adminSetUserTier = (userId: string, tier: string) =>
   });
 
 // User profile
+// getMyProfile (item 225) returns the durable display name — unlike the ID
+// token's given_name claim, it isn't reverted by a federated (Google/
+// Facebook) re-login, so callers that need the caller's own name (nav,
+// /account) should prefer this over decoding the JWT.
+export const getMyProfile = () => request<{ name: string }>('/me/profile');
 export const updateMyProfile = (name: string) =>
   request<{ name: string }>('/me/profile', { method: 'PATCH', body: JSON.stringify({ name }) });
 export const uploadProfilePicture = (data: string, contentType: string) =>

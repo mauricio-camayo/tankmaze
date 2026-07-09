@@ -1,11 +1,14 @@
 import Phaser from 'phaser';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import Layout from '../components/Layout';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import Layout, { primaryButtonStyle } from '../components/Layout';
 import { ObserverScene } from '../game/ObserverScene';
 import ObserverHUD from '../game/ObserverHUD';
 import { ReplayController } from '../game/ReplayController';
 import { ObserverSocket } from '../services/ws';
+import { getMatch, listTanks, rematch } from '../services/api';
+import type { Match } from '../types';
+import { useAuthStore } from '../store/authStore';
 import { useMatchStore } from '../store/matchStore';
 import type { PlaybackSpeed } from '../store/matchStore';
 
@@ -14,6 +17,18 @@ const CANVAS = 560;
 export default function Watch() {
   const [searchParams] = useSearchParams();
   const matchId = searchParams.get('matchId');
+  const navigate = useNavigate();
+  const currentUser = useAuthStore((s) => s.user);
+
+  // Rematch (item 37): fetched separately from the WS snapshot because the
+  // button must only show for ranked matches, and only to the two
+  // participating authors — the snapshot payload has neither matchType nor
+  // ownership info, both of which the REST match record + the viewer's own
+  // tank list can answer without exposing anything to spectators.
+  const [restMatch, setRestMatch] = useState<Match | null>(null);
+  const [ownTankIds, setOwnTankIds] = useState<Set<string>>(new Set());
+  const [rematching, setRematching] = useState(false);
+  const [rematchError, setRematchError] = useState<string | null>(null);
 
   const hostRef    = useRef<HTMLDivElement>(null);
   const gameRef    = useRef<Phaser.Game | null>(null);
@@ -242,6 +257,30 @@ export default function Watch() {
     setPlaying(true);
   }, [sceneReady, pendingAutoPlay]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Rematch (item 37) ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (!matchId || !currentUser) return;
+    getMatch(matchId).then(setRestMatch).catch(() => setRestMatch(null));
+    listTanks().then((tanks) => setOwnTankIds(new Set(tanks.map((t) => t.tankId)))).catch(() => setOwnTankIds(new Set()));
+  }, [matchId, currentUser]);
+
+  const canRematch = !!restMatch
+    && restMatch.matchType === 'ranked'
+    && (ownTankIds.has(restMatch.tankA.tankId) || ownTankIds.has(restMatch.tankB.tankId));
+
+  async function handleRematch() {
+    if (!matchId) return;
+    setRematching(true);
+    setRematchError(null);
+    try {
+      const match = await rematch(matchId);
+      navigate(`/watch?matchId=${match.matchId}`);
+    } catch (e) {
+      setRematchError(e instanceof Error ? e.message : 'Failed to start rematch');
+      setRematching(false);
+    }
+  }
+
   // ── HUD handlers ───────────────────────────────────────────────────────
   function handleStep() {
     const all = ticksRef.current;
@@ -320,6 +359,14 @@ export default function Watch() {
                 onSeek={handleSeek}
                 onSpeed={handleSpeed}
               />
+              {matchOver && canRematch && (
+                <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <button onClick={handleRematch} disabled={rematching} style={primaryButtonStyle}>
+                    {rematching ? 'Starting rematch…' : 'Rematch'}
+                  </button>
+                  {rematchError && <span style={{ color: '#ff8a75', fontSize: 13 }}>{rematchError}</span>}
+                </div>
+              )}
             </div>
           )}
         </div>
