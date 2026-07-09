@@ -108,9 +108,9 @@ export function AvatarPicker({ tankId, current, onSaved }: Props) {
               title={url.replace('/avatars/', '').replace('.png', '')}
               style={{
                 padding: 3,
-                border: `2px solid ${isActive ? '#7c6af7' : '#2d2d4e'}`,
-                borderRadius: 6,
-                background: isActive ? 'rgba(124,106,247,0.12)' : '#1a1a2e',
+                border: `2px solid ${isActive ? '#ff7a29' : '#23577a'}`,
+                borderRadius: 0,
+                background: isActive ? 'rgba(124,106,247,0.12)' : '#082e4a',
                 cursor: 'pointer',
                 lineHeight: 0,
               }}
@@ -132,26 +132,26 @@ export function AvatarPicker({ tankId, current, onSaved }: Props) {
         <button
           onClick={() => fileInputRef.current?.click()}
           style={{
-            background: 'none', border: '1px solid #2d2d4e', color: '#94a3b8',
-            borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer',
+            background: 'none', border: '1px solid #23577a', color: '#7fa2ba',
+            borderRadius: 0, padding: '5px 12px', fontSize: 12, cursor: 'pointer',
           }}
         >
           Upload your own
         </button>
         {pendingPreview && (
-          <img src={pendingPreview} alt="" style={{ width: 32, height: 32, borderRadius: 4, objectFit: 'cover', border: '1px solid #2d2d4e' }} />
+          <img src={pendingPreview} alt="" style={{ width: 32, height: 32, borderRadius: 0, objectFit: 'cover', border: '1px solid #23577a' }} />
         )}
-        <span style={{ color: '#64748b', fontSize: 11 }}>PNG or JPEG, max 512KB</span>
+        <span style={{ color: '#5b87a3', fontSize: 11 }}>PNG or JPEG, max 512KB</span>
       </div>
-      {uploadError && <p style={{ color: '#f87171', fontSize: 12, margin: '0 0 12px' }}>{uploadError}</p>}
+      {uploadError && <p style={{ color: '#ff8a75', fontSize: 12, margin: '0 0 12px' }}>{uploadError}</p>}
 
       {((selected && selected !== current) || pendingFile) && (
         <button
           onClick={handleSave}
           disabled={saving}
           style={{
-            background: '#7c6af7', color: '#fff', border: 'none',
-            borderRadius: 6, padding: '6px 16px', fontSize: 13,
+            background: '#ff7a29', color: '#fff', border: 'none',
+            borderRadius: 0, padding: '6px 16px', fontSize: 13,
             fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer',
             opacity: saving ? 0.6 : 1,
           }}

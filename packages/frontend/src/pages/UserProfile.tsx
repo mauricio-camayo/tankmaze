@@ -68,8 +68,8 @@ export default function UserProfile() {
     }
   }
 
-  if (loading) return <Layout><p style={{ color: '#64748b' }}>Loading…</p></Layout>;
-  if (error || !profile) return <Layout><p style={{ color: '#f87171' }}>{error ?? 'User not found'}</p></Layout>;
+  if (loading) return <Layout><p style={{ color: '#5b87a3' }}>Loading…</p></Layout>;
+  if (error || !profile) return <Layout><p style={{ color: '#ff8a75' }}>{error ?? 'User not found'}</p></Layout>;
 
   return (
     <Layout>
@@ -84,15 +84,15 @@ export default function UserProfile() {
         ) : (
           <div style={{
             width: 64, height: 64, borderRadius: '50%',
-            background: '#7c6af7', display: 'flex', alignItems: 'center',
+            background: '#ff7a29', display: 'flex', alignItems: 'center',
             justifyContent: 'center', fontSize: 24, fontWeight: 700, color: '#fff',
           }}>
             {profile.name.charAt(0).toUpperCase()}
           </div>
         )}
         <div style={{ flex: 1 }}>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#e2e8f0', margin: 0 }}>{profile.name}</h1>
-          <p style={{ color: '#64748b', fontSize: 13, margin: '2px 0 0' }}>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#e7f1f7', margin: 0 }}>{profile.name}</h1>
+          <p style={{ color: '#5b87a3', fontSize: 13, margin: '2px 0 0' }}>
             {profile.tanks.length} tank{profile.tanks.length === 1 ? '' : 's'}
           </p>
         </div>
@@ -138,7 +138,7 @@ export default function UserProfile() {
               <button
                 onClick={() => handleFriendAction(() => removeFriend(sub!))}
                 disabled={friendBusy}
-                style={{ ...ghostButtonStyle, borderColor: '#7f1d1d', color: '#f87171' }}
+                style={{ ...ghostButtonStyle, borderColor: '#3a1a18', color: '#ff8a75' }}
               >
                 Remove friend
               </button>
@@ -146,10 +146,10 @@ export default function UserProfile() {
           </div>
         )}
       </div>
-      {friendError && <p style={{ color: '#f87171', fontSize: 13, margin: '0 0 16px' }}>{friendError}</p>}
+      {friendError && <p style={{ color: '#ff8a75', fontSize: 13, margin: '0 0 16px' }}>{friendError}</p>}
 
       {profile.tanks.length === 0 ? (
-        <div style={{ ...cardStyle, color: '#64748b', textAlign: 'center', padding: '40px 24px' }}>
+        <div style={{ ...cardStyle, color: '#5b87a3', textAlign: 'center', padding: '40px 24px' }}>
           No tanks yet.
         </div>
       ) : (
@@ -163,19 +163,19 @@ export default function UserProfile() {
               <img
                 src={avatarSrc(t.tankId, t.avatarUrl)}
                 alt=""
-                style={{ width: 40, height: 40, borderRadius: 8, imageRendering: 'pixelated', flexShrink: 0 }}
+                style={{ width: 40, height: 40, borderRadius: 0, imageRendering: 'pixelated', flexShrink: 0 }}
               />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ color: '#e2e8f0', fontSize: 15 }}>{t.name || 'Unnamed Tank'}</div>
-                <div style={{ color: '#64748b', fontSize: 12 }}>Last active {relativeTime(t.lastActiveAt)}</div>
+                <div style={{ color: '#e7f1f7', fontSize: 15 }}>{t.name || 'Unnamed Tank'}</div>
+                <div style={{ color: '#5b87a3', fontSize: 12 }}>Last active {relativeTime(t.lastActiveAt)}</div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'auto auto', gap: '2px 14px', fontSize: 12, flexShrink: 0 }}>
-                <span style={{ color: '#64748b' }}>Score</span>
-                <span style={{ color: '#a78bfa', fontWeight: 600, textAlign: 'right' }}>{t.globalScore.toLocaleString()}</span>
-                <span style={{ color: '#64748b' }}>Best</span>
-                <span style={{ color: '#e2e8f0', textAlign: 'right' }}>{ordinal(t.bestFinish)}</span>
-                <span style={{ color: '#64748b' }}>Days</span>
-                <span style={{ color: '#e2e8f0', textAlign: 'right' }}>{t.gameDaysCount}</span>
+                <span style={{ color: '#5b87a3' }}>Score</span>
+                <span style={{ color: '#ffab6b', fontWeight: 600, textAlign: 'right' }}>{t.globalScore.toLocaleString()}</span>
+                <span style={{ color: '#5b87a3' }}>Best</span>
+                <span style={{ color: '#e7f1f7', textAlign: 'right' }}>{ordinal(t.bestFinish)}</span>
+                <span style={{ color: '#5b87a3' }}>Days</span>
+                <span style={{ color: '#e7f1f7', textAlign: 'right' }}>{t.gameDaysCount}</span>
               </div>
             </Link>
           ))}

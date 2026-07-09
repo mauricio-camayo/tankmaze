@@ -23,16 +23,16 @@ function phaseOverallStatus(gd: GameDay): 'upcoming' | 'active' | 'complete' | '
 
 function StatusBadge({ status }: { status: 'upcoming' | 'active' | 'complete' | 'past' }) {
   const map: Record<string, [string, string]> = {
-    upcoming: ['#fbbf24', 'rgba(251,191,36,0.1)'],
-    active: ['#4ade80', 'rgba(74,222,128,0.1)'],
-    complete: ['#475569', 'rgba(71,85,105,0.1)'],
-    past: ['#475569', 'rgba(71,85,105,0.1)'],
+    upcoming: ['#e8b339', 'rgba(251,191,36,0.1)'],
+    active: ['#59e6c0', 'rgba(74,222,128,0.1)'],
+    complete: ['#4a7291', 'rgba(71,85,105,0.1)'],
+    past: ['#4a7291', 'rgba(71,85,105,0.1)'],
   };
   const [fg, bg] = map[status];
   return (
     <span style={{
       color: fg, background: bg, border: `1px solid ${fg}`,
-      borderRadius: 4, fontSize: 11, padding: '2px 8px', fontWeight: 600, textTransform: 'uppercase',
+      borderRadius: 0, fontSize: 11, padding: '2px 8px', fontWeight: 600, textTransform: 'uppercase',
     }}>
       {status}
     </span>
@@ -40,7 +40,7 @@ function StatusBadge({ status }: { status: 'upcoming' | 'active' | 'complete' | 
 }
 
 function PhaseDot({ phase }: { phase: GameDayPhaseStatus }) {
-  const color = phase.status === 'complete' ? '#475569' : phase.status === 'running' ? '#4ade80' : '#2d2d4e';
+  const color = phase.status === 'complete' ? '#4a7291' : phase.status === 'running' ? '#59e6c0' : '#23577a';
   return (
     <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: color, marginRight: 4 }} />
   );
@@ -66,7 +66,7 @@ function MapSelector({ value, onChange }: { value: string[]; onChange: (v: strin
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 140, overflowY: 'auto' }}>
       {maps.map((m) => (
-        <label key={m.mapId} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: '#e2e8f0', fontSize: 13 }}>
+        <label key={m.mapId} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: '#e7f1f7', fontSize: 13 }}>
           <input
             type="checkbox"
             checked={value.includes(m.mapId)}
@@ -74,7 +74,7 @@ function MapSelector({ value, onChange }: { value: string[]; onChange: (v: strin
               if (e.target.checked) onChange([...value, m.mapId]);
               else onChange(value.filter((id) => id !== m.mapId));
             }}
-            style={{ accentColor: '#a78bfa' }}
+            style={{ accentColor: '#ffab6b' }}
           />
           {m.name}
         </label>
@@ -96,13 +96,13 @@ function UnsavedChangesDialog({ onSaveAndLeave, onDiscard, onStay }: {
   return (
     <div style={overlay}>
       <div style={{ ...cardStyle, width: 380 }}>
-        <h3 style={{ margin: '0 0 8px', color: '#e2e8f0' }}>Unsaved changes</h3>
-        <p style={{ margin: '0 0 20px', fontSize: 14, color: '#94a3b8' }}>
+        <h3 style={{ margin: '0 0 8px', color: '#e7f1f7' }}>Unsaved changes</h3>
+        <p style={{ margin: '0 0 20px', fontSize: 14, color: '#7fa2ba' }}>
           You have unsaved changes. Do you want to save before leaving?
         </p>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button onClick={onStay} style={ghostButtonStyle}>Keep editing</button>
-          <button onClick={onDiscard} style={{ ...ghostButtonStyle, color: '#f87171', borderColor: '#7f1d1d' }}>
+          <button onClick={onDiscard} style={{ ...ghostButtonStyle, color: '#ff8a75', borderColor: '#3a1a18' }}>
             Discard
           </button>
           <button onClick={onSaveAndLeave} style={primaryButtonStyle}>Save & Leave</button>
@@ -187,22 +187,22 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
   }
 
   const inputStyle: React.CSSProperties = {
-    background: '#0f0f1a', border: '1px solid #2d2d4e', borderRadius: 6,
-    color: '#e2e8f0', padding: '6px 10px', fontSize: 13, width: '100%',
+    background: '#0a3550', border: '1px solid #23577a', borderRadius: 0,
+    color: '#e7f1f7', padding: '6px 10px', fontSize: 13, width: '100%',
     colorScheme: 'dark',
   };
   const labelStyle: React.CSSProperties = {
-    display: 'block', color: '#64748b', fontSize: 11,
+    display: 'block', color: '#5b87a3', fontSize: 11,
     textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4,
   };
   const checkLabel: React.CSSProperties = {
-    display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: '#94a3b8', fontSize: 13,
+    display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: '#7fa2ba', fontSize: 13,
   };
 
   return (
-    <div style={{ ...cardStyle, marginTop: 12, borderColor: '#a78bfa' }}>
+    <div style={{ ...cardStyle, marginTop: 12, borderColor: '#ffab6b' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h4 style={{ margin: 0, color: '#a78bfa', fontSize: 14, fontWeight: 700 }}>Edit Schedule</h4>
+        <h4 style={{ margin: 0, color: '#ffab6b', fontSize: 14, fontWeight: 700 }}>Edit Schedule</h4>
         <button onClick={onCancel} style={ghostButtonStyle}>Cancel</button>
       </div>
       <form onSubmit={handleSubmit}>
@@ -236,11 +236,11 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
           <label style={checkLabel}>
-            <input type="checkbox" checked={autofill} onChange={(e) => setAutofill(e.target.checked)} style={{ accentColor: '#a78bfa' }} />
+            <input type="checkbox" checked={autofill} onChange={(e) => setAutofill(e.target.checked)} style={{ accentColor: '#ffab6b' }} />
             Auto-fill bracket with AI bots to nearest power-of-two (≥8)
           </label>
           <label style={checkLabel}>
-            <input type="checkbox" checked={randomMaps} onChange={(e) => setRandomMaps(e.target.checked)} style={{ accentColor: '#a78bfa' }} />
+            <input type="checkbox" checked={randomMaps} onChange={(e) => setRandomMaps(e.target.checked)} style={{ accentColor: '#ffab6b' }} />
             Random maze per match (ignore map selection below)
           </label>
         </div>
@@ -250,7 +250,7 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
             <MapSelector value={forcedMapIds} onChange={setForcedMapIds} />
           </div>
         )}
-        {err && <div style={{ color: '#f87171', fontSize: 13, marginBottom: 10 }}>{err}</div>}
+        {err && <div style={{ color: '#ff8a75', fontSize: 13, marginBottom: 10 }}>{err}</div>}
         <button type="submit" disabled={saving} style={primaryButtonStyle}>
           {saving ? 'Saving…' : 'Save'}
         </button>
@@ -327,17 +327,17 @@ function GameDayRow({ gd, onDeleted, onRefresh, autoOpen }: { gd: GameDay; onDel
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
             <StatusBadge status={status} />
             {stuck && (
-              <span style={{ fontSize: 11, color: '#f97316', background: 'rgba(249,115,22,0.1)', border: '1px solid #f97316', borderRadius: 4, padding: '2px 8px', fontWeight: 600 }}>
+              <span style={{ fontSize: 11, color: '#ff7a29', background: 'rgba(249,115,22,0.1)', border: '1px solid #ff7a29', borderRadius: 0, padding: '2px 8px', fontWeight: 600 }}>
                 STUCK
               </span>
             )}
-            <span style={{ color: '#e2e8f0', fontSize: 15, fontWeight: 600 }}>
+            <span style={{ color: '#e7f1f7', fontSize: 15, fontWeight: 600 }}>
               {gd.name || new Date(gd.schedule.roundRobin).toLocaleDateString(undefined, {
                 weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
               })}
             </span>
           </div>
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12, color: '#64748b' }}>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12, color: '#5b87a3' }}>
             <span>
               <PhaseDot phase={gd.phases.roundRobin} />
               Round Robin — {new Date(gd.schedule.roundRobin).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -347,7 +347,7 @@ function GameDayRow({ gd, onDeleted, onRefresh, autoOpen }: { gd: GameDay; onDel
               Final — {new Date(gd.schedule.final).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
             </span>
             {(gd.registeredTanks ?? []).length > 0 && (
-              <span style={{ color: '#a78bfa' }}>{(gd.registeredTanks ?? []).length} registered</span>
+              <span style={{ color: '#ffab6b' }}>{(gd.registeredTanks ?? []).length} registered</span>
             )}
           </div>
         </div>
@@ -363,7 +363,7 @@ function GameDayRow({ gd, onDeleted, onRefresh, autoOpen }: { gd: GameDay; onDel
               {isUpcoming && new Date(gd.schedule.final) > new Date() && (
                 <button
                   onClick={() => { setEditing((v) => !v); setConfirmDelete(false); setConfirmOverride(false); }}
-                  style={{ ...ghostButtonStyle, borderColor: '#a78bfa', color: '#a78bfa', cursor: 'pointer' }}
+                  style={{ ...ghostButtonStyle, borderColor: '#ffab6b', color: '#ffab6b', cursor: 'pointer' }}
                 >
                   {editing ? 'Close' : 'Edit'}
                 </button>
@@ -373,7 +373,7 @@ function GameDayRow({ gd, onDeleted, onRefresh, autoOpen }: { gd: GameDay; onDel
                   onClick={handleCancelStuck}
                   disabled={overriding}
                   title="Mark both phases as cancelled so this game day stops appearing as upcoming"
-                  style={{ ...ghostButtonStyle, borderColor: '#f97316', color: '#f97316', cursor: 'pointer' }}
+                  style={{ ...ghostButtonStyle, borderColor: '#ff7a29', color: '#ff7a29', cursor: 'pointer' }}
                 >
                   {overriding ? 'Cancelling…' : confirmOverride ? 'Confirm cancel?' : 'Cancel stuck'}
                 </button>
@@ -381,7 +381,7 @@ function GameDayRow({ gd, onDeleted, onRefresh, autoOpen }: { gd: GameDay; onDel
               <button
                 onClick={handleDelete}
                 disabled={deleting}
-                style={{ ...ghostButtonStyle, borderColor: '#7f1d1d', color: '#f87171', cursor: 'pointer' }}
+                style={{ ...ghostButtonStyle, borderColor: '#3a1a18', color: '#ff8a75', cursor: 'pointer' }}
               >
                 {deleting ? 'Deleting…' : confirmDelete ? (!isUpcoming ? 'Force delete?' : 'Confirm?') : 'Delete'}
               </button>
@@ -504,24 +504,24 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
   }
 
   const inputStyle: React.CSSProperties = {
-    background: '#0f0f1a', border: '1px solid #2d2d4e', borderRadius: 6,
-    color: '#e2e8f0', padding: '6px 10px', fontSize: 13, width: '100%',
+    background: '#0a3550', border: '1px solid #23577a', borderRadius: 0,
+    color: '#e7f1f7', padding: '6px 10px', fontSize: 13, width: '100%',
     colorScheme: 'dark',
   };
 
   const labelStyle: React.CSSProperties = {
-    display: 'block', color: '#64748b', fontSize: 11,
+    display: 'block', color: '#5b87a3', fontSize: 11,
     textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4,
   };
 
   const checkLabel: React.CSSProperties = {
-    display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: '#94a3b8', fontSize: 13,
+    display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: '#7fa2ba', fontSize: 13,
   };
 
   return (
     <div style={{ ...cardStyle, marginBottom: 24 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <h3 style={{ margin: 0, color: '#e2e8f0', fontSize: 16, fontWeight: 700 }}>Create Game Day</h3>
+        <h3 style={{ margin: 0, color: '#e7f1f7', fontSize: 16, fontWeight: 700 }}>Create Game Day</h3>
         <button onClick={() => setOpen(false)} style={ghostButtonStyle}>Cancel</button>
       </div>
       <form onSubmit={handleSubmit}>
@@ -555,11 +555,11 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
           <label style={checkLabel}>
-            <input type="checkbox" checked={autofill} onChange={(e) => setAutofill(e.target.checked)} style={{ accentColor: '#a78bfa' }} />
+            <input type="checkbox" checked={autofill} onChange={(e) => setAutofill(e.target.checked)} style={{ accentColor: '#ffab6b' }} />
             Auto-fill bracket with AI bots to nearest power-of-two (≥8)
           </label>
           <label style={checkLabel}>
-            <input type="checkbox" checked={randomMaps} onChange={(e) => setRandomMaps(e.target.checked)} style={{ accentColor: '#a78bfa' }} />
+            <input type="checkbox" checked={randomMaps} onChange={(e) => setRandomMaps(e.target.checked)} style={{ accentColor: '#ffab6b' }} />
             Random maze per match
           </label>
         </div>
@@ -569,7 +569,7 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
             <MapSelector value={forcedMapIds} onChange={setForcedMapIds} />
           </div>
         )}
-        {err && <div style={{ color: '#f87171', fontSize: 13, marginBottom: 12 }}>{err}</div>}
+        {err && <div style={{ color: '#ff8a75', fontSize: 13, marginBottom: 12 }}>{err}</div>}
         <button type="submit" disabled={saving} style={primaryButtonStyle}>
           {saving ? 'Creating…' : 'Create'}
         </button>
@@ -609,21 +609,21 @@ export default function GameDayList() {
   return (
     <Layout>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
-        <h2 style={{ margin: 0, fontSize: 22, color: '#e2e8f0' }}>Game Days</h2>
+        <h2 style={{ margin: 0, fontSize: 22, color: '#e7f1f7' }}>Game Days</h2>
       </div>
 
       {user?.isAdmin && <CreateGameDayForm onCreated={load} />}
 
-      {loading && <p style={{ color: '#64748b' }}>Loading…</p>}
+      {loading && <p style={{ color: '#5b87a3' }}>Loading…</p>}
 
       {error && (
-        <div style={{ ...cardStyle, borderColor: '#7f1d1d', color: '#fca5a5', marginBottom: 16 }}>
+        <div style={{ ...cardStyle, borderColor: '#3a1a18', color: '#ffb8a3', marginBottom: 16 }}>
           {error}
         </div>
       )}
 
       {!loading && !error && gameDays.length === 0 && (
-        <div style={{ ...cardStyle, textAlign: 'center', padding: '48px 24px', color: '#64748b' }}>
+        <div style={{ ...cardStyle, textAlign: 'center', padding: '48px 24px', color: '#5b87a3' }}>
           No game days scheduled yet.
         </div>
       )}

@@ -49,7 +49,7 @@ export default function AdminAdConfig() {
 
   const field = (label: string, key: keyof AdConfigBody, placeholder?: string) => (
     <div style={{ marginBottom: 16 }}>
-      <label style={{ display: 'block', color: '#94a3b8', fontSize: 13, marginBottom: 6 }}>
+      <label style={{ display: 'block', color: '#7fa2ba', fontSize: 13, marginBottom: 6 }}>
         {label}
       </label>
       <input
@@ -58,8 +58,8 @@ export default function AdminAdConfig() {
         placeholder={placeholder}
         onChange={(e) => setConfig((c) => ({ ...c, [key]: e.target.value }))}
         style={{
-          width: '100%', background: '#0f0f1a', border: '1px solid #2d2d4e',
-          borderRadius: 6, color: '#e2e8f0', padding: '8px 12px', fontSize: 14,
+          width: '100%', background: '#0a3550', border: '1px solid #23577a',
+          borderRadius: 0, color: '#e7f1f7', padding: '8px 12px', fontSize: 14,
           boxSizing: 'border-box',
         }}
       />
@@ -68,11 +68,11 @@ export default function AdminAdConfig() {
 
   return (
     <>
-      <h2 style={{ margin: '0 0 20px', color: '#e2e8f0' }}>Ads</h2>
+      <h2 style={{ margin: '0 0 20px', color: '#e7f1f7' }}>Ads</h2>
 
-      {loading && <div style={{ color: '#64748b' }}>Loading…</div>}
-      {error && <div style={{ color: '#f87171', marginBottom: 12 }}>{error}</div>}
-      {saved && <div style={{ color: '#4ade80', marginBottom: 12 }}>Saved.</div>}
+      {loading && <div style={{ color: '#5b87a3' }}>Loading…</div>}
+      {error && <div style={{ color: '#ff8a75', marginBottom: 12 }}>{error}</div>}
+      {saved && <div style={{ color: '#59e6c0', marginBottom: 12 }}>Saved.</div>}
 
       {!loading && (
         <div style={cardStyle}>
@@ -82,11 +82,11 @@ export default function AdminAdConfig() {
                 type="checkbox"
                 checked={config.enabled ?? false}
                 onChange={(e) => setConfig((c) => ({ ...c, enabled: e.target.checked }))}
-                style={{ width: 18, height: 18, accentColor: '#7c6af7' }}
+                style={{ width: 18, height: 18, accentColor: '#ff7a29' }}
               />
-              <span style={{ color: '#e2e8f0', fontSize: 15 }}>Enable ad display globally</span>
+              <span style={{ color: '#e7f1f7', fontSize: 15 }}>Enable ad display globally</span>
             </label>
-            <p style={{ margin: '6px 0 0 28px', color: '#64748b', fontSize: 12 }}>
+            <p style={{ margin: '6px 0 0 28px', color: '#5b87a3', fontSize: 12 }}>
               When off, no ad script or slot divs are rendered on any page. A page reload is required after changing this setting.
             </p>
           </div>

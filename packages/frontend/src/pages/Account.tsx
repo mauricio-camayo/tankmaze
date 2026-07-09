@@ -8,9 +8,9 @@ import { useAuthStore } from '../store/authStore';
 import type { UserSettings } from '../types';
 
 const tierColors: Record<string, string> = {
-  free: '#64748b',
-  builder: '#7c6af7',
-  pro: '#f59e0b',
+  free: '#5b87a3',
+  builder: '#ff7a29',
+  pro: '#e8b339',
 };
 
 const tierLabels: Record<string, string> = {
@@ -23,9 +23,9 @@ const tierLabels: Record<string, string> = {
 // red at 100%+. Configurable via VITE_USAGE_WARNING_THRESHOLD (0-1).
 const WARNING_THRESHOLD = Number(import.meta.env.VITE_USAGE_WARNING_THRESHOLD ?? 0.9);
 
-const STATUS_GREEN = '#4ade80';
-const STATUS_YELLOW = '#fbbf24';
-const STATUS_RED = '#f87171';
+const STATUS_GREEN = '#59e6c0';
+const STATUS_YELLOW = '#e8b339';
+const STATUS_RED = '#ff8a75';
 
 function usageStatusColor(value: number, max: number): string {
   const pct = value / Math.max(1, max);
@@ -43,8 +43,8 @@ function worstStatusColor(colors: string[]): string {
 function ProgressBar({ value, max, color }: { value: number; max: number; color: string }) {
   const pct = Math.min(100, (value / Math.max(1, max)) * 100);
   return (
-    <div style={{ background: '#2d2d4e', borderRadius: 4, height: 8, overflow: 'hidden' }}>
-      <div style={{ width: `${pct}%`, background: color, height: '100%', borderRadius: 4, transition: 'width 0.3s' }} />
+    <div style={{ background: '#23577a', borderRadius: 0, height: 8, overflow: 'hidden' }}>
+      <div style={{ width: `${pct}%`, background: color, height: '100%', borderRadius: 0, transition: 'width 0.3s' }} />
     </div>
   );
 }
@@ -160,7 +160,7 @@ export default function Account() {
   }
 
   const tier = settings?.tier ?? 'free';
-  const tierColor = tierColors[tier] ?? '#7c6af7';
+  const tierColor = tierColors[tier] ?? '#ff7a29';
 
   const tankStatusColor = settings ? usageStatusColor(tankCount, settings.tankLimit) : STATUS_GREEN;
   const compStatusColor = settings ? usageStatusColor(settings.compilationsThisWindow, settings.compilationLimit) : STATUS_GREEN;
@@ -168,10 +168,10 @@ export default function Account() {
 
   return (
     <Layout>
-      <h1 style={{ fontSize: 28, fontWeight: 700, color: '#e2e8f0', margin: '0 0 20px' }}>Account</h1>
+      <h1 style={{ fontSize: 28, fontWeight: 700, color: '#e7f1f7', margin: '0 0 20px' }}>Account</h1>
 
       {error && (
-        <div style={{ ...cardStyle, borderColor: '#7f1d1d', color: '#fca5a5', marginBottom: 16 }}>{error}</div>
+        <div style={{ ...cardStyle, borderColor: '#3a1a18', color: '#ffb8a3', marginBottom: 16 }}>{error}</div>
       )}
 
       {/* Profile */}
@@ -187,7 +187,7 @@ export default function Account() {
           ) : (
             <div style={{
               width: 64, height: 64, borderRadius: '50%',
-              background: '#7c6af7', display: 'flex', alignItems: 'center',
+              background: '#ff7a29', display: 'flex', alignItems: 'center',
               justifyContent: 'center', fontSize: 24, fontWeight: 700, color: '#fff',
             }}>
               {(user?.name ?? user?.username ?? '?').charAt(0).toUpperCase()}
@@ -205,56 +205,56 @@ export default function Account() {
               onClick={() => pictureInputRef.current?.click()}
               disabled={uploadingPicture}
               style={{
-                background: 'none', border: '1px solid #2d2d4e', color: '#94a3b8',
-                borderRadius: 6, padding: '5px 12px', fontSize: 12,
+                background: 'none', border: '1px solid #23577a', color: '#7fa2ba',
+                borderRadius: 0, padding: '5px 12px', fontSize: 12,
                 cursor: uploadingPicture ? 'not-allowed' : 'pointer', marginBottom: 6,
               }}
             >
               {uploadingPicture ? 'Uploading…' : 'Upload photo'}
             </button>
-            <div style={{ color: '#64748b', fontSize: 12, lineHeight: 1.5 }}>
+            <div style={{ color: '#5b87a3', fontSize: 12, lineHeight: 1.5 }}>
               {user?.picture
                 ? 'From your Google/Facebook account, or a photo you uploaded.'
                 : 'No picture on file — upload one, or sign in with Google/Facebook to add one automatically.'}
               {' '}PNG or JPEG, max 512KB.
             </div>
-            {pictureError && <p style={{ color: '#f87171', fontSize: 12, margin: '4px 0 0' }}>{pictureError}</p>}
+            {pictureError && <p style={{ color: '#ff8a75', fontSize: 12, margin: '4px 0 0' }}>{pictureError}</p>}
           </div>
         </div>
 
         <div style={{ marginBottom: 16 }}>
-          <label style={{ fontSize: 13, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Name</label>
+          <label style={{ fontSize: 13, color: '#7fa2ba', display: 'block', marginBottom: 4 }}>Name</label>
           <input
             value={name}
             onChange={(e) => { setName(e.target.value); setSaved(false); }}
             placeholder="Add your name"
             style={{
-              width: '100%', background: '#0f0f1a', border: '1px solid #2d2d4e', borderRadius: 6,
-              color: '#e2e8f0', padding: '8px 10px', fontSize: 14, boxSizing: 'border-box',
+              width: '100%', background: '#0a3550', border: '1px solid #23577a', borderRadius: 0,
+              color: '#e7f1f7', padding: '8px 10px', fontSize: 14, boxSizing: 'border-box',
             }}
           />
           {!name && (
-            <p style={{ margin: '4px 0 0', color: '#475569', fontSize: 11 }}>
+            <p style={{ margin: '4px 0 0', color: '#4a7291', fontSize: 11 }}>
               No name set yet — add one so other players see it instead of your account ID.
             </p>
           )}
         </div>
 
         <div style={{ marginBottom: 20 }}>
-          <label style={{ fontSize: 13, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Email</label>
+          <label style={{ fontSize: 13, color: '#7fa2ba', display: 'block', marginBottom: 4 }}>Email</label>
           <input
             value={user?.email ?? ''}
             disabled
             style={{
-              width: '100%', background: '#15151f', border: '1px solid #2d2d4e', borderRadius: 6,
-              color: '#64748b', padding: '8px 10px', fontSize: 14, boxSizing: 'border-box', cursor: 'not-allowed',
+              width: '100%', background: '#072943', border: '1px solid #23577a', borderRadius: 0,
+              color: '#5b87a3', padding: '8px 10px', fontSize: 14, boxSizing: 'border-box', cursor: 'not-allowed',
             }}
           />
-          <p style={{ margin: '4px 0 0', color: '#475569', fontSize: 11 }}>Email cannot be changed here.</p>
+          <p style={{ margin: '4px 0 0', color: '#4a7291', fontSize: 11 }}>Email cannot be changed here.</p>
         </div>
 
-        {profileError && <p style={{ color: '#f87171', fontSize: 13, margin: '0 0 12px' }}>{profileError}</p>}
-        {saved && <p style={{ color: '#4ade80', fontSize: 13, margin: '0 0 12px' }}>Saved.</p>}
+        {profileError && <p style={{ color: '#ff8a75', fontSize: 13, margin: '0 0 12px' }}>{profileError}</p>}
+        {saved && <p style={{ color: '#59e6c0', fontSize: 13, margin: '0 0 12px' }}>Saved.</p>}
 
         <button
           onClick={handleSaveProfile}
@@ -269,51 +269,51 @@ export default function Account() {
           sign-ins have no Cognito password to change. */}
       {!user?.isFederated && (
         <div style={{ ...cardStyle, marginBottom: 20 }}>
-          <h2 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 700, color: '#e2e8f0' }}>Change password</h2>
-          <p style={{ margin: '0 0 16px', color: '#64748b', fontSize: 12, lineHeight: 1.5 }}>
+          <h2 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 700, color: '#e7f1f7' }}>Change password</h2>
+          <p style={{ margin: '0 0 16px', color: '#5b87a3', fontSize: 12, lineHeight: 1.5 }}>
             Leave these fields blank to keep your current password — this doesn't affect saving your name or photo above.
           </p>
           <form onSubmit={handleChangePassword}>
             <div style={{ marginBottom: 12 }}>
-              <label style={{ fontSize: 13, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Current password</label>
+              <label style={{ fontSize: 13, color: '#7fa2ba', display: 'block', marginBottom: 4 }}>Current password</label>
               <input
                 type="password"
                 value={currentPassword}
                 onChange={(e) => { setCurrentPassword(e.target.value); setPasswordSaved(false); }}
                 style={{
-                  width: '100%', background: '#0f0f1a', border: '1px solid #2d2d4e', borderRadius: 6,
-                  color: '#e2e8f0', padding: '8px 10px', fontSize: 14, boxSizing: 'border-box',
+                  width: '100%', background: '#0a3550', border: '1px solid #23577a', borderRadius: 0,
+                  color: '#e7f1f7', padding: '8px 10px', fontSize: 14, boxSizing: 'border-box',
                 }}
               />
             </div>
             <div style={{ marginBottom: 12 }}>
-              <label style={{ fontSize: 13, color: '#94a3b8', display: 'block', marginBottom: 4 }}>New password</label>
+              <label style={{ fontSize: 13, color: '#7fa2ba', display: 'block', marginBottom: 4 }}>New password</label>
               <input
                 type="password"
                 value={newPassword}
                 onChange={(e) => { setNewPassword(e.target.value); setPasswordSaved(false); }}
                 minLength={8}
                 style={{
-                  width: '100%', background: '#0f0f1a', border: '1px solid #2d2d4e', borderRadius: 6,
-                  color: '#e2e8f0', padding: '8px 10px', fontSize: 14, boxSizing: 'border-box',
+                  width: '100%', background: '#0a3550', border: '1px solid #23577a', borderRadius: 0,
+                  color: '#e7f1f7', padding: '8px 10px', fontSize: 14, boxSizing: 'border-box',
                 }}
               />
             </div>
             <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 13, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Confirm new password</label>
+              <label style={{ fontSize: 13, color: '#7fa2ba', display: 'block', marginBottom: 4 }}>Confirm new password</label>
               <input
                 type="password"
                 value={confirmNewPassword}
                 onChange={(e) => { setConfirmNewPassword(e.target.value); setPasswordSaved(false); }}
                 minLength={8}
                 style={{
-                  width: '100%', background: '#0f0f1a', border: '1px solid #2d2d4e', borderRadius: 6,
-                  color: '#e2e8f0', padding: '8px 10px', fontSize: 14, boxSizing: 'border-box',
+                  width: '100%', background: '#0a3550', border: '1px solid #23577a', borderRadius: 0,
+                  color: '#e7f1f7', padding: '8px 10px', fontSize: 14, boxSizing: 'border-box',
                 }}
               />
             </div>
-            {passwordError && <p style={{ color: '#f87171', fontSize: 13, margin: '0 0 12px' }}>{passwordError}</p>}
-            {passwordSaved && <p style={{ color: '#4ade80', fontSize: 13, margin: '0 0 12px' }}>Password changed.</p>}
+            {passwordError && <p style={{ color: '#ff8a75', fontSize: 13, margin: '0 0 12px' }}>{passwordError}</p>}
+            {passwordSaved && <p style={{ color: '#59e6c0', fontSize: 13, margin: '0 0 12px' }}>Password changed.</p>}
             <button
               type="submit"
               disabled={changingPassword || !currentPassword || !newPassword || !confirmNewPassword}
@@ -336,7 +336,7 @@ export default function Account() {
               <span style={{
                 background: tierColor,
                 color: '#fff',
-                borderRadius: 20,
+                borderRadius: 0,
                 padding: '4px 16px',
                 fontWeight: 700,
                 fontSize: 16,
@@ -345,7 +345,7 @@ export default function Account() {
               }}>
                 {tierLabels[tier] ?? tier}
               </span>
-              <span style={{ color: '#64748b', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ color: '#5b87a3', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{
                   width: 8, height: 8, borderRadius: '50%', background: overallStatusColor, flexShrink: 0,
                 }} />
@@ -356,8 +356,8 @@ export default function Account() {
             {/* Tank usage */}
             <div style={{ marginBottom: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 14 }}>
-                <span style={{ color: '#94a3b8' }}>Tanks</span>
-                <span style={{ color: '#e2e8f0', fontWeight: 600 }}>
+                <span style={{ color: '#7fa2ba' }}>Tanks</span>
+                <span style={{ color: '#e7f1f7', fontWeight: 600 }}>
                   {tankCount} / {settings.tankLimit}
                 </span>
               </div>
@@ -367,15 +367,15 @@ export default function Account() {
             {/* Compilation usage */}
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 14 }}>
-                <span style={{ color: '#94a3b8' }}>
+                <span style={{ color: '#7fa2ba' }}>
                   Compilations
                   {settings.windowStart && (
-                    <span style={{ color: '#64748b', marginLeft: 8, fontSize: 12 }}>
+                    <span style={{ color: '#5b87a3', marginLeft: 8, fontSize: 12 }}>
                       ({windowResetLabel(settings.windowStart)})
                     </span>
                   )}
                 </span>
-                <span style={{ color: '#e2e8f0', fontWeight: 600 }}>
+                <span style={{ color: '#e7f1f7', fontWeight: 600 }}>
                   {settings.compilationsThisWindow} / {settings.compilationLimit}
                 </span>
               </div>
@@ -386,7 +386,7 @@ export default function Account() {
           {/* Upgrade CTA */}
           {tier !== 'pro' && (
             <div style={{ ...cardStyle, textAlign: 'center', padding: '28px 24px' }}>
-              <p style={{ color: '#94a3b8', marginBottom: 16, fontSize: 15 }}>
+              <p style={{ color: '#7fa2ba', marginBottom: 16, fontSize: 15 }}>
                 {tier === 'free'
                   ? 'Upgrade to Builder for 5 tanks and 50 compilations per month.'
                   : 'Upgrade to Pro for 15 tanks and 200 compilations per month.'}

@@ -73,7 +73,7 @@ export default function Watch() {
       parent,
       width:  CANVAS,
       height: CANVAS,
-      backgroundColor: '#0a0a14',
+      backgroundColor: '#072943',
       scene:  [ObserverScene],
       scale:  { mode: Phaser.Scale.NONE },
       banner: false,
@@ -267,19 +267,19 @@ export default function Watch() {
   return (
     <Layout>
       {!matchId ? (
-        <div style={{ color: '#64748b', textAlign: 'center', padding: '60px 0' }}>
+        <div style={{ color: '#5b87a3', textAlign: 'center', padding: '60px 0' }}>
           No match ID — navigate here from a match link.
         </div>
       ) : (
         <div>
           {wsError && (
-            <div style={{ color: '#f87171', marginBottom: 10, fontSize: 13 }}>{wsError}</div>
+            <div style={{ color: '#ff8a75', marginBottom: 10, fontSize: 13 }}>{wsError}</div>
           )}
 
           {/* Canvas host — always in DOM so Phaser can mount; hidden until ready */}
           <div className="tm-canvas-wrap" style={{
             width: CANVAS, height: CANVAS,
-            border: '1px solid #2d2d4e', borderRadius: 8,
+            border: '1px solid #23577a', borderRadius: 0,
             overflow: 'hidden',
             display: snapshot && !matchPending ? 'block' : 'none',
           }}>
@@ -290,13 +290,13 @@ export default function Watch() {
           {(!snapshot || matchPending) && !wsError && (
             <div className="tm-canvas-wrap" style={{
               width: CANVAS, height: CANVAS,
-              border: '1px solid #2d2d4e', borderRadius: 8,
+              border: '1px solid #23577a', borderRadius: 0,
               display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-              gap: 14, color: '#64748b', fontSize: 14, background: '#0f0f1a',
+              gap: 14, color: '#5b87a3', fontSize: 14, background: '#0a3550',
             }}>
               <div style={{
-                width: 28, height: 28, border: '3px solid #2d2d4e',
-                borderTopColor: '#6366f1', borderRadius: '50%',
+                width: 28, height: 28, border: '3px solid #23577a',
+                borderTopColor: '#4fa8e0', borderRadius: '50%',
                 animation: 'spin 0.9s linear infinite',
               }} />
               <span>{matchPending ? 'Match is being processed… replaying automatically when ready' : 'Connecting to match…'}</span>

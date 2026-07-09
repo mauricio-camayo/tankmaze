@@ -4,9 +4,9 @@ import { getMySettings } from '../services/api';
 import type { UserSettings } from '../types';
 
 const tierColors: Record<string, string> = {
-  free: '#64748b',
-  builder: '#7c6af7',
-  pro: '#f59e0b',
+  free: '#5b87a3',
+  builder: '#ff7a29',
+  pro: '#e8b339',
 };
 
 // Mirrors db.TierLimits in packages/backend/internal/db/usersettings.go —
@@ -53,7 +53,7 @@ const TIERS: TierInfo[] = [
 
 function Check({ ok }: { ok: boolean }) {
   return (
-    <span style={{ color: ok ? '#4ade80' : '#475569', fontWeight: 700 }}>
+    <span style={{ color: ok ? '#59e6c0' : '#4a7291', fontWeight: 700 }}>
       {ok ? '✓' : '—'}
     </span>
   );
@@ -71,10 +71,10 @@ export default function Upgrade() {
   return (
     <Layout>
       <div style={{ textAlign: 'center', maxWidth: 640, margin: '0 auto 32px' }}>
-        <h1 style={{ fontSize: 28, fontWeight: 700, color: '#e2e8f0', margin: '0 0 12px' }}>
+        <h1 style={{ fontSize: 28, fontWeight: 700, color: '#e7f1f7', margin: '0 0 12px' }}>
           Upgrade your plan
         </h1>
-        <p style={{ color: '#94a3b8', fontSize: 15, lineHeight: 1.6, margin: 0 }}>
+        <p style={{ color: '#7fa2ba', fontSize: 15, lineHeight: 1.6, margin: 0 }}>
           TankMaze tiers exist to cover the cost of compiling your tank's code, not to give anyone an
           edge in the maze — every tier plays by the exact same rules. Paying just gets you more tanks,
           more compilations per month, and an ad-free experience.
@@ -99,29 +99,29 @@ export default function Upgrade() {
                   {tier.label}
                 </span>
                 {isCurrent && (
-                  <span style={{ background: tierColors[tier.id], color: '#0f0f1a', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 12 }}>
+                  <span style={{ background: tierColors[tier.id], color: '#0a3550', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 0 }}>
                     Current
                   </span>
                 )}
               </div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0', marginBottom: 12 }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#e7f1f7', marginBottom: 12 }}>
                 {tier.price}
               </div>
-              <p style={{ color: '#64748b', fontSize: 13, lineHeight: 1.5, margin: '0 0 20px', minHeight: 40 }}>
+              <p style={{ color: '#5b87a3', fontSize: 13, lineHeight: 1.5, margin: '0 0 20px', minHeight: 40 }}>
                 {tier.blurb}
               </p>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24, flex: 1 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
-                  <span style={{ color: '#94a3b8' }}>Tanks</span>
-                  <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{tier.tankLimit}</span>
+                  <span style={{ color: '#7fa2ba' }}>Tanks</span>
+                  <span style={{ color: '#e7f1f7', fontWeight: 600 }}>{tier.tankLimit}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
-                  <span style={{ color: '#94a3b8' }}>Compilations / month</span>
-                  <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{tier.compileLimit}</span>
+                  <span style={{ color: '#7fa2ba' }}>Compilations / month</span>
+                  <span style={{ color: '#e7f1f7', fontWeight: 600 }}>{tier.compileLimit}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
-                  <span style={{ color: '#94a3b8' }}>Ad-free</span>
+                  <span style={{ color: '#7fa2ba' }}>Ad-free</span>
                   <Check ok={!tier.ads} />
                 </div>
               </div>
@@ -148,7 +148,7 @@ export default function Upgrade() {
         })}
       </div>
 
-      <p style={{ textAlign: 'center', color: '#475569', fontSize: 12, marginTop: 28 }}>
+      <p style={{ textAlign: 'center', color: '#4a7291', fontSize: 12, marginTop: 28 }}>
         Paid plans are not yet available for purchase. This page shows what each tier will include —
         check back later, or watch the GitHub repo for updates.
       </p>

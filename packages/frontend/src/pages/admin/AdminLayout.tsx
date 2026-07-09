@@ -12,7 +12,7 @@ export default function AdminLayout() {
 
   return (
     <Layout>
-      <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid #2d2d4e' }}>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid #23577a' }}>
         {TABS.map((tab) => {
           const active = location.pathname.startsWith(tab.to);
           return (
@@ -21,8 +21,8 @@ export default function AdminLayout() {
               to={tab.to}
               style={{
                 padding: '10px 16px', fontSize: 14, textDecoration: 'none',
-                color: active ? '#e2e8f0' : '#94a3b8', fontWeight: active ? 600 : 400,
-                borderBottom: active ? '2px solid #7c6af7' : '2px solid transparent',
+                color: active ? '#e7f1f7' : '#7fa2ba', fontWeight: active ? 600 : 400,
+                borderBottom: active ? '2px solid #ff7a29' : '2px solid transparent',
                 marginBottom: -1, minHeight: 44, display: 'flex', alignItems: 'center',
               }}
             >

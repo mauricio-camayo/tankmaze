@@ -25,17 +25,17 @@ const DIR_KEYS: [string, string][] = [['0', 'N'], ['2', 'E'], ['1', 'S'], ['3', 
 
 function HPBar({ label, hp, color }: { label: string; hp: number; color: string }) {
   const pct = Math.max(0, Math.min(100, hp));
-  const barColor = pct > 50 ? '#4ade80' : pct > 25 ? '#fbbf24' : '#f87171';
+  const barColor = pct > 50 ? '#59e6c0' : pct > 25 ? '#e8b339' : '#ff8a75';
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
         <span style={{ color, fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {label}
         </span>
-        <span style={{ color: '#94a3b8', fontSize: 11, flexShrink: 0, marginLeft: 4 }}>{hp} HP</span>
+        <span style={{ color: '#7fa2ba', fontSize: 11, flexShrink: 0, marginLeft: 4 }}>{hp} HP</span>
       </div>
-      <div style={{ height: 6, background: '#2d2d4e', borderRadius: 3, overflow: 'hidden' }}>
-        <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: 3, transition: 'width 0.08s' }} />
+      <div style={{ height: 6, background: '#23577a', borderRadius: 0, overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: 0, transition: 'width 0.08s' }} />
       </div>
     </div>
   );
@@ -51,8 +51,8 @@ function SensorDots({ sensors }: { sensors: Record<string, unknown> | undefined 
       title={title}
       style={{
         display: 'inline-block',
-        width: 9, height: 9, borderRadius: 2,
-        background: blocked === null ? '#374151' : blocked ? '#f87171' : '#4ade80',
+        width: 9, height: 9, borderRadius: 0,
+        background: blocked === null ? '#1c4a63' : blocked ? '#ff8a75' : '#59e6c0',
         verticalAlign: 'middle',
       }}
     />
@@ -64,12 +64,12 @@ function SensorDots({ sensors }: { sensors: Record<string, unknown> | undefined 
         const dist = wd ? wd[key] : undefined;
         const blocked = dist === undefined ? null : dist === 0;
         return (
-          <span key={key} style={{ display: 'flex', alignItems: 'center', gap: 2, fontSize: 10, color: '#64748b' }}>
+          <span key={key} style={{ display: 'flex', alignItems: 'center', gap: 2, fontSize: 10, color: '#5b87a3' }}>
             {dot(blocked, `${label}: ${dist ?? '?'} cells`)} {label}
           </span>
         );
       })}
-      <span style={{ display: 'flex', alignItems: 'center', gap: 2, fontSize: 10, color: '#64748b' }}>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 2, fontSize: 10, color: '#5b87a3' }}>
         {dot(hasOpp, hasOpp ? 'Opponent in range' : 'Opponent not in range')} 👁
       </span>
     </div>
@@ -87,22 +87,22 @@ function TankDebugPanel({ label, data, color, obscured }: {
 
   return (
     <div style={{
-      background: '#0f0f1a', border: '1px solid #2d2d4e',
-      borderRadius: 6, padding: 10, fontSize: 11, lineHeight: 1.5,
+      background: '#0a3550', border: '1px solid #23577a',
+      borderRadius: 0, padding: 10, fontSize: 11, lineHeight: 1.5,
     }}>
       <div style={{ color, fontWeight: 600, marginBottom: 4 }}>{label}</div>
-      <div style={{ color: '#64748b' }}>
+      <div style={{ color: '#5b87a3' }}>
         ({data.position.x}, {data.position.y}) · {data.facing} · {data.hp} HP
       </div>
       {data.action && (
-        <div style={{ color: '#94a3b8' }}>
+        <div style={{ color: '#7fa2ba' }}>
           {data.action.type}{data.action.direction ? ` ${data.action.direction}` : ''}
         </div>
       )}
       {data.durationMs !== undefined && (
-        <div style={{ color: data.durationMs > 50 ? '#fbbf24' : '#475569' }}>
+        <div style={{ color: data.durationMs > 50 ? '#e8b339' : '#4a7291' }}>
           {data.durationMs}ms
-          {data.violation && <span style={{ color: '#f87171', marginLeft: 6 }}>⚠ violation</span>}
+          {data.violation && <span style={{ color: '#ff8a75', marginLeft: 6 }}>⚠ violation</span>}
         </div>
       )}
 
@@ -110,10 +110,10 @@ function TankDebugPanel({ label, data, color, obscured }: {
 
       {!obscured && memory !== undefined && (
         <details style={{ marginTop: 4 }}>
-          <summary style={{ color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>memory</summary>
+          <summary style={{ color: '#5b87a3', cursor: 'pointer', userSelect: 'none' }}>memory</summary>
           <pre style={{
-            color: '#475569', fontSize: 9, overflow: 'auto', maxHeight: 80,
-            background: '#0a0a14', padding: 4, borderRadius: 3, margin: '3px 0 0',
+            color: '#4a7291', fontSize: 9, overflow: 'auto', maxHeight: 80,
+            background: '#072943', padding: 4, borderRadius: 0, margin: '3px 0 0',
             whiteSpace: 'pre-wrap', wordBreak: 'break-all',
           }}>
             {JSON.stringify(memory, null, 2)}
@@ -122,9 +122,9 @@ function TankDebugPanel({ label, data, color, obscured }: {
       )}
 
       {!obscured && data.log && data.log.length > 0 && (
-        <div style={{ marginTop: 4, borderTop: '1px solid #2d2d4e', paddingTop: 4, maxHeight: 160, overflowY: 'auto' }}>
+        <div style={{ marginTop: 4, borderTop: '1px solid #23577a', paddingTop: 4, maxHeight: 160, overflowY: 'auto' }}>
           {data.log.slice(-10).map((line, i) => (
-            <div key={i} style={{ color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div key={i} style={{ color: '#4a7291', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {line}
             </div>
           ))}
@@ -132,13 +132,13 @@ function TankDebugPanel({ label, data, color, obscured }: {
       )}
 
       {!obscured && (!data.log || data.log.length === 0) && (
-        <div style={{ color: '#1e2433', fontSize: 10, marginTop: 4, fontStyle: 'italic' }}>
+        <div style={{ color: '#072943', fontSize: 10, marginTop: 4, fontStyle: 'italic' }}>
           no log output this tick
         </div>
       )}
 
       {obscured && (
-        <div style={{ color: '#374151', fontSize: 10, marginTop: 4, fontStyle: 'italic' }}>
+        <div style={{ color: '#1c4a63', fontSize: 10, marginTop: 4, fontStyle: 'italic' }}>
           memory & log hidden
         </div>
       )}
@@ -147,8 +147,8 @@ function TankDebugPanel({ label, data, color, obscured }: {
 }
 
 const ctrlBtn: React.CSSProperties = {
-  background: 'none', border: '1px solid #2d2d4e', color: '#94a3b8',
-  padding: '5px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 13,
+  background: 'none', border: '1px solid #23577a', color: '#7fa2ba',
+  padding: '5px 10px', borderRadius: 0, cursor: 'pointer', fontSize: 13,
 };
 
 export default function ObserverHUD({
@@ -173,27 +173,27 @@ export default function ObserverHUD({
   const showPrivateB = myTankSide === 'b' || myTankSide === 'both';
 
   return (
-    <div style={{ color: '#e2e8f0' }}>
+    <div style={{ color: '#e7f1f7' }}>
       {/* HP bars + tick counter */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-        <HPBar label={nameA} hp={hpA} color="#60a5fa" />
+        <HPBar label={nameA} hp={hpA} color="#4fa8e0" />
         <div style={{ flexShrink: 0, textAlign: 'center', minWidth: 64 }}>
-          <div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0', lineHeight: 1 }}>
+          <div style={{ fontSize: 18, fontWeight: 700, color: '#e7f1f7', lineHeight: 1 }}>
             {currentTick}
           </div>
-          <div style={{ fontSize: 11, color: '#64748b' }}>
+          <div style={{ fontSize: 11, color: '#5b87a3' }}>
             {totalTicks ? `/ ${totalTicks}` : 'tick'}
           </div>
         </div>
-        <HPBar label={nameB} hp={hpB} color="#f97316" />
+        <HPBar label={nameB} hp={hpB} color="#ff7a29" />
       </div>
 
       {/* Match over banner */}
       {matchOver && (
         <div style={{
           textAlign: 'center', padding: '7px 12px', marginBottom: 10,
-          background: 'rgba(124,106,247,0.15)', borderRadius: 6,
-          color: '#a78bfa', fontSize: 13,
+          background: 'rgba(124,106,247,0.15)', borderRadius: 0,
+          color: '#ffab6b', fontSize: 13,
         }}>
           {matchOver.winner === 'a'
             ? `${nameA} wins`
@@ -217,9 +217,9 @@ export default function ObserverHUD({
               onClick={() => onSpeed(s)}
               style={{
                 ...ctrlBtn,
-                background: speed === s ? '#7c6af7' : 'none',
-                color: speed === s ? '#fff' : '#64748b',
-                borderColor: speed === s ? '#7c6af7' : '#2d2d4e',
+                background: speed === s ? '#ff7a29' : 'none',
+                color: speed === s ? '#fff' : '#5b87a3',
+                borderColor: speed === s ? '#ff7a29' : '#23577a',
                 fontSize: 11, padding: '3px 7px',
               }}
             >
@@ -242,7 +242,7 @@ export default function ObserverHUD({
               const t = ticks[idx];
               if (t) onSeek(t.tick);
             }}
-            style={{ width: '100%', accentColor: '#7c6af7' }}
+            style={{ width: '100%', accentColor: '#ff7a29' }}
           />
         </div>
       )}
@@ -251,15 +251,15 @@ export default function ObserverHUD({
       <div>
         <button
           onClick={() => setShowDebug((d) => !d)}
-          style={{ background: 'none', border: 'none', color: '#475569', cursor: 'pointer', fontSize: 12, padding: 0 }}
+          style={{ background: 'none', border: 'none', color: '#4a7291', cursor: 'pointer', fontSize: 12, padding: 0 }}
         >
           {showDebug ? '▾' : '▸'} Debug
         </button>
 
         {showDebug && tickData && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
-            <TankDebugPanel label={`${nameA} (A)`} data={tickData.tankA} color="#60a5fa" obscured={!showPrivateA} />
-            <TankDebugPanel label={`${nameB} (B)`} data={tickData.tankB} color="#f97316" obscured={!showPrivateB} />
+            <TankDebugPanel label={`${nameA} (A)`} data={tickData.tankA} color="#4fa8e0" obscured={!showPrivateA} />
+            <TankDebugPanel label={`${nameB} (B)`} data={tickData.tankB} color="#ff7a29" obscured={!showPrivateB} />
           </div>
         )}
       </div>

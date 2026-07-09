@@ -19,16 +19,16 @@ const overlayStyle: React.CSSProperties = {
 };
 
 const dialogStyle: React.CSSProperties = {
-  background: '#1a1a2e', border: '1px solid #2d2d4e', borderRadius: 12,
+  background: '#082e4a', border: '1px solid #23577a', borderRadius: 0,
   padding: '24px', width: '100%', maxWidth: 440,
 };
 
 function radioStyle(selected: boolean): React.CSSProperties {
   return {
     display: 'flex', alignItems: 'flex-start', cursor: 'pointer',
-    padding: '10px 12px', borderRadius: 8,
-    border: `1px solid ${selected ? '#7c6af7' : '#2d2d4e'}`,
-    background: selected ? 'rgba(124,106,247,0.08)' : '#0f0f1a',
+    padding: '10px 12px', borderRadius: 0,
+    border: `1px solid ${selected ? '#ff7a29' : '#23577a'}`,
+    background: selected ? 'rgba(124,106,247,0.08)' : '#0a3550',
   };
 }
 
@@ -77,17 +77,17 @@ export default function ForkDialog({ tank, version, onClose, onForked }: ForkDia
   return (
     <div style={overlayStyle}>
       <div style={dialogStyle}>
-        <h3 style={{ margin: '0 0 8px', color: '#e2e8f0' }}>Fork {tank.name}</h3>
-        <p style={{ margin: '0 0 16px', color: '#94a3b8', fontSize: 14, lineHeight: 1.5 }}>
-          Creates a new tank from <strong style={{ color: '#a78bfa' }}>{version}</strong>.
+        <h3 style={{ margin: '0 0 8px', color: '#e7f1f7' }}>Fork {tank.name}</h3>
+        <p style={{ margin: '0 0 16px', color: '#7fa2ba', fontSize: 14, lineHeight: 1.5 }}>
+          Creates a new tank from <strong style={{ color: '#ffab6b' }}>{version}</strong>.
           You can develop it independently.
         </p>
 
         {hasScore && (
           <div style={{ marginBottom: 20 }}>
-            <p style={{ margin: '0 0 10px', color: '#94a3b8', fontSize: 13 }}>
+            <p style={{ margin: '0 0 10px', color: '#7fa2ba', fontSize: 13 }}>
               This tank has{' '}
-              <strong style={{ color: '#a78bfa' }}>{tank.globalScore.toLocaleString()} pts</strong>.
+              <strong style={{ color: '#ffab6b' }}>{tank.globalScore.toLocaleString()} pts</strong>.
               {' '}Where should the score go?
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -99,8 +99,8 @@ export default function ForkDialog({ tank, version, onClose, onForked }: ForkDia
                   style={{ marginRight: 10, marginTop: 2, flexShrink: 0 }}
                 />
                 <div>
-                  <div style={{ color: '#e2e8f0', fontSize: 14, fontWeight: 500 }}>Keep score on this tank</div>
-                  <div style={{ color: '#64748b', fontSize: 12, marginTop: 1 }}>The fork starts at 0 pts.</div>
+                  <div style={{ color: '#e7f1f7', fontSize: 14, fontWeight: 500 }}>Keep score on this tank</div>
+                  <div style={{ color: '#5b87a3', fontSize: 12, marginTop: 1 }}>The fork starts at 0 pts.</div>
                 </div>
               </label>
               <label style={radioStyle(disposition === 'transfer')}>
@@ -111,8 +111,8 @@ export default function ForkDialog({ tank, version, onClose, onForked }: ForkDia
                   style={{ marginRight: 10, marginTop: 2, flexShrink: 0 }}
                 />
                 <div>
-                  <div style={{ color: '#e2e8f0', fontSize: 14, fontWeight: 500 }}>Transfer score to the fork</div>
-                  <div style={{ color: '#f87171', fontSize: 12, marginTop: 1 }}>
+                  <div style={{ color: '#e7f1f7', fontSize: 14, fontWeight: 500 }}>Transfer score to the fork</div>
+                  <div style={{ color: '#ff8a75', fontSize: 12, marginTop: 1 }}>
                     This tank drops to 0 pts. Irreversible.
                   </div>
                 </div>
@@ -121,7 +121,7 @@ export default function ForkDialog({ tank, version, onClose, onForked }: ForkDia
           </div>
         )}
 
-        {error && <p style={{ color: '#f87171', fontSize: 13, margin: '0 0 12px' }}>{error}</p>}
+        {error && <p style={{ color: '#ff8a75', fontSize: 13, margin: '0 0 12px' }}>{error}</p>}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button onClick={onClose} disabled={loading} style={ghostButtonStyle}>Cancel</button>

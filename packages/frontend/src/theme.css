@@ -1,0 +1,49 @@
+/* ── TankMaze "field schematic" theme ──
+   Engineering-blueprint / hull-stencil visual system, applied app-wide.
+   See pages/Landing.css for the design rationale. These are the same
+   tokens, promoted to :root so every page can share them. */
+
+@import url('https://fonts.googleapis.com/css2?family=Allerta+Stencil&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --bp-bg: #0a3550;
+  --bp-bg-deep: #072943;
+  --bp-panel: #082e4a;
+  --bp-line: #e7f1f7;
+  --bp-steel: #7fa2ba;
+  --bp-steel-dim: #5b87a3;
+  --bp-steel-faint: #4a7291;
+  --bp-hazard: #ff7a29;
+  --bp-hazard-dim: #c9631f;
+  --bp-hazard-light: #ffab6b;
+  --bp-amber: #e8b339;
+  --bp-signal-blue: #4fa8e0;
+  --bp-readout: #59e6c0;
+  --bp-error: #ff8a75;
+  --bp-error-bg: #3a1a18;
+  --bp-grid: rgba(231, 241, 247, 0.055);
+  --bp-hairline: #23577a;
+  --bp-hairline-soft: rgba(231, 241, 247, 0.1);
+
+  --font-display: 'Allerta Stencil', sans-serif;
+  --font-body: 'IBM Plex Sans', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+}
+
+.tm-navlink:hover { color: var(--bp-line) !important; }
+
+a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 2px solid var(--bp-readout);
+  outline-offset: 2px;
+}
+
+html, body {
+  background-color: var(--bp-bg);
+  background-image:
+    linear-gradient(var(--bp-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--bp-grid) 1px, transparent 1px);
+  background-size: 28px 28px;
+  background-attachment: fixed;
+  color: var(--bp-line);
+  font-family: var(--font-body);
+}

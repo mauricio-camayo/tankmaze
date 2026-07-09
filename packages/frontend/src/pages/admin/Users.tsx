@@ -83,17 +83,17 @@ export default function AdminUsers() {
 
   return (
     <>
-      <h2 style={{ margin: '0 0 20px', color: '#e2e8f0' }}>Users</h2>
+      <h2 style={{ margin: '0 0 20px', color: '#e7f1f7' }}>Users</h2>
 
-      {error && <p style={{ color: '#f87171' }}>{error}</p>}
+      {error && <p style={{ color: '#ff8a75' }}>{error}</p>}
       {loading ? (
-        <p style={{ color: '#64748b' }}>Loading…</p>
+        <p style={{ color: '#5b87a3' }}>Loading…</p>
       ) : (
         <>
         <div style={cardStyle}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
-              <tr style={{ color: '#64748b', textAlign: 'left' }}>
+              <tr style={{ color: '#5b87a3', textAlign: 'left' }}>
                 <th style={th}>Name</th>
                 <th style={th}>Email</th>
                 <th style={th}>Status</th>
@@ -107,15 +107,15 @@ export default function AdminUsers() {
                 const isSelf = u.sub === currentUser?.userId;
                 const isBusy = busy === u.sub;
                 return (
-                  <tr key={u.sub} style={{ borderTop: '1px solid #2d2d4e' }}>
+                  <tr key={u.sub} style={{ borderTop: '1px solid #23577a' }}>
                     <td style={td}>
-                      <Link to={`/dashboard?userId=${u.sub}`} style={{ color: '#e2e8f0', textDecoration: 'none' }}>
+                      <Link to={`/dashboard?userId=${u.sub}`} style={{ color: '#e7f1f7', textDecoration: 'none' }}>
                         {u.name || u.email}
                       </Link>
                     </td>
                     <td style={td}>{u.email}</td>
                     <td style={td}>
-                      <span style={{ color: u.enabled ? '#4ade80' : '#f87171' }}>
+                      <span style={{ color: u.enabled ? '#59e6c0' : '#ff8a75' }}>
                         {u.enabled ? 'Active' : 'Disabled'}
                       </span>
                     </td>
@@ -134,8 +134,8 @@ export default function AdminUsers() {
                         disabled={isBusy}
                         onChange={(e) => changeTier(u, e.target.value)}
                         style={{
-                          background: '#0f0f1a', border: '1px solid #2d2d4e', borderRadius: 6,
-                          color: '#e2e8f0', padding: '3px 8px', fontSize: 12,
+                          background: '#0a3550', border: '1px solid #23577a', borderRadius: 0,
+                          color: '#e7f1f7', padding: '3px 8px', fontSize: 12,
                         }}
                       >
                         {TIERS.map((t) => (
@@ -159,7 +159,7 @@ export default function AdminUsers() {
                             <button
                               onClick={() => deleteUser(u.sub)}
                               disabled={isBusy}
-                              style={{ ...primaryButtonStyle, fontSize: 12, padding: '3px 10px', background: '#dc2626' }}
+                              style={{ ...primaryButtonStyle, fontSize: 12, padding: '3px 10px', background: '#e0503a' }}
                             >
                               Confirm
                             </button>
@@ -173,7 +173,7 @@ export default function AdminUsers() {
                         ) : (
                           <button
                             onClick={() => setConfirmDelete(u.sub)}
-                            style={{ ...ghostButtonStyle, fontSize: 12, padding: '3px 10px', color: '#f87171' }}
+                            style={{ ...ghostButtonStyle, fontSize: 12, padding: '3px 10px', color: '#ff8a75' }}
                           >
                             Delete
                           </button>
@@ -219,4 +219,4 @@ export default function AdminUsers() {
 }
 
 const th: React.CSSProperties = { padding: '8px 12px', fontWeight: 600, fontSize: 12 };
-const td: React.CSSProperties = { padding: '10px 12px', color: '#e2e8f0', verticalAlign: 'middle' };
+const td: React.CSSProperties = { padding: '10px 12px', color: '#e7f1f7', verticalAlign: 'middle' };

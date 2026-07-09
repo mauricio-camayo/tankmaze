@@ -56,17 +56,17 @@ export default function AdminTanks() {
 
   return (
     <>
-      <h2 style={{ margin: '0 0 20px', color: '#e2e8f0' }}>Tanks</h2>
+      <h2 style={{ margin: '0 0 20px', color: '#e7f1f7' }}>Tanks</h2>
 
-      {error && <p style={{ color: '#f87171' }}>{error}</p>}
+      {error && <p style={{ color: '#ff8a75' }}>{error}</p>}
       {loading ? (
-        <p style={{ color: '#64748b' }}>Loading…</p>
+        <p style={{ color: '#5b87a3' }}>Loading…</p>
       ) : (
         <>
         <div style={cardStyle}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
-              <tr style={{ color: '#64748b', textAlign: 'left' }}>
+              <tr style={{ color: '#5b87a3', textAlign: 'left' }}>
                 <th style={th}>Name</th>
                 <th style={th}>Author</th>
                 <th style={th}>Score</th>
@@ -77,7 +77,7 @@ export default function AdminTanks() {
               {tanks.map((t) => {
                 const isBusy = busy === t.tankId;
                 return (
-                  <tr key={t.tankId} style={{ borderTop: '1px solid #2d2d4e' }}>
+                  <tr key={t.tankId} style={{ borderTop: '1px solid #23577a' }}>
                     <td style={td}>
                       {editId === t.tankId ? (
                         <input
@@ -85,18 +85,18 @@ export default function AdminTanks() {
                           onChange={(e) => setEditName(e.target.value)}
                           onKeyDown={(e) => e.key === 'Enter' && saveName(t.tankId)}
                           style={{
-                            background: '#0f0f1a', border: '1px solid #4c4c7a', color: '#e2e8f0',
-                            padding: '3px 8px', borderRadius: 4, fontSize: 13, width: 180,
+                            background: '#0a3550', border: '1px solid #4a2a12', color: '#e7f1f7',
+                            padding: '3px 8px', borderRadius: 0, fontSize: 13, width: 180,
                           }}
                           autoFocus
                         />
                       ) : (
-                        <Link to={`/tanks/${t.tankId}`} style={{ color: '#e2e8f0', textDecoration: 'none' }}>
+                        <Link to={`/tanks/${t.tankId}`} style={{ color: '#e7f1f7', textDecoration: 'none' }}>
                           {t.name}
                         </Link>
                       )}
                     </td>
-                    <td style={{ ...td, color: '#94a3b8' }}>{t.authorName || t.userId.slice(0, 8)}</td>
+                    <td style={{ ...td, color: '#7fa2ba' }}>{t.authorName || t.userId.slice(0, 8)}</td>
                     <td style={td}>{t.globalScore.toLocaleString()}</td>
                     <td style={{ ...td, display: 'flex', gap: 8, alignItems: 'center' }}>
                       {editId === t.tankId ? (
@@ -128,7 +128,7 @@ export default function AdminTanks() {
                           <button
                             onClick={() => deleteTank(t.tankId)}
                             disabled={isBusy}
-                            style={{ ...primaryButtonStyle, fontSize: 12, padding: '3px 10px', background: '#dc2626' }}
+                            style={{ ...primaryButtonStyle, fontSize: 12, padding: '3px 10px', background: '#e0503a' }}
                           >
                             Confirm
                           </button>
@@ -142,7 +142,7 @@ export default function AdminTanks() {
                       ) : (
                         <button
                           onClick={() => setConfirmDelete(t.tankId)}
-                          style={{ ...ghostButtonStyle, fontSize: 12, padding: '3px 10px', color: '#f87171' }}
+                          style={{ ...ghostButtonStyle, fontSize: 12, padding: '3px 10px', color: '#ff8a75' }}
                         >
                           Delete
                         </button>
@@ -187,4 +187,4 @@ export default function AdminTanks() {
 }
 
 const th: React.CSSProperties = { padding: '8px 12px', fontWeight: 600, fontSize: 12 };
-const td: React.CSSProperties = { padding: '10px 12px', color: '#e2e8f0', verticalAlign: 'middle' };
+const td: React.CSSProperties = { padding: '10px 12px', color: '#e7f1f7', verticalAlign: 'middle' };

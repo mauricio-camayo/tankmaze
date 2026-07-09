@@ -18,7 +18,7 @@ function FriendAvatar({ name, picture }: { name: string; picture?: string }) {
   return (
     <div style={{
       width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
-      background: '#7c6af7', display: 'flex', alignItems: 'center',
+      background: '#ff7a29', display: 'flex', alignItems: 'center',
       justifyContent: 'center', fontSize: 16, fontWeight: 700, color: '#fff',
     }}>
       {name.charAt(0).toUpperCase()}
@@ -30,7 +30,7 @@ function FriendRow({ entry, actions }: { entry: FriendEntry; actions: React.Reac
   return (
     <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 14, marginBottom: 10 }}>
       <FriendAvatar name={entry.name} picture={entry.picture} />
-      <Link to={`/users/${entry.userId}`} style={{ flex: 1, minWidth: 0, color: '#e2e8f0', fontSize: 15, textDecoration: 'none' }}>
+      <Link to={`/users/${entry.userId}`} style={{ flex: 1, minWidth: 0, color: '#e7f1f7', fontSize: 15, textDecoration: 'none' }}>
         {entry.name}
       </Link>
       <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>{actions}</div>
@@ -68,16 +68,16 @@ export default function Friends() {
 
   return (
     <Layout>
-      <h1 style={{ margin: '0 0 24px', color: '#e2e8f0', fontSize: 22, fontWeight: 700 }}>Friends</h1>
+      <h1 style={{ margin: '0 0 24px', color: '#e7f1f7', fontSize: 22, fontWeight: 700 }}>Friends</h1>
 
-      {loading && <div style={{ color: '#64748b' }}>Loading…</div>}
-      {error && <div style={{ color: '#f87171', marginBottom: 16 }}>{error}</div>}
+      {loading && <div style={{ color: '#5b87a3' }}>Loading…</div>}
+      {error && <div style={{ color: '#ff8a75', marginBottom: 16 }}>{error}</div>}
 
       {!loading && data && (
         <>
           {data.incoming.length > 0 && (
             <div style={{ marginBottom: 28 }}>
-              <h2 style={{ fontSize: 14, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 12px' }}>
+              <h2 style={{ fontSize: 14, fontWeight: 600, color: '#7fa2ba', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 12px' }}>
                 Friend requests
               </h2>
               {data.incoming.map((entry) => (
@@ -108,11 +108,11 @@ export default function Friends() {
           )}
 
           <div style={{ marginBottom: 28 }}>
-            <h2 style={{ fontSize: 14, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 12px' }}>
+            <h2 style={{ fontSize: 14, fontWeight: 600, color: '#7fa2ba', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 12px' }}>
               Friends
             </h2>
             {data.friends.length === 0 ? (
-              <div style={{ ...cardStyle, color: '#64748b', textAlign: 'center', padding: '32px 24px' }}>
+              <div style={{ ...cardStyle, color: '#5b87a3', textAlign: 'center', padding: '32px 24px' }}>
                 No friends yet — add one from a tank author's profile.
               </div>
             ) : (
@@ -124,7 +124,7 @@ export default function Friends() {
                     <button
                       onClick={() => withBusy(entry.userId, () => removeFriend(entry.userId))}
                       disabled={busyId === entry.userId}
-                      style={{ ...ghostButtonStyle, borderColor: '#7f1d1d', color: '#f87171' }}
+                      style={{ ...ghostButtonStyle, borderColor: '#3a1a18', color: '#ff8a75' }}
                     >
                       Remove
                     </button>
@@ -136,7 +136,7 @@ export default function Friends() {
 
           {data.outgoing.length > 0 && (
             <div>
-              <h2 style={{ fontSize: 14, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 12px' }}>
+              <h2 style={{ fontSize: 14, fontWeight: 600, color: '#7fa2ba', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 12px' }}>
                 Sent requests
               </h2>
               {data.outgoing.map((entry) => (

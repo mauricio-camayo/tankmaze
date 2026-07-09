@@ -45,18 +45,18 @@ function TankCard({ tank }: TankCardProps) {
       <img
         src={avatarSrc(tank.tankId, tank.avatarUrl)}
         alt=""
-        style={{ width: 40, height: 40, borderRadius: 8, imageRendering: 'pixelated', border: '2px solid #2d2d4e', flexShrink: 0, marginRight: 12 }}
+        style={{ width: 40, height: 40, borderRadius: 0, imageRendering: 'pixelated', border: '2px solid #23577a', flexShrink: 0, marginRight: 12 }}
       />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
-          <h3 style={{ margin: 0, fontSize: 17, color: '#e2e8f0' }}>
-            {tank.name || <span style={{ color: '#64748b' }}>Unnamed Tank</span>}
+          <h3 style={{ margin: 0, fontSize: 17, color: '#e7f1f7' }}>
+            {tank.name || <span style={{ color: '#5b87a3' }}>Unnamed Tank</span>}
           </h3>
           {tank.scoreTransferredFrom && (
-            <span style={badgeStyle('#4a3f8a', '#a78bfa')}>score transferred</span>
+            <span style={badgeStyle('#4a2a12', '#ffab6b')}>score transferred</span>
           )}
           {tank.forkedFromTankId && (
-            <span style={badgeStyle('#2d3748', '#94a3b8')}>fork</span>
+            <span style={badgeStyle('#1c4a63', '#7fa2ba')}>fork</span>
           )}
         </div>
 
@@ -68,12 +68,12 @@ function TankCard({ tank }: TankCardProps) {
             <Stat label="Last active" value={relativeTime(tank.lastActiveAt)} />
           </div>
         ) : (
-          <p style={{ margin: '0 0 8px', color: '#64748b', fontSize: 13 }}>
+          <p style={{ margin: '0 0 8px', color: '#5b87a3', fontSize: 13 }}>
             No ranked matches yet
           </p>
         )}
 
-        <span style={{ fontSize: 12, color: '#475569' }}>
+        <span style={{ fontSize: 12, color: '#4a7291' }}>
           Created {formatDate(tank.createdAt)}
           {tank.forkedFromTankId && ' · forked'}
         </span>
@@ -94,10 +94,10 @@ function TankCard({ tank }: TankCardProps) {
 function Stat({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
     <div>
-      <div style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>
+      <div style={{ fontSize: 11, color: '#5b87a3', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>
         {label}
       </div>
-      <div style={{ fontSize: 15, fontWeight: 600, color: highlight ? '#a78bfa' : '#cbd5e1' }}>
+      <div style={{ fontSize: 15, fontWeight: 600, color: highlight ? '#ffab6b' : '#a8c4d6' }}>
         {value}
       </div>
     </div>
@@ -105,7 +105,7 @@ function Stat({ label, value, highlight }: { label: string; value: string; highl
 }
 
 function badgeStyle(bg: string, color: string): React.CSSProperties {
-  return { background: bg, color, fontSize: 11, padding: '2px 7px', borderRadius: 4, fontWeight: 500 };
+  return { background: bg, color, fontSize: 11, padding: '2px 7px', borderRadius: 0, fontWeight: 500 };
 }
 
 function nextPhaseTime(gd: GameDay): string {
@@ -129,27 +129,27 @@ function GameDayCard({ gd }: { gd: GameDay }) {
     Object.values(gd.phases.elimination ?? {}).some((p) => p.status === 'running');
 
   return (
-    <div style={{ ...cardStyle, marginBottom: 24, borderColor: isActive ? '#4ade8040' : '#2d2d4e' }}>
+    <div style={{ ...cardStyle, marginBottom: 24, borderColor: isActive ? '#59e6c040' : '#23577a' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <span style={{
-              fontSize: 11, fontWeight: 600, textTransform: 'uppercase', padding: '2px 8px', borderRadius: 4,
-              color: isActive ? '#4ade80' : '#fbbf24',
+              fontSize: 11, fontWeight: 600, textTransform: 'uppercase', padding: '2px 8px', borderRadius: 0,
+              color: isActive ? '#59e6c0' : '#e8b339',
               background: isActive ? 'rgba(74,222,128,0.1)' : 'rgba(251,191,36,0.1)',
-              border: `1px solid ${isActive ? '#4ade80' : '#fbbf24'}`,
+              border: `1px solid ${isActive ? '#59e6c0' : '#e8b339'}`,
             }}>
               {isFinal ? 'complete' : isActive ? 'active' : 'upcoming'}
             </span>
-            <span style={{ color: '#e2e8f0', fontSize: 15, fontWeight: 600 }}>
+            <span style={{ color: '#e7f1f7', fontSize: 15, fontWeight: 600 }}>
               {gd.name ? `${gd.name}` : 'Game Day'} — {new Date(gd.schedule.roundRobin).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
             </span>
           </div>
           {!isFinal && (
-            <div style={{ fontSize: 12, color: '#64748b' }}>{nextPhaseTime(gd)}</div>
+            <div style={{ fontSize: 12, color: '#5b87a3' }}>{nextPhaseTime(gd)}</div>
           )}
           {(gd.registeredTanks ?? []).length > 0 && (
-            <div style={{ fontSize: 12, color: '#a78bfa', marginTop: 4 }}>
+            <div style={{ fontSize: 12, color: '#ffab6b', marginTop: 4 }}>
               {(gd.registeredTanks ?? []).length} tank{(gd.registeredTanks ?? []).length !== 1 ? 's' : ''} registered
             </div>
           )}
@@ -187,8 +187,8 @@ function StatPips({ value, max = 5 }: { value: number; max?: number }) {
     <div style={{ display: 'flex', gap: 3 }}>
       {Array.from({ length: max }).map((_, i) => (
         <div key={i} style={{
-          width: 10, height: 10, borderRadius: 2,
-          background: i < value ? '#7c6af7' : '#2d2d4e',
+          width: 10, height: 10, borderRadius: 0,
+          background: i < value ? '#ff7a29' : '#23577a',
         }} />
       ))}
     </div>
@@ -213,20 +213,20 @@ function AiTankInfoModal({ aiTank, onFork, onClose, forking }: {
             <img
               src={avatarSrc(aiTank.tankId, aiTank.avatarUrl)}
               alt=""
-              style={{ width: 40, height: 40, borderRadius: 6, imageRendering: 'pixelated', border: '1px solid #2d2d4e', flexShrink: 0 }}
+              style={{ width: 40, height: 40, borderRadius: 0, imageRendering: 'pixelated', border: '1px solid #23577a', flexShrink: 0 }}
             />
-            <div style={{ fontWeight: 700, fontSize: 17, color: '#e2e8f0' }}>{aiTank.name}</div>
+            <div style={{ fontWeight: 700, fontSize: 17, color: '#e7f1f7' }}>{aiTank.name}</div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#5b87a3', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
         </div>
-        <p style={{ margin: '0 0 16px', fontSize: 13, color: '#94a3b8', lineHeight: 1.5 }}>
+        <p style={{ margin: '0 0 16px', fontSize: 13, color: '#7fa2ba', lineHeight: 1.5 }}>
           {AI_DESCRIPTIONS[aiTank.name] ?? ''}
         </p>
         {readyVersion && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
             {STAT_LABELS.map(({ key, label }) => (
               <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 12, color: '#64748b', width: 70 }}>{label}</span>
+                <span style={{ fontSize: 12, color: '#5b87a3', width: 70 }}>{label}</span>
                 <StatPips value={readyVersion.config[key] as number} />
               </div>
             ))}
@@ -276,10 +276,10 @@ function AiTemplateRow({ aiTanks, onForked }: { aiTanks: AiTank[]; onForked: () 
               <button
                 onClick={() => setSelected(isSelected ? null : ai.tankId)}
                 style={{
-                  background: isSelected ? 'rgba(124,106,247,0.15)' : '#1a1a2e',
-                  border: `1px solid ${isSelected ? '#7c6af7' : '#2d2d4e'}`,
+                  background: isSelected ? 'rgba(124,106,247,0.15)' : '#082e4a',
+                  border: `1px solid ${isSelected ? '#ff7a29' : '#23577a'}`,
                   borderRadius: '6px 0 0 6px',
-                  color: isSelected ? '#a78bfa' : '#cbd5e1',
+                  color: isSelected ? '#ffab6b' : '#a8c4d6',
                   padding: '4px 12px 4px 6px',
                   fontSize: 13, fontWeight: 600, cursor: 'pointer',
                   display: 'flex', alignItems: 'center', gap: 6,
@@ -288,7 +288,7 @@ function AiTemplateRow({ aiTanks, onForked }: { aiTanks: AiTank[]; onForked: () 
                 <img
                   src={avatarSrc(ai.tankId, ai.avatarUrl)}
                   alt=""
-                  style={{ width: 22, height: 22, borderRadius: 3, imageRendering: 'pixelated', flexShrink: 0 }}
+                  style={{ width: 22, height: 22, borderRadius: 0, imageRendering: 'pixelated', flexShrink: 0 }}
                 />
                 {ai.name}
               </button>
@@ -296,11 +296,11 @@ function AiTemplateRow({ aiTanks, onForked }: { aiTanks: AiTank[]; onForked: () 
                 onClick={() => setModal(ai.tankId)}
                 title={`About ${ai.name}`}
                 style={{
-                  background: isSelected ? 'rgba(124,106,247,0.10)' : '#1a1a2e',
-                  border: `1px solid ${isSelected ? '#7c6af7' : '#2d2d4e'}`,
+                  background: isSelected ? 'rgba(124,106,247,0.10)' : '#082e4a',
+                  border: `1px solid ${isSelected ? '#ff7a29' : '#23577a'}`,
                   borderLeft: 'none',
                   borderRadius: '0 6px 6px 0',
-                  color: '#64748b', padding: '6px 8px',
+                  color: '#5b87a3', padding: '6px 8px',
                   fontSize: 12, cursor: 'pointer',
                 }}
               >
@@ -391,28 +391,28 @@ export default function Dashboard() {
     <Layout>
       {viewUserId && (
         <div style={{ ...cardStyle, marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(124,106,247,0.08)', border: '1px solid rgba(124,106,247,0.3)' }}>
-          <span style={{ color: '#a78bfa', fontSize: 13 }}>
-            Viewing tanks for user <code style={{ background: 'rgba(124,106,247,0.15)', padding: '2px 6px', borderRadius: 4 }}>{viewUserId}</code>
+          <span style={{ color: '#ffab6b', fontSize: 13 }}>
+            Viewing tanks for user <code style={{ background: 'rgba(124,106,247,0.15)', padding: '2px 6px', borderRadius: 0 }}>{viewUserId}</code>
           </span>
-          <Link to="/admin/users" style={{ color: '#7c6af7', fontSize: 13 }}>← Back to Users</Link>
+          <Link to="/admin/users" style={{ color: '#ff7a29', fontSize: 13 }}>← Back to Users</Link>
         </div>
       )}
       {!viewUserId && runningGameDay && <GameDayCard gd={runningGameDay} />}
       {!viewUserId && upcomingGameDay && <GameDayCard gd={upcomingGameDay} />}
       {!viewUserId && aiTanks.length > 0 && (
         <div style={{ marginBottom: 36 }}>
-          <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 600, color: '#5b87a3', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             Start from a template
           </h3>
           <AiTemplateRow aiTanks={aiTanks} onForked={reload} />
         </div>
       )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
-        <h2 style={{ margin: 0, fontSize: 22, color: '#e2e8f0' }}>{viewUserId ? 'Tanks' : 'My Tanks'}</h2>
+        <h2 style={{ margin: 0, fontSize: 22, color: '#e7f1f7' }}>{viewUserId ? 'Tanks' : 'My Tanks'}</h2>
         {!viewUserId && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {atTankLimit && (
-              <span style={{ fontSize: 13, color: '#f59e0b' }}>
+              <span style={{ fontSize: 13, color: '#e8b339' }}>
                 Tank limit reached ({tanks.length}/{settings?.tankLimit})
               </span>
             )}
@@ -424,18 +424,18 @@ export default function Dashboard() {
       </div>
 
       {loading && (
-        <p style={{ color: '#64748b' }}>Loading…</p>
+        <p style={{ color: '#5b87a3' }}>Loading…</p>
       )}
 
       {error && (
-        <div style={{ ...cardStyle, borderColor: '#7f1d1d', color: '#fca5a5', marginBottom: 16 }}>
+        <div style={{ ...cardStyle, borderColor: '#3a1a18', color: '#ffb8a3', marginBottom: 16 }}>
           {error}
         </div>
       )}
 
       {!loading && !error && tanks.length === 0 && (
         <div style={{ ...cardStyle, textAlign: 'center', padding: '48px 24px' }}>
-          <p style={{ color: '#64748b', marginBottom: 16 }}>
+          <p style={{ color: '#5b87a3', marginBottom: 16 }}>
             {viewUserId ? 'This user has no tanks.' : "You haven't created any tanks yet."}
           </p>
           {!viewUserId && (

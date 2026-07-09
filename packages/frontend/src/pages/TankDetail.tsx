@@ -42,12 +42,12 @@ function relativeTime(ts: number): string {
 
 function StatusDot({ status }: { status: TankVersion['compileStatus'] }) {
   const colors: Record<string, string> = {
-    ready: '#4ade80', pending: '#fbbf24', compiling: '#60a5fa', failed: '#f87171',
+    ready: '#59e6c0', pending: '#e8b339', compiling: '#4fa8e0', failed: '#ff8a75',
   };
   return (
     <span style={{
       display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
-      background: colors[status] ?? '#94a3b8', flexShrink: 0,
+      background: colors[status] ?? '#7fa2ba', flexShrink: 0,
     }} />
   );
 }
@@ -57,8 +57,8 @@ function StatPips({ value }: { value: number }) {
     <div style={{ display: 'flex', gap: 2 }}>
       {Array.from({ length: 5 }).map((_, i) => (
         <div key={i} style={{
-          width: 8, height: 8, borderRadius: 2,
-          background: i < value ? '#7c6af7' : '#2d2d4e',
+          width: 8, height: 8, borderRadius: 0,
+          background: i < value ? '#ff7a29' : '#23577a',
         }} />
       ))}
     </div>
@@ -87,11 +87,11 @@ function GameDayPickerModal({
   return (
     <div style={overlay}>
       <div style={{ ...cardStyle, width: 440, maxHeight: '80vh', overflowY: 'auto' }}>
-        <h3 style={{ margin: '0 0 16px', color: '#e2e8f0' }}>Select Game Day</h3>
+        <h3 style={{ margin: '0 0 16px', color: '#e7f1f7' }}>Select Game Day</h3>
         {loading ? (
-          <p style={{ color: '#64748b', fontSize: 13, margin: '0 0 16px' }}>Loading game days…</p>
+          <p style={{ color: '#5b87a3', fontSize: 13, margin: '0 0 16px' }}>Loading game days…</p>
         ) : sorted.length === 0 ? (
-          <p style={{ color: '#64748b', fontSize: 13, margin: '0 0 16px' }}>No open game days right now.</p>
+          <p style={{ color: '#5b87a3', fontSize: 13, margin: '0 0 16px' }}>No open game days right now.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
             {sorted.map((gd) => {
@@ -106,13 +106,13 @@ function GameDayPickerModal({
                   key={gd.gameDayId}
                   onClick={() => onSelect(gd.gameDayId)}
                   style={{
-                    background: '#1a1a2e', border: '1px solid #2d2d4e', borderRadius: 6,
-                    color: '#e2e8f0', padding: '10px 14px', textAlign: 'left',
+                    background: '#082e4a', border: '1px solid #23577a', borderRadius: 0,
+                    color: '#e7f1f7', padding: '10px 14px', textAlign: 'left',
                     cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 4,
                   }}
                 >
                   <span style={{ fontSize: 14, fontWeight: 600 }}>{gd.name ?? final}</span>
-                  <span style={{ fontSize: 12, color: '#64748b' }}>
+                  <span style={{ fontSize: 12, color: '#5b87a3' }}>
                     Registration closes {regClose} · Final {final}
                   </span>
                 </button>
@@ -148,31 +148,31 @@ function TestDialog({
   return (
     <div style={overlay}>
       <div style={{ ...cardStyle, width: 420, maxHeight: '80vh', overflowY: 'auto' }}>
-        <h3 style={{ margin: '0 0 16px', color: '#e2e8f0' }}>Test vs AI</h3>
+        <h3 style={{ margin: '0 0 16px', color: '#e7f1f7' }}>Test vs AI</h3>
         <div style={{ marginBottom: 16 }}>
-          <p style={{ margin: '0 0 8px', fontSize: 13, color: '#94a3b8' }}>Opponent</p>
+          <p style={{ margin: '0 0 8px', fontSize: 13, color: '#7fa2ba' }}>Opponent</p>
           {(['scout', 'bruiser', 'ranger', 'randy'] as TestOpponent[]).map((op) => (
             <label key={op} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, cursor: 'pointer' }}>
               <input type="radio" name="td-opponent" value={op} checked={opponent === op} onChange={() => setOpponent(op)} />
-              <span style={{ color: '#e2e8f0', textTransform: 'capitalize', fontSize: 14 }}>{op}</span>
+              <span style={{ color: '#e7f1f7', textTransform: 'capitalize', fontSize: 14 }}>{op}</span>
             </label>
           ))}
         </div>
         <div style={{ marginBottom: 20 }}>
-          <p style={{ margin: '0 0 8px', fontSize: 13, color: '#94a3b8' }}>Map</p>
+          <p style={{ margin: '0 0 8px', fontSize: 13, color: '#7fa2ba' }}>Map</p>
           {loadingMaps ? (
-            <span style={{ color: '#64748b', fontSize: 13 }}>Loading maps…</span>
+            <span style={{ color: '#5b87a3', fontSize: 13 }}>Loading maps…</span>
           ) : (
             <>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, cursor: 'pointer' }}>
                 <input type="radio" name="td-map" value="" checked={mapId === null} onChange={() => selectMap(null)} />
-                <span style={{ color: '#e2e8f0', fontSize: 14 }}>Random (default)</span>
+                <span style={{ color: '#e7f1f7', fontSize: 14 }}>Random (default)</span>
               </label>
               {maps.map((m) => (
                 <label key={m.mapId} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, cursor: 'pointer' }}>
                   <input type="radio" name="td-map" value={m.mapId} checked={mapId === m.mapId} onChange={() => selectMap(m.mapId)} />
-                  <span style={{ color: '#e2e8f0', fontSize: 14 }}>{m.name}</span>
-                  <span style={{ color: '#64748b', fontSize: 12 }}>{m.description}</span>
+                  <span style={{ color: '#e7f1f7', fontSize: 14 }}>{m.name}</span>
+                  <span style={{ color: '#5b87a3', fontSize: 12 }}>{m.description}</span>
                 </label>
               ))}
             </>
@@ -195,39 +195,39 @@ function MajorVersionCard({ major, minors, isOwner }: { major: TankVersion; mino
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <span style={{ color: '#a78bfa', fontWeight: 700, fontSize: 15 }}>{major.version}</span>
+            <span style={{ color: '#ffab6b', fontWeight: 700, fontSize: 15 }}>{major.version}</span>
             {isOwner && <StatusDot status={major.compileStatus} />}
-            {isOwner && <span style={{ color: '#64748b', fontSize: 12 }}>{major.compileStatus}</span>}
+            {isOwner && <span style={{ color: '#5b87a3', fontSize: 12 }}>{major.compileStatus}</span>}
             {major.disqualified && (
-              <span style={{ background: '#f87171', color: '#fff', fontSize: 10, padding: '1px 6px', borderRadius: 4, fontWeight: 600 }}>DQ</span>
+              <span style={{ background: '#ff8a75', color: '#fff', fontSize: 10, padding: '1px 6px', borderRadius: 0, fontWeight: 600 }}>DQ</span>
             )}
             {(major.registeredForGameDays?.length ?? 0) > 0 && (
-              <span style={{ background: '#4ade80', color: '#0f0f1a', fontSize: 10, padding: '1px 6px', borderRadius: 4, fontWeight: 600 }}>
+              <span style={{ background: '#59e6c0', color: '#0a3550', fontSize: 10, padding: '1px 6px', borderRadius: 0, fontWeight: 600 }}>
                 REGISTERED{(major.registeredForGameDays!.length > 1) ? ` ×${major.registeredForGameDays!.length}` : ''}
               </span>
             )}
           </div>
-          <div style={{ color: '#64748b', fontSize: 12 }}>
+          <div style={{ color: '#5b87a3', fontSize: 12 }}>
             {relativeTime(major.createdAt)} · {new Date(major.createdAt * 1000).toLocaleDateString()}
           </div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'auto auto', gap: '2px 16px', fontSize: 13 }}>
-            <span style={{ color: '#64748b' }}>Win rate</span>
-            <span style={{ color: '#4ade80', fontWeight: 600, textAlign: 'right' }}>{pct(major.winRate)}</span>
-            <span style={{ color: '#64748b' }}>Matches</span>
-            <span style={{ color: '#e2e8f0', textAlign: 'right' }}>{num(major.matchesPlayed)}</span>
-            <span style={{ color: '#64748b' }}>Avg damage</span>
-            <span style={{ color: '#e2e8f0', textAlign: 'right' }}>{num(major.avgDamageDealt, 1)}</span>
-            <span style={{ color: '#64748b' }}>Avg survival</span>
-            <span style={{ color: '#e2e8f0', textAlign: 'right' }}>{num(major.avgSurvivalTicks)} tks</span>
+            <span style={{ color: '#5b87a3' }}>Win rate</span>
+            <span style={{ color: '#59e6c0', fontWeight: 600, textAlign: 'right' }}>{pct(major.winRate)}</span>
+            <span style={{ color: '#5b87a3' }}>Matches</span>
+            <span style={{ color: '#e7f1f7', textAlign: 'right' }}>{num(major.matchesPlayed)}</span>
+            <span style={{ color: '#5b87a3' }}>Avg damage</span>
+            <span style={{ color: '#e7f1f7', textAlign: 'right' }}>{num(major.avgDamageDealt, 1)}</span>
+            <span style={{ color: '#5b87a3' }}>Avg survival</span>
+            <span style={{ color: '#e7f1f7', textAlign: 'right' }}>{num(major.avgSurvivalTicks)} tks</span>
           </div>
       </div>
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         {(['speed', 'sensorRange', 'damage', 'armor', 'fireRate'] as const).map((stat) => (
           <div key={stat} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={{ color: '#64748b', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            <span style={{ color: '#5b87a3', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               {stat === 'sensorRange' ? 'Sensor' : stat === 'fireRate' ? 'Fire' : stat.charAt(0).toUpperCase() + stat.slice(1)}
             </span>
             <StatPips value={major.config[stat]} />
@@ -236,10 +236,10 @@ function MajorVersionCard({ major, minors, isOwner }: { major: TankVersion; mino
       </div>
 
       {minors.length > 0 && (
-        <div style={{ marginTop: 14, borderTop: '1px solid #2d2d4e', paddingTop: 12 }}>
+        <div style={{ marginTop: 14, borderTop: '1px solid #23577a', paddingTop: 12 }}>
           <button
             onClick={() => setExpanded((e) => !e)}
-            style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 12, padding: 0 }}
+            style={{ background: 'none', border: 'none', color: '#5b87a3', cursor: 'pointer', fontSize: 12, padding: 0 }}
           >
             {expanded ? '▾' : '▸'} {minors.length} minor version{minors.length !== 1 ? 's' : ''}
           </button>
@@ -248,22 +248,22 @@ function MajorVersionCard({ major, minors, isOwner }: { major: TankVersion; mino
               {minors.map((mv) => (
                 <div key={mv.version} style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '5px 10px', borderRadius: 6, background: '#0f0f1a',
+                  padding: '5px 10px', borderRadius: 0, background: '#0a3550',
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <StatusDot status={mv.compileStatus} />
-                    <span style={{ color: '#94a3b8', fontSize: 12, marginLeft: 4 }}>{mv.version}</span>
+                    <span style={{ color: '#7fa2ba', fontSize: 12, marginLeft: 4 }}>{mv.version}</span>
                     {mv.compileStatus === 'failed' && (
-                      <span style={{ color: '#f87171', fontSize: 11 }}>compile failed</span>
+                      <span style={{ color: '#ff8a75', fontSize: 11 }}>compile failed</span>
                     )}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     {isOwner && (mv.testMatchCount ?? 0) > 0 && (
-                      <span style={{ color: '#475569', fontSize: 11 }}>
+                      <span style={{ color: '#4a7291', fontSize: 11 }}>
                         {mv.testMatchCount} test{mv.testMatchCount !== 1 ? 's' : ''}
                       </span>
                     )}
-                    <span style={{ color: '#475569', fontSize: 11 }}>
+                    <span style={{ color: '#4a7291', fontSize: 11 }}>
                       {new Date(mv.createdAt * 1000).toLocaleDateString()}
                     </span>
                   </div>
@@ -315,7 +315,7 @@ function GameDayHistory({ allGameDays, tankId }: { allGameDays: GameDay[]; tankI
     <div style={{ ...cardStyle, marginTop: 24 }}>
       <button
         onClick={() => setExpanded((e) => !e)}
-        style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 14, fontWeight: 600, padding: 0, width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8 }}
+        style={{ background: 'none', border: 'none', color: '#7fa2ba', cursor: 'pointer', fontSize: 14, fontWeight: 600, padding: 0, width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8 }}
       >
         {expanded ? '▾' : '▸'} Game Day History ({pastGds.length})
       </button>
@@ -326,14 +326,14 @@ function GameDayHistory({ allGameDays, tankId }: { allGameDays: GameDay[]; tankI
               month: 'short', day: 'numeric', year: 'numeric',
             });
             const result = gameDayResult(gd, tankId);
-            const resultColor = result === 'Winner' ? '#4ade80' : result === 'Finalist' ? '#fbbf24' : '#64748b';
+            const resultColor = result === 'Winner' ? '#59e6c0' : result === 'Finalist' ? '#e8b339' : '#5b87a3';
             return (
-              <div key={gd.gameDayId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #2d2d4e' }}>
+              <div key={gd.gameDayId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #23577a' }}>
                 <div>
-                  <Link to={`/gameday/${gd.gameDayId}`} style={{ color: '#a78bfa', textDecoration: 'none', fontSize: 14, fontWeight: 500 }}>
+                  <Link to={`/gameday/${gd.gameDayId}`} style={{ color: '#ffab6b', textDecoration: 'none', fontSize: 14, fontWeight: 500 }}>
                     {gd.name ?? date}
                   </Link>
-                  <div style={{ color: '#64748b', fontSize: 12, marginTop: 2 }}>{date}</div>
+                  <div style={{ color: '#5b87a3', fontSize: 12, marginTop: 2 }}>{date}</div>
                 </div>
                 <span style={{ color: resultColor, fontSize: 13, fontWeight: result === 'Winner' || result === 'Finalist' ? 600 : 400 }}>
                   {result}
@@ -350,7 +350,7 @@ function GameDayHistory({ allGameDays, tankId }: { allGameDays: GameDay[]; tankI
               >
                 Prev
               </button>
-              <span style={{ color: '#64748b', fontSize: 12, alignSelf: 'center' }}>{page + 1} / {totalPages}</span>
+              <span style={{ color: '#5b87a3', fontSize: 12, alignSelf: 'center' }}>{page + 1} / {totalPages}</span>
               <button
                 onClick={() => setPage((p) => p + 1)}
                 disabled={page >= totalPages - 1}
@@ -496,10 +496,10 @@ export default function TankDetail() {
   }
 
   if (loading) {
-    return <Layout><div style={{ color: '#64748b', padding: '40px 0' }}>Loading…</div></Layout>;
+    return <Layout><div style={{ color: '#5b87a3', padding: '40px 0' }}>Loading…</div></Layout>;
   }
   if (error || !tank) {
-    return <Layout><div style={{ color: '#f87171' }}>{error ?? 'Tank not found'}</div></Layout>;
+    return <Layout><div style={{ color: '#ff8a75' }}>{error ?? 'Tank not found'}</div></Layout>;
   }
 
   const isOwner = tank.userId === currentUser?.userId;
@@ -528,7 +528,7 @@ export default function TankDetail() {
   return (
     <Layout>
       <div style={{ marginBottom: 20 }}>
-        <Link to={isOwner ? '/dashboard' : '/leaderboard'} style={{ color: '#64748b', fontSize: 13, textDecoration: 'none' }}>
+        <Link to={isOwner ? '/dashboard' : '/leaderboard'} style={{ color: '#5b87a3', fontSize: 13, textDecoration: 'none' }}>
           {isOwner ? '← My tanks' : '← Leaderboard'}
         </Link>
       </div>
@@ -539,27 +539,27 @@ export default function TankDetail() {
             <img
               src={avatarSrc(tankId!, avatarUrl)}
               alt=""
-              style={{ width: 52, height: 52, borderRadius: 8, imageRendering: 'pixelated', border: '2px solid #2d2d4e', flexShrink: 0 }}
+              style={{ width: 52, height: 52, borderRadius: 0, imageRendering: 'pixelated', border: '2px solid #23577a', flexShrink: 0 }}
             />
-            <h1 style={{ margin: 0, color: '#e2e8f0', fontSize: 26, fontWeight: 700 }}>
+            <h1 style={{ margin: 0, color: '#e7f1f7', fontSize: 26, fontWeight: 700 }}>
               {tank.name}
             </h1>
           </div>
           <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
-            <span style={{ color: '#fbbf24', fontSize: 13, fontWeight: 600 }}>
+            <span style={{ color: '#e8b339', fontSize: 13, fontWeight: 600 }}>
               {rank !== null ? `#${rank}` : '#—'}
             </span>
-            <span style={{ color: '#a78bfa', fontSize: 20, fontWeight: 700 }}>
+            <span style={{ color: '#ffab6b', fontSize: 20, fontWeight: 700 }}>
               {tank.globalScore.toLocaleString()} pts
             </span>
             {tank.bestFinish !== null && (
-              <span style={{ color: '#94a3b8', fontSize: 13 }}>Best: {ordinal(tank.bestFinish)}</span>
+              <span style={{ color: '#7fa2ba', fontSize: 13 }}>Best: {ordinal(tank.bestFinish)}</span>
             )}
-            <span style={{ color: '#64748b', fontSize: 13 }}>
+            <span style={{ color: '#5b87a3', fontSize: 13 }}>
               {tank.gameDaysCount} game {tank.gameDaysCount === 1 ? 'day' : 'days'}
             </span>
             {tank.createdAt > 0 && (
-              <span style={{ color: '#64748b', fontSize: 13 }}
+              <span style={{ color: '#5b87a3', fontSize: 13 }}
                 title={new Date(tank.createdAt * 1000).toLocaleDateString()}>
                 submitted {relativeTime(tank.createdAt)}
               </span>
@@ -569,24 +569,24 @@ export default function TankDetail() {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {tank.forkedFromTankId && (
               <Link to={`/tanks/${tank.forkedFromTankId}`} style={{
-                color: '#60a5fa', fontSize: 12, textDecoration: 'none',
-                border: '1px solid #1d3855', borderRadius: 4, padding: '2px 8px', background: '#0d1f33',
+                color: '#4fa8e0', fontSize: 12, textDecoration: 'none',
+                border: '1px solid #072943', borderRadius: 0, padding: '2px 8px', background: '#072943',
               }}>
                 ⑂ fork of {tank.forkedFromVersion ?? tank.forkedFromTankId.slice(-8)}
               </Link>
             )}
             {tank.scoreTransferredFrom && (
               <span style={{
-                color: '#fbbf24', fontSize: 12,
-                border: '1px solid #3b2f0a', borderRadius: 4, padding: '2px 8px', background: '#1c1506',
+                color: '#e8b339', fontSize: 12,
+                border: '1px solid #3d2a10', borderRadius: 0, padding: '2px 8px', background: '#3d2a10',
               }}>
                 score transferred in
               </span>
             )}
             {tank.scoreTransferredTo && (
               <Link to={`/tanks/${tank.scoreTransferredTo}`} style={{
-                color: '#94a3b8', fontSize: 12, textDecoration: 'none',
-                border: '1px solid #2d2d4e', borderRadius: 4, padding: '2px 8px',
+                color: '#7fa2ba', fontSize: 12, textDecoration: 'none',
+                border: '1px solid #23577a', borderRadius: 0, padding: '2px 8px',
               }}>
                 score transferred out →
               </Link>
@@ -641,7 +641,7 @@ export default function TankDetail() {
             )}
             {isOwner && (confirmDelete ? (
               <>
-                <span style={{ color: '#f87171', fontSize: 13 }}>Delete forever?</span>
+                <span style={{ color: '#ff8a75', fontSize: 13 }}>Delete forever?</span>
                 <button
                   onClick={async () => {
                     setDeleting(true);
@@ -673,7 +673,7 @@ export default function TankDetail() {
                     }
                   }}
                   disabled={deleting}
-                  style={{ ...ghostButtonStyle, borderColor: '#7f1d1d', color: '#f87171' }}
+                  style={{ ...ghostButtonStyle, borderColor: '#3a1a18', color: '#ff8a75' }}
                 >
                   {deleting ? 'Deleting…' : 'Yes, delete'}
                 </button>
@@ -684,7 +684,7 @@ export default function TankDetail() {
             ) : (
               <button
                 onClick={() => setConfirmDelete(true)}
-                style={{ ...ghostButtonStyle, borderColor: '#7f1d1d', color: '#f87171' }}
+                style={{ ...ghostButtonStyle, borderColor: '#3a1a18', color: '#ff8a75' }}
               >
                 Delete
               </button>
@@ -710,7 +710,7 @@ export default function TankDetail() {
 
 
       {majors.length === 0 ? (
-        <div style={{ ...cardStyle, color: '#64748b', textAlign: 'center', padding: '40px 24px' }}>
+        <div style={{ ...cardStyle, color: '#5b87a3', textAlign: 'center', padding: '40px 24px' }}>
           No versions yet.{' '}
           {isOwner && (
             <button
@@ -734,7 +734,7 @@ export default function TankDetail() {
       })()}
 
       {registerError && (
-        <p style={{ color: '#f87171', fontSize: 13, margin: '0 0 12px' }}>{registerError}</p>
+        <p style={{ color: '#ff8a75', fontSize: 13, margin: '0 0 12px' }}>{registerError}</p>
       )}
 
       {showFork && tank && tankId && latestReadyMajor && (
@@ -777,8 +777,8 @@ export default function TankDetail() {
             display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
           }}>
             <div style={{ ...cardStyle, maxWidth: 420, width: '100%', padding: 28 }}>
-              <h3 style={{ margin: '0 0 12px', color: '#f87171', fontSize: 17 }}>Tank is registered</h3>
-              <p style={{ margin: '0 0 20px', color: '#94a3b8', fontSize: 14, lineHeight: 1.5 }}>
+              <h3 style={{ margin: '0 0 12px', color: '#ff8a75', fontSize: 17 }}>Tank is registered</h3>
+              <p style={{ margin: '0 0 20px', color: '#7fa2ba', fontSize: 14, lineHeight: 1.5 }}>
                 This tank is currently registered for
                 {gameDayLabel ? ` ${gameDayLabel}` : ' a game day'}.
                 To delete it, all registrations must be withdrawn first.
@@ -810,7 +810,7 @@ export default function TankDetail() {
                       alert(e instanceof Error ? e.message : 'Delete failed');
                     }
                   }}
-                  style={{ ...ghostButtonStyle, borderColor: '#7f1d1d', color: '#f87171' }}
+                  style={{ ...ghostButtonStyle, borderColor: '#3a1a18', color: '#ff8a75' }}
                 >
                   De-register &amp; delete
                 </button>

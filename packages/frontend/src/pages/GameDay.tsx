@@ -14,17 +14,17 @@ const BRACKET_LABELS: Record<string, string> = {
 
 function PhaseBadge({ status }: { status: GameDayPhaseStatus['status'] }) {
   const styles: Record<string, [string, string]> = {
-    upcoming: ['#fbbf24', 'rgba(251,191,36,0.1)'],
-    running: ['#4ade80', 'rgba(74,222,128,0.1)'],
-    complete: ['#475569', 'rgba(71,85,105,0.1)'],
-    cancelled: ['#f87171', 'rgba(248,113,113,0.1)'],
+    upcoming: ['#e8b339', 'rgba(251,191,36,0.1)'],
+    running: ['#59e6c0', 'rgba(74,222,128,0.1)'],
+    complete: ['#4a7291', 'rgba(71,85,105,0.1)'],
+    cancelled: ['#ff8a75', 'rgba(248,113,113,0.1)'],
   };
-  const [fg, bg] = styles[status] ?? ['#94a3b8', 'transparent'];
+  const [fg, bg] = styles[status] ?? ['#7fa2ba', 'transparent'];
   return (
     <span style={{
       color: fg, background: bg,
       border: `1px solid ${fg}`,
-      borderRadius: 4, fontSize: 11, padding: '2px 8px',
+      borderRadius: 0, fontSize: 11, padding: '2px 8px',
       fontWeight: 600, textTransform: 'uppercase',
     }}>
       {status}
@@ -44,9 +44,9 @@ function PhaseRow({ label, phase, scheduledAt }: { label: string; phase: GameDay
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <PhaseBadge status={phase.status} />
-        <span style={{ color: '#e2e8f0', fontSize: 14 }}>{label}</span>
+        <span style={{ color: '#e7f1f7', fontSize: 14 }}>{label}</span>
       </div>
-      {timeLabel && <span style={{ color: '#475569', fontSize: 12 }}>{timeLabel}</span>}
+      {timeLabel && <span style={{ color: '#4a7291', fontSize: 12 }}>{timeLabel}</span>}
     </div>
   );
 }
@@ -61,15 +61,15 @@ function wrapName(raw: string): React.ReactNode {
 
 function SlotCell({ slot }: { slot: BracketSlot }) {
   const statusColor: Record<string, string> = {
-    won: '#4ade80', lost: '#475569', both_lose: '#f87171', playing: '#fbbf24', bye: '#2d2d4e',
+    won: '#59e6c0', lost: '#4a7291', both_lose: '#ff8a75', playing: '#e8b339', bye: '#23577a',
   };
-  const color = statusColor[slot.status] ?? '#94a3b8';
+  const color = statusColor[slot.status] ?? '#7fa2ba';
   const rawName = slot.tankId ? (slot.tankName ?? slot.tankId) : null;
   const displayName = rawName ? wrapName(rawName) : null;
 
   return (
     <div style={{
-      padding: '6px 10px', borderRadius: 6,
+      padding: '6px 10px', borderRadius: 0,
       border: `1px solid ${color}30`,
       background: `${color}08`,
       fontSize: 12, minWidth: 140,
@@ -78,10 +78,10 @@ function SlotCell({ slot }: { slot: BracketSlot }) {
       {slot.tankId ? (
         <Link to={`/tanks/${slot.tankId}`} style={{ color, textDecoration: 'none' }}>
           {displayName}
-          {slot.version && <span style={{ color: '#475569', marginLeft: 6 }}>@ {slot.version}</span>}
+          {slot.version && <span style={{ color: '#4a7291', marginLeft: 6 }}>@ {slot.version}</span>}
         </Link>
       ) : (
-        <span style={{ color: '#475569' }}>bye</span>
+        <span style={{ color: '#4a7291' }}>bye</span>
       )}
       {slot.status !== 'playing' && slot.status !== 'bye' && (
         <span style={{ color, marginLeft: 8, fontSize: 10, fontWeight: 600 }}>
@@ -167,7 +167,7 @@ function BracketConnector({ fromRoundIndex, fromSlots, toSlots }: {
   return (
     <div style={{ flexShrink: 0, paddingTop: B_LABEL_H }}>
       <svg width={B_CONN_W} height={totalH} style={{ display: 'block' }}>
-        <g stroke="#334155" strokeWidth={1} fill="none" strokeLinecap="round">
+        <g stroke="#1c4a63" strokeWidth={1} fill="none" strokeLinecap="round">
           {lines}
         </g>
       </svg>
@@ -187,17 +187,17 @@ function BracketRound({ name, slots, roundIndex }: { name: string; slots: Bracke
 
   return (
     <div style={{ flexShrink: 0 }}>
-      <div style={{ color: '#64748b', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
+      <div style={{ color: '#5b87a3', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
         {BRACKET_LABELS[name] ?? name}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: B_PAIR_GAP }}>
         {pairs.map((pair, i) => (
           <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: B_SLOT_GAP, paddingTop: pairPad, paddingBottom: pairPad }}>
             <SlotCell slot={pair[0]} />
-            <div style={{ paddingLeft: 10, color: '#2d2d4e', fontSize: 10, lineHeight: `${B_VS_H}px`, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ paddingLeft: 10, color: '#23577a', fontSize: 10, lineHeight: `${B_VS_H}px`, display: 'flex', alignItems: 'center', gap: 8 }}>
               vs
               {pair[0].matchId && (
-                <Link to={`/watch?matchId=${pair[0].matchId}`} style={{ color: '#60a5fa', fontSize: 10 }}>Watch</Link>
+                <Link to={`/watch?matchId=${pair[0].matchId}`} style={{ color: '#4fa8e0', fontSize: 10 }}>Watch</Link>
               )}
             </div>
             <SlotCell slot={pair[1]} />
@@ -217,7 +217,7 @@ function RRStandingsTable({ group, gi }: {
 
   const label = `Group ${String.fromCharCode(65 + gi)}`;
   const groupLabel = (
-    <div style={{ color: '#475569', fontSize: 11, marginBottom: 8 }}>{label}</div>
+    <div style={{ color: '#4a7291', fontSize: 11, marginBottom: 8 }}>{label}</div>
   );
 
   const hasStandings = (group.standings ?? []).length > 0;
@@ -229,8 +229,8 @@ function RRStandingsTable({ group, gi }: {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {group.tanks.map(({ tankId }) => (
             <Link key={tankId} to={`/tanks/${tankId}`} style={{
-              color: '#94a3b8', fontSize: 13, textDecoration: 'none',
-              padding: '4px 8px', borderRadius: 4, background: '#0f0f1a',
+              color: '#7fa2ba', fontSize: 13, textDecoration: 'none',
+              padding: '4px 8px', borderRadius: 0, background: '#0a3550',
             }}>
               {nameMap.get(tankId) ?? tankId}
             </Link>
@@ -251,12 +251,12 @@ function RRStandingsTable({ group, gi }: {
   });
 
   const thStyle: React.CSSProperties = {
-    color: '#64748b', fontSize: 10, fontWeight: 600, textTransform: 'uppercase',
-    letterSpacing: '0.05em', padding: '0 6px 8px', borderBottom: '1px solid #2d2d4e',
+    color: '#5b87a3', fontSize: 10, fontWeight: 600, textTransform: 'uppercase',
+    letterSpacing: '0.05em', padding: '0 6px 8px', borderBottom: '1px solid #23577a',
     textAlign: 'center',
   };
   const tdStyle: React.CSSProperties = {
-    padding: '5px 6px', borderBottom: '1px solid #1a1a2e', verticalAlign: 'middle', textAlign: 'center',
+    padding: '5px 6px', borderBottom: '1px solid #082e4a', verticalAlign: 'middle', textAlign: 'center',
   };
 
   return (
@@ -285,25 +285,25 @@ function RRStandingsTable({ group, gi }: {
                     <span style={{ color: rankColor(ri + 1), fontWeight: 700 }}>{ri + 1}</span>
                   </td>
                   <td style={{ ...tdStyle, textAlign: 'left', padding: '5px 8px' }}>
-                    <Link to={`/tanks/${s.tankId}`} style={{ color: '#e2e8f0', textDecoration: 'none' }}>
+                    <Link to={`/tanks/${s.tankId}`} style={{ color: '#e7f1f7', textDecoration: 'none' }}>
                       {wrapName(name)}
                     </Link>
                   </td>
                   {rows.map((opp, ci) => {
                     if (ri === ci) {
                       return (
-                        <td key={ci} style={{ ...tdStyle, background: '#0a0a12' }} />
+                        <td key={ci} style={{ ...tdStyle, background: '#072943' }} />
                       );
                     }
                     const r = resultMap.get(`${s.tankId}:${opp.tankId}`);
                     if (!r || r.winner === '') {
-                      return <td key={ci} style={{ ...tdStyle, color: '#475569' }}>—</td>;
+                      return <td key={ci} style={{ ...tdStyle, color: '#4a7291' }}>—</td>;
                     }
                     // resultMap normalises winner so 'a' always means the row tank won.
                     const cellInfo =
-                      r.winner === 'both_lose' ? { label: 'B', bg: '#78350f', fg: '#fbbf24' } :
-                      r.winner === 'a'          ? { label: 'W', bg: '#14532d', fg: '#4ade80' } :
-                                                  { label: 'L', bg: '#1e1e2e', fg: '#f87171' };
+                      r.winner === 'both_lose' ? { label: 'B', bg: '#3d2a10', fg: '#e8b339' } :
+                      r.winner === 'a'          ? { label: 'W', bg: '#0f3d34', fg: '#59e6c0' } :
+                                                  { label: 'L', bg: '#072943', fg: '#ff8a75' };
                     return (
                       <td key={ci} style={{ ...tdStyle, background: cellInfo.bg }}>
                         {r.matchId ? (
@@ -316,9 +316,9 @@ function RRStandingsTable({ group, gi }: {
                       </td>
                     );
                   })}
-                  <td style={{ ...tdStyle, color: '#4ade80' }}>{s.wins}</td>
-                  <td style={{ ...tdStyle, color: '#f87171' }}>{s.losses}</td>
-                  <td style={{ ...tdStyle, color: '#a78bfa', fontWeight: 700 }}>{s.points}</td>
+                  <td style={{ ...tdStyle, color: '#59e6c0' }}>{s.wins}</td>
+                  <td style={{ ...tdStyle, color: '#ff8a75' }}>{s.losses}</td>
+                  <td style={{ ...tdStyle, color: '#ffab6b', fontWeight: 700 }}>{s.points}</td>
                 </tr>
               );
             })}
@@ -330,10 +330,10 @@ function RRStandingsTable({ group, gi }: {
 }
 
 function rankColor(rank: number): string {
-  if (rank === 1) return '#fbbf24';
-  if (rank === 2) return '#94a3b8';
-  if (rank === 3) return '#c2773d';
-  return '#475569';
+  if (rank === 1) return '#e8b339';
+  if (rank === 2) return '#7fa2ba';
+  if (rank === 3) return '#b8892f';
+  return '#4a7291';
 }
 
 function isUsable(v: TankVersion): boolean {
@@ -496,30 +496,30 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
   }
 
   const inpStyle: React.CSSProperties = {
-    background: '#0f0f1a', border: '1px solid #2d2d4e', borderRadius: 4,
-    color: '#e2e8f0', padding: '4px 8px', fontSize: 12, width: '100%',
+    background: '#0a3550', border: '1px solid #23577a', borderRadius: 0,
+    color: '#e7f1f7', padding: '4px 8px', fontSize: 12, width: '100%',
   };
 
   return (
     <div style={{ ...cardStyle, marginBottom: 20 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <span style={{ color: '#64748b', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        <span style={{ color: '#5b87a3', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
           Registered Tanks{roster.length > 0 ? ` — ${roster.length}` : ''}
         </span>
         {isAdmin && (
           <button
             onClick={() => setShowPicker((v) => !v)}
-            style={{ ...ghostButtonStyle, fontSize: 11, padding: '3px 10px', borderColor: '#a78bfa', color: '#a78bfa' }}
+            style={{ ...ghostButtonStyle, fontSize: 11, padding: '3px 10px', borderColor: '#ffab6b', color: '#ffab6b' }}
           >
             {showPicker ? 'Close' : '+ Add'}
           </button>
         )}
       </div>
 
-      {err && <p style={{ color: '#f87171', fontSize: 12, margin: '0 0 10px' }}>{err}</p>}
+      {err && <p style={{ color: '#ff8a75', fontSize: 12, margin: '0 0 10px' }}>{err}</p>}
 
       {roster.length === 0 ? (
-        <p style={{ color: '#475569', fontSize: 13, margin: 0 }}>No tanks registered yet.</p>
+        <p style={{ color: '#4a7291', fontSize: 13, margin: 0 }}>No tanks registered yet.</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {roster.map(({ tankId, version }, idx) => {
@@ -527,13 +527,13 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
             const name = info?.name ?? `…${tankId.slice(-8)}`;
             const author = info?.authorName ?? null;
             return (
-              <div key={`${tankId}-${idx}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #1a1a2e' }}>
+              <div key={`${tankId}-${idx}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #082e4a' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <Link to={`/tanks/${tankId}`} style={{ color: '#e2e8f0', fontSize: 13, textDecoration: 'none', fontWeight: 500 }}>
+                  <Link to={`/tanks/${tankId}`} style={{ color: '#e7f1f7', fontSize: 13, textDecoration: 'none', fontWeight: 500 }}>
                     {name}
                   </Link>
-                  {author && <span style={{ color: '#64748b', fontSize: 12 }}>by {author}</span>}
-                  <span style={{ color: '#475569', fontSize: 11 }}>@ {version}</span>
+                  {author && <span style={{ color: '#5b87a3', fontSize: 12 }}>by {author}</span>}
+                  <span style={{ color: '#4a7291', fontSize: 11 }}>@ {version}</span>
                 </div>
                 {isAdmin && (
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -542,7 +542,7 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
                         <button
                           onClick={() => handleRemove(tankId)}
                           disabled={busy === tankId}
-                          style={{ ...ghostButtonStyle, fontSize: 11, padding: '2px 8px', color: '#f87171', borderColor: '#dc2626', background: 'rgba(220,38,38,0.08)' }}
+                          style={{ ...ghostButtonStyle, fontSize: 11, padding: '2px 8px', color: '#ff8a75', borderColor: '#e0503a', background: 'rgba(220,38,38,0.08)' }}
                         >
                           Confirm remove
                         </button>
@@ -556,7 +556,7 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
                     ) : (
                       <button
                         onClick={() => handleRemove(tankId)}
-                        style={{ ...ghostButtonStyle, fontSize: 11, padding: '2px 8px', color: '#f87171', borderColor: '#7f1d1d' }}
+                        style={{ ...ghostButtonStyle, fontSize: 11, padding: '2px 8px', color: '#ff8a75', borderColor: '#3a1a18' }}
                       >
                         Remove
                       </button>
@@ -570,16 +570,16 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
       )}
 
       {isAdmin && showPicker && (
-        <div style={{ borderTop: '1px solid #2d2d4e', marginTop: 14, paddingTop: 12 }}>
+        <div style={{ borderTop: '1px solid #23577a', marginTop: 14, paddingTop: 12 }}>
           {aiTanks.length > 0 && (
             <div style={{ marginBottom: 12 }}>
-              <div style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>AI Tanks</div>
+              <div style={{ color: '#5b87a3', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>AI Tanks</div>
               {aiTanks.map((t) => {
                 const ver = t.versions[0]?.version ?? 'v0.1';
                 return (
                   <div key={t.tankId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                    <span style={{ color: '#e2e8f0', fontSize: 13 }}>
-                      {t.name} <span style={{ color: '#475569' }}>@ {ver}</span>
+                    <span style={{ color: '#e7f1f7', fontSize: 13 }}>
+                      {t.name} <span style={{ color: '#4a7291' }}>@ {ver}</span>
                     </span>
                     <button
                       onClick={() => addAi(t.tankId, ver)}
@@ -594,7 +594,7 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
             </div>
           )}
 
-          <div style={{ color: '#64748b', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Add by Name</div>
+          <div style={{ color: '#5b87a3', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Add by Name</div>
           <div style={{ position: 'relative', marginBottom: 8 }}>
             <input
               value={searchQuery}
@@ -607,11 +607,11 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
             {showDropdown && (
               <div style={{
                 position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10,
-                background: '#1a1a2e', border: '1px solid #2d2d4e', borderRadius: 4,
+                background: '#082e4a', border: '1px solid #23577a', borderRadius: 0,
                 boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
               }}>
                 {searchResults.length === 0 ? (
-                  <div style={{ padding: '6px 10px', color: '#475569', fontSize: 12 }}>No tanks found</div>
+                  <div style={{ padding: '6px 10px', color: '#4a7291', fontSize: 12 }}>No tanks found</div>
                 ) : (
                   searchResults.map((t) => (
                     <button
@@ -620,12 +620,12 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
                       style={{
                         display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between',
                         padding: '6px 10px', background: 'transparent', border: 'none',
-                        borderBottom: '1px solid #0f0f1a', cursor: 'pointer', textAlign: 'left',
+                        borderBottom: '1px solid #0a3550', cursor: 'pointer', textAlign: 'left',
                       }}
                     >
-                      <span style={{ color: '#e2e8f0', fontSize: 13 }}>{t.name}</span>
+                      <span style={{ color: '#e7f1f7', fontSize: 13 }}>{t.name}</span>
                       {t.authorName && (
-                        <span style={{ color: '#64748b', fontSize: 11 }}>by {t.authorName}</span>
+                        <span style={{ color: '#5b87a3', fontSize: 11 }}>by {t.authorName}</span>
                       )}
                     </button>
                   ))
@@ -636,7 +636,7 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
 
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: 6, alignItems: 'end' }}>
             <div>
-              <div style={{ color: '#64748b', fontSize: 10, marginBottom: 2 }}>Tank ID</div>
+              <div style={{ color: '#5b87a3', fontSize: 10, marginBottom: 2 }}>Tank ID</div>
               <input
                 value={manualId}
                 onChange={(e) => { setManualId(e.target.value); setSearchQuery(''); setMajorVersions([]); setManualVer(''); }}
@@ -646,9 +646,9 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
               />
             </div>
             <div>
-              <div style={{ color: '#64748b', fontSize: 10, marginBottom: 2 }}>Version</div>
+              <div style={{ color: '#5b87a3', fontSize: 10, marginBottom: 2 }}>Version</div>
               {verLoading ? (
-                <div style={{ ...inpStyle, color: '#475569' }}>…</div>
+                <div style={{ ...inpStyle, color: '#4a7291' }}>…</div>
               ) : majorVersions.length > 0 ? (
                 <select
                   value={manualVer}
@@ -723,8 +723,8 @@ export default function GameDayPage() {
     return () => clearInterval(id);
   }, [gameDayId, rrStatus]);
 
-  if (loading) return <Layout><div style={{ color: '#64748b', padding: '40px 0' }}>Loading…</div></Layout>;
-  if (error || !gameDay) return <Layout><div style={{ color: '#f87171' }}>{error ?? 'Game day not found'}</div></Layout>;
+  if (loading) return <Layout><div style={{ color: '#5b87a3', padding: '40px 0' }}>Loading…</div></Layout>;
+  if (error || !gameDay) return <Layout><div style={{ color: '#ff8a75' }}>{error ?? 'Game day not found'}</div></Layout>;
 
   const bracketRounds = Object.entries(gameDay.bracket ?? {})
     .filter(([, slots]) => slots.length > 0)
@@ -780,10 +780,10 @@ export default function GameDayPage() {
     <Layout>
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
-          <h1 style={{ margin: '0 0 4px', color: '#e2e8f0', fontSize: 22, fontWeight: 700 }}>
+          <h1 style={{ margin: '0 0 4px', color: '#e7f1f7', fontSize: 22, fontWeight: 700 }}>
             {gameDay.name ? `${gameDay.name}` : 'Game Day'}
           </h1>
-          <div style={{ color: '#64748b', fontSize: 13 }}>
+          <div style={{ color: '#5b87a3', fontSize: 13 }}>
             {new Date(schedule.roundRobin).toLocaleDateString(undefined, {
               weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
             })}
@@ -806,19 +806,19 @@ export default function GameDayPage() {
           border: '1px solid rgba(167,139,250,0.3)',
           background: 'rgba(167,139,250,0.04)',
         }}>
-          <div style={{ color: '#a78bfa', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
+          <div style={{ color: '#ffab6b', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
             Admin Info
           </div>
           <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', fontSize: 13 }}>
             <div>
-              <span style={{ color: '#64748b' }}>Auto-fill bracket: </span>
-              <span style={{ color: gameDay.autofill ? '#4ade80' : '#f87171', fontWeight: 600 }}>
+              <span style={{ color: '#5b87a3' }}>Auto-fill bracket: </span>
+              <span style={{ color: gameDay.autofill ? '#59e6c0' : '#ff8a75', fontWeight: 600 }}>
                 {gameDay.autofill ? 'ON' : 'OFF'}
               </span>
             </div>
             <div>
-              <span style={{ color: '#64748b' }}>Maps: </span>
-              <span style={{ color: '#e2e8f0' }}>
+              <span style={{ color: '#5b87a3' }}>Maps: </span>
+              <span style={{ color: '#e7f1f7' }}>
                 {gameDay.randomMaps
                   ? 'Random maze per match'
                   : (gameDay.forcedMapIds ?? []).length > 0
@@ -832,13 +832,13 @@ export default function GameDayPage() {
 
       {/* Phase timeline */}
       <div style={{ ...cardStyle, marginBottom: 20 }}>
-        <div style={{ color: '#64748b', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 14 }}>
+        <div style={{ color: '#5b87a3', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 14 }}>
           Schedule
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ color: '#94a3b8', fontSize: 14 }}>Registration closes</span>
-            <span style={{ color: '#475569', fontSize: 12 }}>
+            <span style={{ color: '#7fa2ba', fontSize: 14 }}>Registration closes</span>
+            <span style={{ color: '#4a7291', fontSize: 12 }}>
               {new Date(schedule.registrationClose).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
             </span>
           </div>
@@ -846,7 +846,7 @@ export default function GameDayPage() {
           {phases.roundRobin.status !== 'complete' ? (
             // Bracket not yet built — tank count unknown; skip pre-computed placeholder slots.
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ color: '#64748b', fontSize: 13, fontStyle: 'italic' }}>
+              <span style={{ color: '#5b87a3', fontSize: 13, fontStyle: 'italic' }}>
                 Elimination rounds (TBD — based on tank count)
               </span>
             </div>
@@ -857,8 +857,8 @@ export default function GameDayPage() {
                 <PhaseRow key={i} label={`Elimination R${i + 1}`} phase={ps} scheduledAt={ts} />
               ) : (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8', fontSize: 14 }}>Elimination R{i + 1}</span>
-                  <span style={{ color: '#475569', fontSize: 12 }}>
+                  <span style={{ color: '#7fa2ba', fontSize: 14 }}>Elimination R{i + 1}</span>
+                  <span style={{ color: '#4a7291', fontSize: 12 }}>
                     {new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
@@ -885,7 +885,7 @@ export default function GameDayPage() {
           border: '1px solid rgba(251,191,36,0.4)',
           background: 'rgba(251,191,36,0.06)',
         }}>
-          <p style={{ margin: 0, color: '#fbbf24', fontSize: 13, lineHeight: 1.5 }}>
+          <p style={{ margin: 0, color: '#e8b339', fontSize: 13, lineHeight: 1.5 }}>
             Registration closed with no registered tanks — tournament did not run.
           </p>
         </div>
@@ -898,7 +898,7 @@ export default function GameDayPage() {
           border: '1px solid rgba(148,163,184,0.3)',
           background: 'rgba(148,163,184,0.05)',
         }}>
-          <p style={{ margin: 0, color: '#94a3b8', fontSize: 13, lineHeight: 1.5 }}>
+          <p style={{ margin: 0, color: '#7fa2ba', fontSize: 13, lineHeight: 1.5 }}>
             Results not available — ranking data was not recorded for this tournament.
           </p>
         </div>
@@ -907,7 +907,7 @@ export default function GameDayPage() {
       {/* Groups cross-tables */}
       {showGroups && (
         <div style={{ ...cardStyle, marginBottom: 20 }}>
-          <div style={{ color: '#64748b', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 14 }}>
+          <div style={{ color: '#5b87a3', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 14 }}>
             Groups
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -930,7 +930,7 @@ export default function GameDayPage() {
         return (
           <div style={{ ...cardStyle, marginBottom: 20, overflowX: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <div style={{ color: '#64748b', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              <div style={{ color: '#5b87a3', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Bracket
               </div>
               {totalRounds > PAGE_SIZE && (
@@ -940,7 +940,7 @@ export default function GameDayPage() {
                     disabled={clampedPage === 0}
                     style={{ ...ghostButtonStyle, padding: '2px 10px', fontSize: 14, opacity: clampedPage === 0 ? 0.3 : 1 }}
                   >‹</button>
-                  <span style={{ color: '#475569', fontSize: 11 }}>
+                  <span style={{ color: '#4a7291', fontSize: 11 }}>
                     R{pageStart + 1}–R{pageEnd}
                   </span>
                   <button
@@ -975,7 +975,7 @@ export default function GameDayPage() {
       {/* Final standings — below all group cross-tables and bracket */}
       {standings.length > 0 && (
         <div style={{ ...cardStyle, marginBottom: 20 }}>
-          <div style={{ color: '#64748b', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 14 }}>
+          <div style={{ color: '#5b87a3', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 14 }}>
             Final standings
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -983,11 +983,11 @@ export default function GameDayPage() {
               <div key={tankId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 0' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ color: rankColor(i + 1), fontSize: 13, fontWeight: 700, width: 20 }}>{i + 1}</span>
-                  <Link to={`/tanks/${tankId}`} style={{ color: '#94a3b8', fontSize: 13, textDecoration: 'none' }}>
+                  <Link to={`/tanks/${tankId}`} style={{ color: '#7fa2ba', fontSize: 13, textDecoration: 'none' }}>
                     {tankNameMap.get(tankId) ?? tankId}
                   </Link>
                 </div>
-                <span style={{ color: '#a78bfa', fontWeight: 600, fontSize: 13 }}>+{pts} pts</span>
+                <span style={{ color: '#ffab6b', fontWeight: 600, fontSize: 13 }}>+{pts} pts</span>
               </div>
             ))}
           </div>

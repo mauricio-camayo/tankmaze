@@ -4,11 +4,11 @@
 .tm-hamburger {
   display: none;
   background: none;
-  border: 1px solid #2d2d4e;
-  color: #94a3b8;
+  border: 1px solid #23577a;
+  color: #7fa2ba;
   cursor: pointer;
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: 0;
   font-size: 18px;
   line-height: 1;
   min-height: 44px;
@@ -36,8 +36,8 @@
   top: 56px;
   left: 0;
   right: 0;
-  background: #1a1a2e;
-  border-bottom: 1px solid #2d2d4e;
+  background: #082e4a;
+  border-bottom: 1px solid #23577a;
   padding: 16px 24px;
   flex-direction: column;
   gap: 16px;

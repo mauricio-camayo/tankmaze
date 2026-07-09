@@ -1,19 +1,19 @@
 import { Link } from 'react-router-dom';
 
 const s = {
-  page:    { maxWidth: 720, margin: '0 auto', padding: '48px 24px', color: '#e2e8f0', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', lineHeight: 1.7 } as React.CSSProperties,
+  page:    { maxWidth: 720, margin: '0 auto', padding: '48px 24px', color: '#e7f1f7', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', lineHeight: 1.7 } as React.CSSProperties,
   h1:      { fontSize: 28, fontWeight: 700, marginBottom: 8 } as React.CSSProperties,
-  updated: { color: '#64748b', fontSize: 13, marginBottom: 40 } as React.CSSProperties,
-  h2:      { fontSize: 18, fontWeight: 600, marginTop: 36, marginBottom: 10, color: '#a78bfa' } as React.CSSProperties,
-  p:       { margin: '0 0 14px', color: '#94a3b8' } as React.CSSProperties,
-  ul:      { margin: '0 0 14px', paddingLeft: 20, color: '#94a3b8' } as React.CSSProperties,
-  a:       { color: '#7c6af7' } as React.CSSProperties,
-  back:    { display: 'inline-block', marginBottom: 32, color: '#7c6af7', fontSize: 14 } as React.CSSProperties,
+  updated: { color: '#5b87a3', fontSize: 13, marginBottom: 40 } as React.CSSProperties,
+  h2:      { fontSize: 18, fontWeight: 600, marginTop: 36, marginBottom: 10, color: '#ffab6b' } as React.CSSProperties,
+  p:       { margin: '0 0 14px', color: '#7fa2ba' } as React.CSSProperties,
+  ul:      { margin: '0 0 14px', paddingLeft: 20, color: '#7fa2ba' } as React.CSSProperties,
+  a:       { color: '#ff7a29' } as React.CSSProperties,
+  back:    { display: 'inline-block', marginBottom: 32, color: '#ff7a29', fontSize: 14 } as React.CSSProperties,
 };
 
 export default function PrivacyPolicy() {
   return (
-    <div style={{ background: '#0f0f1a', minHeight: '100vh' }}>
+    <div style={{ background: '#0a3550', minHeight: '100vh' }}>
       <div style={s.page}>
         <Link to="/dashboard" style={s.back}>← Back to TankMaze</Link>
 

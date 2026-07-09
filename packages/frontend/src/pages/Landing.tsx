@@ -3,30 +3,17 @@ import { useNavigate, Link } from 'react-router-dom';
 import { signIn, signInWithGoogle, signInWithFacebook, signUpWithEmail, confirmEmailSignUp, resendConfirmationCode, confirmPasswordReset } from '../services/auth';
 import { requestPasswordReset } from '../services/api';
 import { useAuthStore } from '../store/authStore';
+import './Landing.css';
 
 // Facebook IdP is wired up (CDK + backend) but not yet usable — no real
 // Facebook App exists yet. Flip once FACEBOOK_APP_ID/FACEBOOK_APP_SECRET are
 // set as GitHub secrets and a real login has been verified. See item 189.
 const FACEBOOK_LOGIN_ENABLED = false;
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', background: '#0f0f1a', border: '1px solid #2d2d4e', borderRadius: 6,
-  color: '#e2e8f0', padding: '8px 10px', fontSize: 14, boxSizing: 'border-box',
-};
-const labelStyle: React.CSSProperties = { fontSize: 13, color: '#94a3b8', display: 'block', marginBottom: 4 };
-const submitButtonStyle = (loading: boolean): React.CSSProperties => ({
-  width: '100%', background: '#7c6af7', border: 'none', color: '#fff', borderRadius: 8,
-  padding: '10px 0', fontWeight: 600, fontSize: 14, cursor: loading ? 'not-allowed' : 'pointer',
-  opacity: loading ? 0.7 : 1,
-});
-
-const feature = (emoji: string, title: string, desc: string) => (
-  <div key={title} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-    <span style={{ fontSize: 20, flexShrink: 0, lineHeight: 1.4 }}>{emoji}</span>
-    <div>
-      <div style={{ color: '#e2e8f0', fontWeight: 600, fontSize: 14, marginBottom: 2 }}>{title}</div>
-      <div style={{ color: '#64748b', fontSize: 13, lineHeight: 1.5 }}>{desc}</div>
-    </div>
+const spec = (tag: string, body: React.ReactNode) => (
+  <div key={tag} className="tm-bp-spec">
+    <span className="tm-bp-spec-tag">{tag}</span>
+    <div className="tm-bp-spec-body">{body}</div>
   </div>
 );
 
@@ -220,82 +207,78 @@ export default function Landing() {
     }
   }
 
+  const panelTitle = mode === 'signin' ? 'Sign in'
+    : mode === 'signup' ? 'Create account'
+    : mode === 'verify' ? 'Verify email'
+    : mode === 'forgot' ? 'Reset password'
+    : 'Enter reset code';
+
   return (
-    <div style={{ minHeight: '100vh', background: '#0f0f1a', color: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 16px' }}>
-      <div style={{ width: '100%', maxWidth: 880, display: 'flex', gap: 64, alignItems: 'flex-start', flexWrap: 'wrap', justifyContent: 'center' }}>
+    <div className="tm-bp">
+      <div className="tm-bp-sheet">
+        <span className="tm-bp-tick tm-bp-tick-tl" />
+        <span className="tm-bp-tick tm-bp-tick-tr" />
+        <span className="tm-bp-tick tm-bp-tick-bl" />
+        <span className="tm-bp-tick tm-bp-tick-br" />
 
         {/* Left — product description (always rendered, visible to crawlers) */}
-        <div style={{ flex: '1 1 340px', maxWidth: 440 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
+        <div className="tm-bp-left">
+          <div className="tm-bp-wordmark-row">
             <img src="/logo.png" alt="TankMaze logo" width={66} height={86} />
-            <h1 style={{ fontSize: 50, fontWeight: 800, margin: 0, letterSpacing: '-0.5px', display: 'flex', flexDirection: 'column', lineHeight: 1.05 }}>
+            <h1 className="tm-bp-wordmark">
               <span>Tank</span>
-              <span style={{ color: '#7c6af7' }}>Maze</span>
+              <span className="tm-bp-wordmark-accent">Maze</span>
             </h1>
           </div>
-          <p style={{ color: '#7c6af7', fontWeight: 600, fontSize: 13, margin: '0 0 20px', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-            A strategic programming game
-          </p>
+          <p className="tm-bp-kicker">A strategic programming game</p>
 
-          <p style={{ color: '#94a3b8', fontSize: 15, lineHeight: 1.7, margin: '0 0 8px' }}>
+          <svg className="tm-bp-trace" viewBox="0 0 400 34" width="100%" height="34" aria-hidden="true">
+            <path d="M2,17 L80,17 L80,4 L200,4 L200,30 L320,30 L320,17 L398,17" />
+            <circle cx="2" cy="17" r="3" />
+            <circle cx="398" cy="17" r="3" />
+          </svg>
+
+          <p className="tm-bp-lede">
             Somewhere in the labyrinth, an enemy tank is moving. You don't know where — only that your sensors just spiked and you have one tick to decide: advance, turn, fire, or wait for better data.
           </p>
-          <p style={{ color: '#64748b', fontSize: 14, lineHeight: 1.7, margin: '0 0 28px' }}>
+          <p className="tm-bp-sub">
             You don't drive a tank. You code one. Write the autonomous brain that drives your tank in Go, submit it, and watch your creation navigate fog-of-war, enemy contact, and the limits of its own hardware — without you.
           </p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 32 }}>
-            {feature('⚙️', 'Write a tank in Go', "Implement a Tick(sensors) Action function. It runs every 100 ms. Package-level variables are your tank's memory.")}
-            {feature('📊', 'Allocate stats', 'Distribute 15 points across speed, sensor range, damage, armor, and fire rate. Every build is a trade-off.')}
-            {feature('🏆', 'Compete in Game Days', 'Round-robin groups of 8 followed by single-elimination. Placement awards global ranking points.')}
-            {feature('🎬', 'Replay and debug', 'Every match recorded tick-by-tick. Replay at any speed, inspect sensor readings, memory, and console output.')}
+          <div className="tm-bp-specs">
+            {spec('BRAIN', <>Implement a <strong>Tick(sensors) Action</strong> function. It runs every 100&nbsp;ms. Package-level variables are your tank's memory.</>)}
+            {spec('LOADOUT', <>Distribute <strong>15 points</strong> across speed, sensor range, damage, armor, and fire rate. Every build is a trade-off.</>)}
+            {spec('GAME DAYS', <>Round-robin groups of 8 followed by <strong>single-elimination</strong>. Placement awards global ranking points.</>)}
+            {spec('REPLAY', <>Every match recorded <strong>tick-by-tick</strong>. Replay at any speed, inspect sensor readings, memory, and console output.</>)}
           </div>
 
-          <div style={{ marginTop: 4 }}>
-            <p style={{ color: '#475569', fontSize: 12, margin: '0 0 6px' }}>Open source · free to inspect and fork</p>
-            <a
-              href="https://github.com/mauricio-camayo/tankmaze"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                color: '#a78bfa', textDecoration: 'none', fontSize: 13, fontWeight: 600,
-                border: '1px solid #3d3060', borderRadius: 6, padding: '5px 10px',
-                background: 'rgba(124,106,247,0.08)',
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 005.47 7.59c.4.07.55-.17.55-.38v-1.34C3.73 14.36 3.26 12.8 3.26 12.8c-.36-.91-.88-1.15-.88-1.15-.72-.49.05-.48.05-.48.8.06 1.22.82 1.22.82.71 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.22 2.2.82A7.68 7.68 0 018 4.07c.68 0 1.36.09 2 .27 1.52-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.19c0 .21.15.46.55.38A8 8 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-              View on GitHub
-            </a>
-          </div>
+          <p className="tm-bp-repo-label">OPEN SOURCE — FREE TO INSPECT AND FORK</p>
+          <a href="https://github.com/mauricio-camayo/tankmaze" target="_blank" rel="noopener noreferrer" className="tm-bp-repo-link">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 005.47 7.59c.4.07.55-.17.55-.38v-1.34C3.73 14.36 3.26 12.8 3.26 12.8c-.36-.91-.88-1.15-.88-1.15-.72-.49.05-.48.05-.48.8.06 1.22.82 1.22.82.71 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.22 2.2.82A7.68 7.68 0 018 4.07c.68 0 1.36.09 2 .27 1.52-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.19c0 .21.15.46.55.38A8 8 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+            View on GitHub
+          </a>
         </div>
 
-        {/* Right — sign-in card, injected by JS only */}
+        {/* Right — sign-in panel, styled as a drafting title block; injected by JS only */}
         {formMounted && (
-          <div style={{ flex: '0 0 320px' }}>
-            <div style={{ background: '#1a1a2e', border: '1px solid #2d2d4e', borderRadius: 12, padding: '28px 24px' }}>
-              <h2 style={{ margin: '0 0 20px', fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}>
-                {mode === 'signin' ? 'Sign in'
-                  : mode === 'signup' ? 'Create account'
-                  : mode === 'verify' ? 'Verify your email'
-                  : mode === 'forgot' ? 'Reset your password'
-                  : 'Enter reset code'}
-              </h2>
+          <div className="tm-bp-panel">
+            <div className="tm-bp-panel-meta">
+              <div className="tm-bp-panel-meta-cell">
+                <span className="tm-bp-panel-meta-k">SHEET</span>
+                <span className="tm-bp-panel-meta-v">AUTH-01</span>
+              </div>
+              <div className="tm-bp-panel-meta-cell">
+                <span className="tm-bp-panel-meta-k">REV</span>
+                <span className="tm-bp-panel-meta-v">v{import.meta.env.VITE_APP_VERSION}</span>
+              </div>
+            </div>
+
+            <div className="tm-bp-panel-body">
+              <h2 className="tm-bp-panel-title">{panelTitle}</h2>
 
               {(mode === 'signin' || mode === 'signup') && (
                 <>
-                  <button
-                    type="button"
-                    onClick={handleGoogleSignIn}
-                    disabled={loading}
-                    style={{
-                      width: '100%', padding: '10px 0', marginBottom: 4,
-                      background: '#fff', color: '#1a1a1a', border: 'none',
-                      borderRadius: 8, cursor: loading ? 'not-allowed' : 'pointer',
-                      fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center',
-                      justifyContent: 'center', gap: 8,
-                    }}
-                  >
+                  <button type="button" onClick={handleGoogleSignIn} disabled={loading} className="tm-bp-btn-google">
                     <svg width="18" height="18" viewBox="0 0 48 48">
                       <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
                       <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
@@ -306,18 +289,7 @@ export default function Landing() {
                   </button>
 
                   {FACEBOOK_LOGIN_ENABLED && (
-                    <button
-                      type="button"
-                      onClick={handleFacebookSignIn}
-                      disabled={loading}
-                      style={{
-                        width: '100%', padding: '10px 0', marginTop: 8,
-                        background: '#1877F2', color: '#fff', border: 'none',
-                        borderRadius: 8, cursor: loading ? 'not-allowed' : 'pointer',
-                        fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center',
-                        justifyContent: 'center', gap: 8,
-                      }}
-                    >
+                    <button type="button" onClick={handleFacebookSignIn} disabled={loading} className="tm-bp-btn-facebook">
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff">
                         <path d="M22 12.06C22 6.51 17.52 2 12 2S2 6.51 2 12.06c0 5.02 3.66 9.18 8.44 9.94v-7.03H7.9v-2.91h2.54V9.85c0-2.51 1.49-3.9 3.77-3.9 1.09 0 2.23.2 2.23.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56v1.89h2.78l-.44 2.91h-2.34V22c4.78-.76 8.44-4.92 8.44-9.94z"/>
                       </svg>
@@ -325,274 +297,144 @@ export default function Landing() {
                     </button>
                   )}
 
-                  <div style={{ display: 'flex', alignItems: 'center', margin: '16px 0' }}>
-                    <hr style={{ flex: 1, border: 'none', borderTop: '1px solid #2d2d4e' }} />
-                    <span style={{ padding: '0 10px', color: '#475569', fontSize: 12 }}>or</span>
-                    <hr style={{ flex: 1, border: 'none', borderTop: '1px solid #2d2d4e' }} />
+                  <div className="tm-bp-divider">
+                    <hr /><span>OR</span><hr />
                   </div>
                 </>
               )}
 
               {mode === 'signin' && (
                 <form onSubmit={handleSubmit}>
-                  <div style={{ marginBottom: 12 }}>
-                    <label style={labelStyle}>Email</label>
-                    <input
-                      type="email"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      autoFocus
-                      required
-                      style={inputStyle}
-                    />
+                  <div className="tm-bp-field">
+                    <label className="tm-bp-label">Email</label>
+                    <input type="email" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus required className="tm-bp-input" />
                   </div>
-                  <div style={{ marginBottom: 16 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                      <label style={labelStyle}>Password</label>
-                      <button
-                        type="button"
-                        onClick={() => { setForgotEmail(username); setMode('forgot'); setError(null); setInfo(null); }}
-                        style={{ background: 'none', border: 'none', color: '#7c6af7', fontSize: 12, cursor: 'pointer', padding: 0, marginBottom: 4 }}
-                      >
+                  <div className="tm-bp-field">
+                    <div className="tm-bp-field-row">
+                      <label className="tm-bp-label">Password</label>
+                      <button type="button" onClick={() => { setForgotEmail(username); setMode('forgot'); setError(null); setInfo(null); }} className="tm-bp-link-btn">
                         Forgot password?
                       </button>
                     </div>
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                      style={inputStyle}
-                    />
+                    <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="tm-bp-input" />
                   </div>
-                  {error && <p style={{ color: '#f87171', fontSize: 13, margin: '0 0 12px' }}>{error}</p>}
-                  {info && <p style={{ color: '#4ade80', fontSize: 13, margin: '0 0 12px' }}>{info}</p>}
-                  <button type="submit" disabled={loading} style={submitButtonStyle(loading)}>
+                  {error && <p className="tm-bp-error">{error}</p>}
+                  {info && <p className="tm-bp-info">{info}</p>}
+                  <button type="submit" disabled={loading} className="tm-bp-submit">
                     {loading ? 'Signing in…' : 'Sign in'}
                   </button>
-                  <p style={{ textAlign: 'center', fontSize: 13, color: '#64748b', margin: '16px 0 0' }}>
+                  <p className="tm-bp-switch">
                     Don't have an account?{' '}
-                    <button
-                      type="button"
-                      onClick={() => { setMode('signup'); setError(null); setInfo(null); }}
-                      style={{ background: 'none', border: 'none', color: '#7c6af7', fontSize: 13, cursor: 'pointer', padding: 0, fontWeight: 600 }}
-                    >
-                      Create one
-                    </button>
+                    <button type="button" onClick={() => { setMode('signup'); setError(null); setInfo(null); }}>Create one</button>
                   </p>
                 </form>
               )}
 
               {mode === 'signup' && (
                 <form onSubmit={handleSignUp}>
-                  <div style={{ marginBottom: 12 }}>
-                    <label style={labelStyle}>Email</label>
-                    <input
-                      type="email"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      autoFocus
-                      required
-                      style={inputStyle}
-                    />
+                  <div className="tm-bp-field">
+                    <label className="tm-bp-label">Email</label>
+                    <input type="email" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus required className="tm-bp-input" />
                   </div>
-                  <div style={{ marginBottom: 16 }}>
-                    <label style={labelStyle}>Password</label>
-                    <input
-                      type="password"
-                      value={signupPassword}
-                      onChange={(e) => setSignupPassword(e.target.value)}
-                      required
-                      minLength={8}
-                      style={inputStyle}
-                    />
-                    <p style={{ margin: '4px 0 0', color: '#475569', fontSize: 11 }}>
-                      At least 8 characters, with uppercase, lowercase, and a digit.
-                    </p>
+                  <div className="tm-bp-field">
+                    <label className="tm-bp-label">Password</label>
+                    <input type="password" value={signupPassword} onChange={(e) => setSignupPassword(e.target.value)} required minLength={8} className="tm-bp-input" />
+                    <p className="tm-bp-hint">MIN. 8 CHARS — UPPER, LOWER, DIGIT</p>
                   </div>
-                  <div style={{ marginBottom: 16 }}>
-                    <label style={labelStyle}>Confirm password</label>
-                    <input
-                      type="password"
-                      value={signupConfirmPassword}
-                      onChange={(e) => setSignupConfirmPassword(e.target.value)}
-                      required
-                      minLength={8}
-                      style={inputStyle}
-                    />
+                  <div className="tm-bp-field">
+                    <label className="tm-bp-label">Confirm password</label>
+                    <input type="password" value={signupConfirmPassword} onChange={(e) => setSignupConfirmPassword(e.target.value)} required minLength={8} className="tm-bp-input" />
                   </div>
-                  {error && <p style={{ color: '#f87171', fontSize: 13, margin: '0 0 12px' }}>{error}</p>}
-                  <button type="submit" disabled={loading} style={submitButtonStyle(loading)}>
+                  {error && <p className="tm-bp-error">{error}</p>}
+                  <button type="submit" disabled={loading} className="tm-bp-submit">
                     {loading ? 'Creating account…' : 'Create account'}
                   </button>
-                  <p style={{ textAlign: 'center', fontSize: 13, color: '#64748b', margin: '16px 0 0' }}>
+                  <p className="tm-bp-switch">
                     Already have an account?{' '}
-                    <button
-                      type="button"
-                      onClick={() => { setMode('signin'); setError(null); setInfo(null); }}
-                      style={{ background: 'none', border: 'none', color: '#7c6af7', fontSize: 13, cursor: 'pointer', padding: 0, fontWeight: 600 }}
-                    >
-                      Sign in
-                    </button>
+                    <button type="button" onClick={() => { setMode('signin'); setError(null); setInfo(null); }}>Sign in</button>
                   </p>
                 </form>
               )}
 
               {mode === 'verify' && (
                 <form onSubmit={handleVerify}>
-                  <p style={{ color: '#94a3b8', fontSize: 13, lineHeight: 1.6, margin: '0 0 16px' }}>
-                    We sent a verification code to <strong style={{ color: '#e2e8f0' }}>{pendingEmail}</strong>. Enter it below to activate your account.
+                  <p className="tm-bp-hint" style={{ fontSize: 12.5, marginBottom: 16, lineHeight: 1.6, color: 'var(--bp-steel)' }}>
+                    We sent a verification code to <strong style={{ color: 'var(--bp-line)' }}>{pendingEmail}</strong>. Enter it below to activate your account.
                   </p>
-                  <div style={{ marginBottom: 16 }}>
-                    <label style={labelStyle}>Verification code</label>
-                    <input
-                      value={code}
-                      onChange={(e) => setCode(e.target.value)}
-                      autoFocus
-                      required
-                      inputMode="numeric"
-                      style={inputStyle}
-                    />
+                  <div className="tm-bp-field">
+                    <label className="tm-bp-label">Verification code</label>
+                    <input value={code} onChange={(e) => setCode(e.target.value)} autoFocus required inputMode="numeric" className="tm-bp-input" />
                   </div>
-                  {error && <p style={{ color: '#f87171', fontSize: 13, margin: '0 0 12px' }}>{error}</p>}
-                  {info && <p style={{ color: '#4ade80', fontSize: 13, margin: '0 0 12px' }}>{info}</p>}
-                  <button type="submit" disabled={loading} style={submitButtonStyle(loading)}>
+                  {error && <p className="tm-bp-error">{error}</p>}
+                  {info && <p className="tm-bp-info">{info}</p>}
+                  <button type="submit" disabled={loading} className="tm-bp-submit">
                     {loading ? 'Verifying…' : 'Verify'}
                   </button>
-                  <p style={{ textAlign: 'center', fontSize: 13, color: '#64748b', margin: '16px 0 0' }}>
-                    <button
-                      type="button"
-                      onClick={handleResendCode}
-                      style={{ background: 'none', border: 'none', color: '#7c6af7', fontSize: 13, cursor: 'pointer', padding: 0, fontWeight: 600 }}
-                    >
-                      Resend code
-                    </button>
+                  <p className="tm-bp-switch">
+                    <button type="button" onClick={handleResendCode}>Resend code</button>
                     {' · '}
-                    <button
-                      type="button"
-                      onClick={() => { setMode('signin'); setError(null); setInfo(null); }}
-                      style={{ background: 'none', border: 'none', color: '#64748b', fontSize: 13, cursor: 'pointer', padding: 0 }}
-                    >
-                      Back to sign in
-                    </button>
+                    <button type="button" className="muted" onClick={() => { setMode('signin'); setError(null); setInfo(null); }}>Back to sign in</button>
                   </p>
                 </form>
               )}
 
               {mode === 'forgot' && (
                 <form onSubmit={handleForgotSubmit}>
-                  <p style={{ color: '#94a3b8', fontSize: 13, lineHeight: 1.6, margin: '0 0 16px' }}>
+                  <p className="tm-bp-hint" style={{ fontSize: 12.5, marginBottom: 16, lineHeight: 1.6, color: 'var(--bp-steel)' }}>
                     Enter your account email and we'll send you a way to get back in.
                   </p>
-                  <div style={{ marginBottom: 16 }}>
-                    <label style={labelStyle}>Email</label>
-                    <input
-                      type="email"
-                      value={forgotEmail}
-                      onChange={(e) => setForgotEmail(e.target.value)}
-                      autoFocus
-                      required
-                      style={inputStyle}
-                    />
+                  <div className="tm-bp-field">
+                    <label className="tm-bp-label">Email</label>
+                    <input type="email" value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} autoFocus required className="tm-bp-input" />
                   </div>
-                  {error && <p style={{ color: '#f87171', fontSize: 13, margin: '0 0 12px' }}>{error}</p>}
-                  {info && <p style={{ color: '#4ade80', fontSize: 13, margin: '0 0 12px' }}>{info}</p>}
-                  <button type="submit" disabled={loading} style={submitButtonStyle(loading)}>
+                  {error && <p className="tm-bp-error">{error}</p>}
+                  {info && <p className="tm-bp-info">{info}</p>}
+                  <button type="submit" disabled={loading} className="tm-bp-submit">
                     {loading ? 'Sending…' : 'Send reset link'}
                   </button>
-                  <p style={{ textAlign: 'center', fontSize: 13, color: '#64748b', margin: '16px 0 0' }}>
-                    <button
-                      type="button"
-                      onClick={() => { setMode('reset'); setError(null); setInfo(null); }}
-                      style={{ background: 'none', border: 'none', color: '#7c6af7', fontSize: 13, cursor: 'pointer', padding: 0, fontWeight: 600 }}
-                    >
-                      I already have a code
-                    </button>
+                  <p className="tm-bp-switch">
+                    <button type="button" onClick={() => { setMode('reset'); setError(null); setInfo(null); }}>I already have a code</button>
                     {' · '}
-                    <button
-                      type="button"
-                      onClick={() => { setMode('signin'); setError(null); setInfo(null); }}
-                      style={{ background: 'none', border: 'none', color: '#64748b', fontSize: 13, cursor: 'pointer', padding: 0 }}
-                    >
-                      Back to sign in
-                    </button>
+                    <button type="button" className="muted" onClick={() => { setMode('signin'); setError(null); setInfo(null); }}>Back to sign in</button>
                   </p>
                 </form>
               )}
 
               {mode === 'reset' && (
                 <form onSubmit={handleResetSubmit}>
-                  <div style={{ marginBottom: 12 }}>
-                    <label style={labelStyle}>Email</label>
-                    <input
-                      type="email"
-                      value={forgotEmail}
-                      onChange={(e) => setForgotEmail(e.target.value)}
-                      autoFocus
-                      required
-                      style={inputStyle}
-                    />
+                  <div className="tm-bp-field">
+                    <label className="tm-bp-label">Email</label>
+                    <input type="email" value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} autoFocus required className="tm-bp-input" />
                   </div>
-                  <div style={{ marginBottom: 12 }}>
-                    <label style={labelStyle}>Reset code</label>
-                    <input
-                      value={resetCode}
-                      onChange={(e) => setResetCode(e.target.value)}
-                      required
-                      inputMode="numeric"
-                      style={inputStyle}
-                    />
+                  <div className="tm-bp-field">
+                    <label className="tm-bp-label">Reset code</label>
+                    <input value={resetCode} onChange={(e) => setResetCode(e.target.value)} required inputMode="numeric" className="tm-bp-input" />
                   </div>
-                  <div style={{ marginBottom: 12 }}>
-                    <label style={labelStyle}>New password</label>
-                    <input
-                      type="password"
-                      value={resetNewPassword}
-                      onChange={(e) => setResetNewPassword(e.target.value)}
-                      required
-                      minLength={8}
-                      style={inputStyle}
-                    />
+                  <div className="tm-bp-field">
+                    <label className="tm-bp-label">New password</label>
+                    <input type="password" value={resetNewPassword} onChange={(e) => setResetNewPassword(e.target.value)} required minLength={8} className="tm-bp-input" />
                   </div>
-                  <div style={{ marginBottom: 16 }}>
-                    <label style={labelStyle}>Confirm new password</label>
-                    <input
-                      type="password"
-                      value={resetConfirmPassword}
-                      onChange={(e) => setResetConfirmPassword(e.target.value)}
-                      required
-                      minLength={8}
-                      style={inputStyle}
-                    />
+                  <div className="tm-bp-field">
+                    <label className="tm-bp-label">Confirm new password</label>
+                    <input type="password" value={resetConfirmPassword} onChange={(e) => setResetConfirmPassword(e.target.value)} required minLength={8} className="tm-bp-input" />
                   </div>
-                  {error && <p style={{ color: '#f87171', fontSize: 13, margin: '0 0 12px' }}>{error}</p>}
-                  {info && <p style={{ color: '#4ade80', fontSize: 13, margin: '0 0 12px' }}>{info}</p>}
-                  <button type="submit" disabled={loading} style={submitButtonStyle(loading)}>
+                  {error && <p className="tm-bp-error">{error}</p>}
+                  {info && <p className="tm-bp-info">{info}</p>}
+                  <button type="submit" disabled={loading} className="tm-bp-submit">
                     {loading ? 'Resetting…' : 'Reset password'}
                   </button>
-                  <p style={{ textAlign: 'center', fontSize: 13, color: '#64748b', margin: '16px 0 0' }}>
-                    <button
-                      type="button"
-                      onClick={() => { setMode('signin'); setError(null); setInfo(null); }}
-                      style={{ background: 'none', border: 'none', color: '#64748b', fontSize: 13, cursor: 'pointer', padding: 0 }}
-                    >
-                      Back to sign in
-                    </button>
+                  <p className="tm-bp-switch">
+                    <button type="button" className="muted" onClick={() => { setMode('signin'); setError(null); setInfo(null); }}>Back to sign in</button>
                   </p>
                 </form>
               )}
 
-              <p style={{ marginTop: 20, textAlign: 'center', fontSize: 12, color: '#475569', margin: '20px 0 0' }}>
-                By continuing you agree to our{' '}
-                <Link to="/privacy" style={{ color: '#7c6af7' }}>Privacy Policy</Link>.
-              </p>
-              <p style={{ textAlign: 'center', fontSize: 11, color: '#334155', margin: '8px 0 0' }}>
-                v{import.meta.env.VITE_APP_VERSION}
+              <p className="tm-bp-legal">
+                By continuing you agree to our <Link to="/privacy">Privacy Policy</Link>.
               </p>
             </div>
           </div>
         )}
-
       </div>
     </div>
   );

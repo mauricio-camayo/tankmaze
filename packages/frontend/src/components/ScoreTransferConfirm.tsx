@@ -14,7 +14,7 @@ const overlayStyle: React.CSSProperties = {
 };
 
 const dialogStyle: React.CSSProperties = {
-  background: '#1a1a2e', border: '1px solid #2d2d4e', borderRadius: 12,
+  background: '#082e4a', border: '1px solid #23577a', borderRadius: 0,
   padding: '24px', width: '100%', maxWidth: 440,
 };
 
@@ -24,14 +24,14 @@ export default function ScoreTransferConfirm({ score, onConfirm, onCancel, loadi
   return (
     <div style={overlayStyle}>
       <div style={dialogStyle}>
-        <h3 style={{ margin: '0 0 12px', color: '#f87171' }}>Transfer score — are you sure?</h3>
-        <p style={{ margin: '0 0 8px', color: '#94a3b8', fontSize: 14, lineHeight: 1.5 }}>
+        <h3 style={{ margin: '0 0 12px', color: '#ff8a75' }}>Transfer score — are you sure?</h3>
+        <p style={{ margin: '0 0 8px', color: '#7fa2ba', fontSize: 14, lineHeight: 1.5 }}>
           You are about to transfer{' '}
-          <strong style={{ color: '#a78bfa' }}>{score.toLocaleString()} pts</strong>{' '}
+          <strong style={{ color: '#ffab6b' }}>{score.toLocaleString()} pts</strong>{' '}
           to the fork. This is{' '}
-          <strong style={{ color: '#f87171' }}>permanent and cannot be undone</strong>.
+          <strong style={{ color: '#ff8a75' }}>permanent and cannot be undone</strong>.
         </p>
-        <p style={{ margin: '0 0 20px', color: '#64748b', fontSize: 13 }}>
+        <p style={{ margin: '0 0 20px', color: '#5b87a3', fontSize: 13 }}>
           The original tank's score will be set to 0. Its game day history remains intact.
         </p>
 
@@ -42,7 +42,7 @@ export default function ScoreTransferConfirm({ score, onConfirm, onCancel, loadi
             onChange={(e) => setConfirmed(e.target.checked)}
             style={{ marginTop: 2, flexShrink: 0 }}
           />
-          <span style={{ color: '#94a3b8', fontSize: 13, lineHeight: 1.4 }}>
+          <span style={{ color: '#7fa2ba', fontSize: 13, lineHeight: 1.4 }}>
             I understand this will permanently transfer {score.toLocaleString()} pts and cannot be reversed.
           </span>
         </label>
@@ -53,9 +53,9 @@ export default function ScoreTransferConfirm({ score, onConfirm, onCancel, loadi
             onClick={onConfirm}
             disabled={!confirmed || loading}
             style={{
-              background: confirmed && !loading ? '#ef4444' : '#4b1a1a',
+              background: confirmed && !loading ? '#e0503a' : '#3a1a18',
               border: 'none', color: '#fff',
-              padding: '8px 16px', borderRadius: 6,
+              padding: '8px 16px', borderRadius: 0,
               cursor: confirmed && !loading ? 'pointer' : 'not-allowed',
               fontSize: 14, fontWeight: 600,
             }}

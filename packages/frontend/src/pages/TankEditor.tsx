@@ -157,7 +157,7 @@ function StatInput({
 }: { label: string; value: number; onChange: (n: number) => void }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+      <span style={{ fontSize: 11, color: '#5b87a3', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
         {label}
       </span>
       <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
@@ -166,9 +166,9 @@ function StatInput({
           style={{ ...stepBtn, borderRadius: '4px 0 0 4px' }}
         >−</button>
         <span style={{
-          width: 32, textAlign: 'center', background: '#0f0f1a',
-          border: '1px solid #2d2d4e', borderLeft: 'none', borderRight: 'none',
-          padding: '3px 0', fontSize: 14, color: '#e2e8f0',
+          width: 32, textAlign: 'center', background: '#0a3550',
+          border: '1px solid #23577a', borderLeft: 'none', borderRight: 'none',
+          padding: '3px 0', fontSize: 14, color: '#e7f1f7',
         }}>{value}</span>
         <button
           onClick={() => onChange(Math.min(5, value + 1))}
@@ -180,7 +180,7 @@ function StatInput({
 }
 
 const stepBtn: React.CSSProperties = {
-  background: '#2d2d4e', border: '1px solid #3d3d6e', color: '#e2e8f0',
+  background: '#23577a', border: '1px solid #4a2a12', color: '#e7f1f7',
   width: 28, height: 28, cursor: 'pointer', fontSize: 16, lineHeight: 1,
   display: 'flex', alignItems: 'center', justifyContent: 'center',
 };
@@ -199,15 +199,15 @@ function ConfigPanel({
     <div style={{ ...cardStyle, marginBottom: 12 }}>
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 160 }}>
-          <span style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          <span style={{ fontSize: 11, color: '#5b87a3', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             Tank Name
           </span>
           <input
             value={config.name}
             onChange={(e) => onChange({ ...config, name: e.target.value })}
             style={{
-              background: '#0f0f1a', border: '1px solid #2d2d4e', color: '#e2e8f0',
-              padding: '4px 8px', borderRadius: 4, fontSize: 14, height: 28,
+              background: '#0a3550', border: '1px solid #23577a', color: '#e7f1f7',
+              padding: '4px 8px', borderRadius: 0, fontSize: 14, height: 28,
             }}
           />
         </div>
@@ -215,11 +215,11 @@ function ConfigPanel({
           <StatInput key={k} label={STAT_LABELS[k]} value={config[k]} onChange={(v) => setStat(k, v)} />
         ))}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          <span style={{ fontSize: 11, color: '#5b87a3', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             Total
           </span>
           <span style={{
-            fontSize: 15, fontWeight: 700, color: valid ? '#4ade80' : '#f87171',
+            fontSize: 15, fontWeight: 700, color: valid ? '#59e6c0' : '#ff8a75',
             paddingTop: 4,
           }}>
             {sum}/{STAT_SUM_TARGET} {valid ? '✓' : '✗'}
@@ -252,11 +252,11 @@ function PreambleBanner({
   const preamble = `package tank\n\n${importBlock}\n\nvar Config = TankConfig{\n\tName:        ${JSON.stringify(cfg.name)},\n\tSpeed:       ${cfg.speed},\n\tSensorRange: ${cfg.sensorRange},\n\tDamage:      ${cfg.damage},\n\tArmor:       ${cfg.armor},\n\tFireRate:    ${cfg.fireRate},\n}`;
 
   return (
-    <div style={{ marginBottom: 8, border: '1px solid #2d2d4e', borderRadius: 6, overflow: 'hidden' }}>
+    <div style={{ marginBottom: 8, border: '1px solid #23577a', borderRadius: 0, overflow: 'hidden' }}>
       <button
         onClick={() => setExpanded((e) => !e)}
         style={{
-          width: '100%', background: '#1a1a2e', border: 'none', color: '#64748b',
+          width: '100%', background: '#082e4a', border: 'none', color: '#5b87a3',
           padding: '6px 12px', textAlign: 'left', cursor: 'pointer', fontSize: 12,
           display: 'flex', alignItems: 'center', gap: 6,
         }}
@@ -264,7 +264,7 @@ function PreambleBanner({
         <span>{expanded ? '▾' : '▸'}</span>
         <span>Preamble (read-only) — package, imports, Config</span>
         {imports.length > 0 && (
-          <span style={{ marginLeft: 'auto', fontSize: 11, color: '#60a5fa' }}>
+          <span style={{ marginLeft: 'auto', fontSize: 11, color: '#4fa8e0' }}>
             +{imports.length} stdlib import{imports.length > 1 ? 's' : ''}
           </span>
         )}
@@ -272,12 +272,12 @@ function PreambleBanner({
       {expanded && (
         <>
           <div style={{
-            padding: '8px 12px', background: '#0d0d1a', borderTop: '1px solid #1e1e3a',
+            padding: '8px 12px', background: '#072943', borderTop: '1px solid #072943',
             display: 'flex', gap: 16, flexWrap: 'wrap',
           }}>
-            <span style={{ fontSize: 11, color: '#64748b', alignSelf: 'center' }}>stdlib:</span>
+            <span style={{ fontSize: 11, color: '#5b87a3', alignSelf: 'center' }}>stdlib:</span>
             {STDLIB_IMPORTS.map(pkg => (
-              <label key={pkg} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 12, color: '#94a3b8' }}>
+              <label key={pkg} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 12, color: '#7fa2ba' }}>
                 <input
                   type="checkbox"
                   checked={imports.includes(pkg)}
@@ -288,8 +288,8 @@ function PreambleBanner({
             ))}
           </div>
           <pre style={{
-            margin: 0, padding: '10px 14px', background: '#0d0d1a', borderTop: '1px solid #1e1e3a',
-            color: '#64748b', fontSize: 12, overflowX: 'auto', userSelect: 'none',
+            margin: 0, padding: '10px 14px', background: '#072943', borderTop: '1px solid #072943',
+            color: '#5b87a3', fontSize: 12, overflowX: 'auto', userSelect: 'none',
           }}>{preamble}</pre>
         </>
       )}
@@ -311,28 +311,28 @@ function StatusBar({
   let dot: string;
   let label: string;
   if (status === 'submitting') {
-    dot = '#94a3b8'; label = 'Uploading…';
+    dot = '#7fa2ba'; label = 'Uploading…';
   } else if (status === 'polling') {
-    dot = '#fbbf24';
+    dot = '#e8b339';
     label = (!pollingPhase || pollingPhase === 'queued') ? 'Queued…' : `Compiling… ${elapsedSecs ?? 0}s`;
   } else if (status === 'ready') {
-    dot = '#4ade80'; label = `Compiled OK${version ? ` · ${version}` : ''}`;
+    dot = '#59e6c0'; label = `Compiled OK${version ? ` · ${version}` : ''}`;
   } else if (status === 'failed') {
-    dot = '#f87171'; label = 'Compile failed';
+    dot = '#ff8a75'; label = 'Compile failed';
   } else {
-    dot = '#94a3b8'; label = status;
+    dot = '#7fa2ba'; label = status;
   }
 
   return (
     <div style={{ marginTop: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: error ? 8 : 0 }}>
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: dot, flexShrink: 0 }} />
-        <span style={{ fontSize: 13, color: '#94a3b8' }}>{label}</span>
+        <span style={{ fontSize: 13, color: '#7fa2ba' }}>{label}</span>
       </div>
       {error && (
         <pre style={{
-          background: '#1c0a0a', border: '1px solid #7f1d1d', color: '#fca5a5',
-          borderRadius: 6, padding: '12px 16px', fontSize: 12,
+          background: '#3a1a18', border: '1px solid #3a1a18', color: '#ffb8a3',
+          borderRadius: 0, padding: '12px 16px', fontSize: 12,
           overflowX: 'auto', overflowY: 'auto', maxHeight: '200px',
           margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
         }}>{error}</pre>
@@ -364,10 +364,10 @@ function TestDialog({
   return (
     <div style={overlay}>
       <div style={{ ...cardStyle, width: 420, maxHeight: '80vh', overflowY: 'auto' }}>
-        <h3 style={{ margin: '0 0 16px', color: '#e2e8f0' }}>Test vs AI</h3>
+        <h3 style={{ margin: '0 0 16px', color: '#e7f1f7' }}>Test vs AI</h3>
 
         <div style={{ marginBottom: 16 }}>
-          <p style={{ margin: '0 0 8px', fontSize: 13, color: '#94a3b8' }}>Opponent</p>
+          <p style={{ margin: '0 0 8px', fontSize: 13, color: '#7fa2ba' }}>Opponent</p>
           {(['scout', 'bruiser', 'ranger', 'randy'] as TestOpponent[]).map((op) => (
             <label key={op} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, cursor: 'pointer' }}>
               <input
@@ -377,26 +377,26 @@ function TestDialog({
                 checked={opponent === op}
                 onChange={() => setOpponent(op)}
               />
-              <span style={{ color: '#e2e8f0', textTransform: 'capitalize', fontSize: 14 }}>{op}</span>
+              <span style={{ color: '#e7f1f7', textTransform: 'capitalize', fontSize: 14 }}>{op}</span>
             </label>
           ))}
         </div>
 
         <div style={{ marginBottom: 20 }}>
-          <p style={{ margin: '0 0 8px', fontSize: 13, color: '#94a3b8' }}>Map</p>
+          <p style={{ margin: '0 0 8px', fontSize: 13, color: '#7fa2ba' }}>Map</p>
           {loadingMaps ? (
-            <span style={{ color: '#64748b', fontSize: 13 }}>Loading maps…</span>
+            <span style={{ color: '#5b87a3', fontSize: 13 }}>Loading maps…</span>
           ) : (
             <>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, cursor: 'pointer' }}>
                 <input type="radio" name="map" value="" checked={mapId === null} onChange={() => selectMap(null)} />
-                <span style={{ color: '#e2e8f0', fontSize: 14 }}>Random (default)</span>
+                <span style={{ color: '#e7f1f7', fontSize: 14 }}>Random (default)</span>
               </label>
               {maps.map((m) => (
                 <label key={m.mapId} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, cursor: 'pointer' }}>
                   <input type="radio" name="map" value={m.mapId} checked={mapId === m.mapId} onChange={() => selectMap(m.mapId)} />
-                  <span style={{ color: '#e2e8f0', fontSize: 14 }}>{m.name}</span>
-                  <span style={{ color: '#64748b', fontSize: 12 }}>{m.description}</span>
+                  <span style={{ color: '#e7f1f7', fontSize: 14 }}>{m.name}</span>
+                  <span style={{ color: '#5b87a3', fontSize: 12 }}>{m.description}</span>
                 </label>
               ))}
             </>
@@ -430,12 +430,12 @@ function GameDayPickerModal({
   return (
     <div style={overlay}>
       <div style={{ ...cardStyle, width: 440, maxHeight: '80vh', overflowY: 'auto' }}>
-        <h3 style={{ margin: '0 0 16px', color: '#e2e8f0' }}>Select Game Day</h3>
+        <h3 style={{ margin: '0 0 16px', color: '#e7f1f7' }}>Select Game Day</h3>
 
         {loading ? (
-          <p style={{ color: '#64748b', fontSize: 13, margin: '0 0 16px' }}>Loading game days…</p>
+          <p style={{ color: '#5b87a3', fontSize: 13, margin: '0 0 16px' }}>Loading game days…</p>
         ) : sorted.length === 0 ? (
-          <p style={{ color: '#64748b', fontSize: 13, margin: '0 0 16px' }}>No open game days right now.</p>
+          <p style={{ color: '#5b87a3', fontSize: 13, margin: '0 0 16px' }}>No open game days right now.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
             {sorted.map((gd) => {
@@ -450,13 +450,13 @@ function GameDayPickerModal({
                   key={gd.gameDayId}
                   onClick={() => onSelect(gd.gameDayId)}
                   style={{
-                    background: '#1a1a2e', border: '1px solid #2d2d4e', borderRadius: 6,
-                    color: '#e2e8f0', padding: '10px 14px', textAlign: 'left',
+                    background: '#082e4a', border: '1px solid #23577a', borderRadius: 0,
+                    color: '#e7f1f7', padding: '10px 14px', textAlign: 'left',
                     cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 4,
                   }}
                 >
                   <span style={{ fontSize: 14, fontWeight: 600 }}>{gd.name ?? final}</span>
-                  <span style={{ fontSize: 12, color: '#64748b' }}>
+                  <span style={{ fontSize: 12, color: '#5b87a3' }}>
                     Registration closes {regClose} · Final {final}
                   </span>
                 </button>
@@ -483,13 +483,13 @@ function UnsavedChangesDialog({
   return (
     <div style={overlay}>
       <div style={{ ...cardStyle, width: 380 }}>
-        <h3 style={{ margin: '0 0 8px', color: '#e2e8f0' }}>Unsaved changes</h3>
-        <p style={{ margin: '0 0 20px', fontSize: 14, color: '#94a3b8' }}>
+        <h3 style={{ margin: '0 0 8px', color: '#e7f1f7' }}>Unsaved changes</h3>
+        <p style={{ margin: '0 0 20px', fontSize: 14, color: '#7fa2ba' }}>
           You have unsaved changes. Do you want to save before leaving?
         </p>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button onClick={onStay} style={ghostButtonStyle}>Keep editing</button>
-          <button onClick={onDiscard} style={{ ...ghostButtonStyle, color: '#f87171', borderColor: '#7f1d1d' }}>
+          <button onClick={onDiscard} style={{ ...ghostButtonStyle, color: '#ff8a75', borderColor: '#3a1a18' }}>
             Discard
           </button>
           <button onClick={onSaveAndLeave} style={primaryButtonStyle}>Save & Leave</button>
@@ -941,21 +941,21 @@ export default function TankEditor() {
   const isRegistered = canRegister && (latestVersion?.registeredForGameDays?.length ?? 0) > 0;
   const isSaving = saveStatus === 'submitting' || saveStatus === 'polling';
 
-  if (pageLoading) return <Layout><p style={{ color: '#64748b' }}>Loading…</p></Layout>;
-  if (pageError) return <Layout><p style={{ color: '#f87171' }}>{pageError}</p></Layout>;
+  if (pageLoading) return <Layout><p style={{ color: '#5b87a3' }}>Loading…</p></Layout>;
+  if (pageError) return <Layout><p style={{ color: '#ff8a75' }}>{pageError}</p></Layout>;
 
   return (
     <Layout>
       {/* Mobile read-only notice (hidden on tablet/desktop via responsive.css) */}
       <div className="tm-mobile-readonly" style={{
-        background: '#1a1a2e', border: '1px solid #2d2d4e', borderRadius: 10,
+        background: '#082e4a', border: '1px solid #23577a', borderRadius: 0,
         padding: '24px 20px', textAlign: 'center',
       }}>
         <div style={{ fontSize: 32, marginBottom: 12 }}>🖥️</div>
-        <p style={{ margin: '0 0 8px', color: '#e2e8f0', fontWeight: 600, fontSize: 16 }}>
+        <p style={{ margin: '0 0 8px', color: '#e7f1f7', fontWeight: 600, fontSize: 16 }}>
           Desktop browser required
         </p>
-        <p style={{ margin: 0, color: '#64748b', fontSize: 14, lineHeight: 1.5 }}>
+        <p style={{ margin: 0, color: '#5b87a3', fontSize: 14, lineHeight: 1.5 }}>
           Tank code editing requires a desktop browser. You can view this page on a desktop to edit your tank.
         </p>
       </div>
@@ -966,38 +966,38 @@ export default function TankEditor() {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Link to="/dashboard" style={{ color: '#64748b', textDecoration: 'none', fontSize: 13 }}>
+          <Link to="/dashboard" style={{ color: '#5b87a3', textDecoration: 'none', fontSize: 13 }}>
             ← My Tanks
           </Link>
           {tankId && tankId !== 'new' && tank && (
             <img
               src={avatarSrc(tankId, avatarUrl)}
               alt=""
-              style={{ width: 36, height: 36, borderRadius: 6, imageRendering: 'pixelated', border: '1px solid #2d2d4e' }}
+              style={{ width: 36, height: 36, borderRadius: 0, imageRendering: 'pixelated', border: '1px solid #23577a' }}
             />
           )}
-          <h2 style={{ margin: 0, fontSize: 18, color: '#e2e8f0' }}>
+          <h2 style={{ margin: 0, fontSize: 18, color: '#e7f1f7' }}>
             {tank?.name || 'Unnamed Tank'}
           </h2>
           {tankId && tankId !== 'new' && (
             <Link
               to={`/tanks/${tankId}`}
-              style={{ color: '#64748b', textDecoration: 'none', fontSize: 13 }}
+              style={{ color: '#5b87a3', textDecoration: 'none', fontSize: 13 }}
             >
               View tank →
             </Link>
           )}
           {latestVersion && (
             <span style={{
-              fontSize: 12, padding: '2px 8px', borderRadius: 4, fontWeight: 500,
-              background: isMajor(latestVersion.version) ? '#1e3a2f' : '#1e2a3a',
-              color: isMajor(latestVersion.version) ? '#4ade80' : '#60a5fa',
+              fontSize: 12, padding: '2px 8px', borderRadius: 0, fontWeight: 500,
+              background: isMajor(latestVersion.version) ? '#0f3d34' : '#072943',
+              color: isMajor(latestVersion.version) ? '#59e6c0' : '#4fa8e0',
             }}>
               {latestVersion.version} {isMajor(latestVersion.version) ? 'major' : 'minor'}
             </span>
           )}
           {isDisqualified && (
-            <span style={{ background: '#f87171', color: '#fff', fontSize: 10, padding: '1px 6px', borderRadius: 4, fontWeight: 600 }}>DQ</span>
+            <span style={{ background: '#ff8a75', color: '#fff', fontSize: 10, padding: '1px 6px', borderRadius: 0, fontWeight: 600 }}>DQ</span>
           )}
         </div>
 
@@ -1045,7 +1045,7 @@ export default function TankEditor() {
       {/* Avatar picker — only for existing tanks (not /tanks/new) */}
       {tankId && tankId !== 'new' && tank && (
         <details style={{ ...cardStyle, marginBottom: 12 }}>
-          <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#94a3b8', userSelect: 'none' }}>
+          <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#7fa2ba', userSelect: 'none' }}>
             Avatar
           </summary>
           <div style={{ marginTop: 12 }}>
@@ -1060,9 +1060,9 @@ export default function TankEditor() {
 
       {/* Compilation limit banner */}
       {compileLimitReached && (
-        <div style={{ background: '#1c1200', border: '1px solid #92400e', color: '#fbbf24', borderRadius: 8, padding: '12px 16px', marginBottom: 12, fontSize: 14 }}>
+        <div style={{ background: '#3d2a10', border: '1px solid #3d2a10', color: '#e8b339', borderRadius: 0, padding: '12px 16px', marginBottom: 12, fontSize: 14 }}>
           Compilation limit reached for this period.{' '}
-          <a href="/account" style={{ color: '#f59e0b', fontWeight: 600 }}>View your account</a>{' '}
+          <a href="/account" style={{ color: '#e8b339', fontWeight: 600 }}>View your account</a>{' '}
           to see your quota or upgrade your plan.
         </div>
       )}
@@ -1080,7 +1080,7 @@ export default function TankEditor() {
       <PreambleBanner cfg={config} imports={extraImports} onImportsChange={setExtraImports} />
 
       {/* Monaco */}
-      <div style={{ border: '1px solid #2d2d4e', borderRadius: 8, overflow: 'hidden' }}>
+      <div style={{ border: '1px solid #23577a', borderRadius: 0, overflow: 'hidden' }}>
         <Editor
           height="520px"
           language="go"

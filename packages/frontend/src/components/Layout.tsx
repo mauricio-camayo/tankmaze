@@ -43,11 +43,16 @@ export default function Layout({ children }: LayoutProps) {
   const showAds = !isAdminRoute && !isLoginRoute;
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0f0f1a', color: '#e2e8f0', position: 'relative' }}>
+    <div style={{
+      minHeight: '100vh', color: 'var(--bp-line)', position: 'relative',
+      backgroundColor: 'var(--bp-bg)',
+      backgroundImage: 'linear-gradient(var(--bp-grid) 1px, transparent 1px), linear-gradient(90deg, var(--bp-grid) 1px, transparent 1px)',
+      backgroundSize: '28px 28px',
+    }}>
       <nav className="tm-nav" style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '0 24px', height: 56, position: 'relative',
-        background: '#1a1a2e', borderBottom: '1px solid #2d2d4e',
+        background: 'var(--bp-panel)', borderBottom: '1px solid var(--bp-hairline)',
       }}>
         {/* Hamburger button (hidden on desktop via CSS); sits left of the logo on mobile/tablet */}
         <button
@@ -61,23 +66,25 @@ export default function Layout({ children }: LayoutProps) {
         </button>
 
         {/* Logo — always visible */}
-        <Link to="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 18, textDecoration: 'none', flexShrink: 0 }}>
+        <Link to="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: 9, fontWeight: 700, fontSize: 18, textDecoration: 'none', flexShrink: 0 }}>
           <img src="/avatar.png" alt="" width={28} height={28} style={{ display: 'block' }} />
-          <span style={{ color: '#e2e8f0' }}>Tank<span style={{ color: '#7c6af7' }}>Maze</span></span>
-          <span style={{ color: '#475569', fontSize: 11, fontWeight: 400 }}>v{import.meta.env.VITE_APP_VERSION}</span>
+          <span style={{ fontFamily: 'var(--font-display)', textTransform: 'uppercase', letterSpacing: '0.02em', color: 'var(--bp-line)' }}>
+            Tank<span style={{ color: 'var(--bp-readout)' }}>Maze</span>
+          </span>
+          <span style={{ color: 'var(--bp-steel-faint)', fontSize: 10, fontWeight: 500, fontFamily: 'var(--font-mono)' }}>v{import.meta.env.VITE_APP_VERSION}</span>
         </Link>
 
         {/* Desktop nav links (hidden on mobile/tablet via CSS) */}
         <div className="tm-nav-links" style={{ alignItems: 'center', gap: 24 }}>
-          <Link to="/leaderboard" style={navLinkStyle}>Leaderboard</Link>
-          <Link to="/gamedays" style={navLinkStyle}>Game Days</Link>
-          {user && <Link to="/friends" style={navLinkStyle}>Friends</Link>}
+          <Link to="/leaderboard" className="tm-navlink" style={navLinkStyle}>Leaderboard</Link>
+          <Link to="/gamedays" className="tm-navlink" style={navLinkStyle}>Game Days</Link>
+          {user && <Link to="/friends" className="tm-navlink" style={navLinkStyle}>Friends</Link>}
           {user?.isAdmin && (
-            <Link to="/admin" style={{ ...navLinkStyle, color: '#f59e0b' }}>Admin</Link>
+            <Link to="/admin" className="tm-navlink" style={{ ...navLinkStyle, color: 'var(--bp-hazard)' }}>Admin</Link>
           )}
         </div>
 
-        <span className="tm-nav-clock" style={{ color: '#7c6af7', fontSize: 13, fontWeight: 600 }}>
+        <span className="tm-nav-clock" style={{ color: 'var(--bp-readout)', fontSize: 12.5, fontWeight: 600, fontFamily: 'var(--font-mono)' }}>
           {clock}
         </span>
 
@@ -89,18 +96,18 @@ export default function Layout({ children }: LayoutProps) {
                   src={user.picture}
                   alt=""
                   referrerPolicy="no-referrer"
-                  style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover' }}
+                  style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--bp-hairline)' }}
                 />
               ) : (
                 <div style={{
                   width: 30, height: 30, borderRadius: '50%',
-                  background: '#7c6af7', display: 'flex', alignItems: 'center',
-                  justifyContent: 'center', fontSize: 13, fontWeight: 700, color: '#fff', flexShrink: 0,
+                  background: 'var(--bp-hazard)', display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', fontSize: 13, fontWeight: 700, color: '#0a2135', flexShrink: 0,
                 }}>
                   {(user.name ?? user.username).charAt(0).toUpperCase()}
                 </div>
               )}
-              <span style={{ color: '#94a3b8', fontSize: 14 }}>
+              <span style={{ color: 'var(--bp-steel)', fontSize: 14 }}>
                 {user.name ?? user.username}
               </span>
             </Link>
@@ -118,7 +125,7 @@ export default function Layout({ children }: LayoutProps) {
           { to: '/friends', label: 'Friends', color: undefined },
           { to: '/account', label: 'Account', color: undefined },
           ...(user?.isAdmin ? [
-            { to: '/admin', label: 'Admin', color: '#f59e0b' },
+            { to: '/admin', label: 'Admin', color: 'var(--bp-hazard)' },
           ] : []),
         ].map(({ to, label, color }) => (
           <Link
@@ -143,32 +150,35 @@ export default function Layout({ children }: LayoutProps) {
       {showAds && <AdSlots position="bottom" />}
 
       <footer style={{
-        borderTop: '1px solid #1e1e35', padding: '12px 24px',
+        borderTop: '1px solid var(--bp-hairline)', padding: '12px 24px',
         display: 'flex', justifyContent: 'center', gap: 24,
-        fontSize: 12, color: '#475569',
+        fontSize: 11, color: 'var(--bp-steel-faint)', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em',
       }}>
-        <Link to="/privacy" style={{ color: '#475569', textDecoration: 'none' }}>Privacy Policy</Link>
-        <span>© {new Date().getFullYear()} TankMaze</span>
+        <Link to="/privacy" style={{ color: 'var(--bp-steel-faint)', textDecoration: 'none' }}>PRIVACY POLICY</Link>
+        <span>© {new Date().getFullYear()} TANKMAZE</span>
       </footer>
     </div>
   );
 }
 
 const navLinkStyle: React.CSSProperties = {
-  color: '#94a3b8', textDecoration: 'none', fontSize: 14,
+  color: 'var(--bp-steel)', textDecoration: 'none', fontSize: 12.5,
+  fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.06em',
 };
 
 export const ghostButtonStyle: React.CSSProperties = {
-  background: 'none', border: '1px solid #2d2d4e', color: '#94a3b8',
-  padding: '4px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 14,
+  background: 'none', border: '1px solid var(--bp-hairline)', color: 'var(--bp-steel)',
+  padding: '5px 12px', borderRadius: 0, cursor: 'pointer', fontSize: 13, fontFamily: 'var(--font-mono)',
+  textTransform: 'uppercase', letterSpacing: '0.04em',
 };
 
 export const primaryButtonStyle: React.CSSProperties = {
-  background: '#7c6af7', border: 'none', color: '#fff',
-  padding: '8px 16px', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600,
+  background: 'var(--bp-hazard)', border: '1px solid var(--bp-hazard)', color: '#0a2135',
+  padding: '8px 16px', borderRadius: 0, cursor: 'pointer', fontSize: 14, fontWeight: 700,
+  fontFamily: 'var(--font-body)',
 };
 
 export const cardStyle: React.CSSProperties = {
-  background: '#1a1a2e', border: '1px solid #2d2d4e', borderRadius: 10,
+  background: 'var(--bp-panel)', border: '1px solid var(--bp-hairline)', borderRadius: 0,
   padding: '20px 24px',
 };
