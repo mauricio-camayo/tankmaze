@@ -1,6 +1,7 @@
 import { Stack, StackProps, CfnOutput, SecretValue } from 'aws-cdk-lib';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
+import * as ses from 'aws-cdk-lib/aws-ses';
 import { Construct } from 'constructs';
 
 export class AuthStack extends Stack {
@@ -14,6 +15,12 @@ export class AuthStack extends Stack {
     const googleClientSecret = this.node.tryGetContext('googleClientSecret') as string | undefined;
     const facebookAppId = this.node.tryGetContext('facebookAppId') as string | undefined;
     const facebookAppSecret = this.node.tryGetContext('facebookAppSecret') as string | undefined;
+    // Set (via --context sesSenderEmail=no-reply@tankmaze.org) only once the
+    // SES domain identity below is verified — see the DKIM CfnOutputs and
+    // item 214. Same flag also un-gates forgot-password-worker (item 217)
+    // in api-stack.ts. Left unset, the pool keeps sending from Cognito's
+    // default no-reply@verificationemail.com sender.
+    const sesSenderEmail = this.node.tryGetContext('sesSenderEmail') as string | undefined;
     const callbackUrls = ['http://localhost:5173', 'https://tankmaze.org'];
     if (process.env.SITE_URL) callbackUrls.push(process.env.SITE_URL);
 
@@ -40,6 +47,9 @@ export class AuthStack extends Stack {
         requireSymbols: false,
       },
       accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
+      email: sesSenderEmail
+        ? cognito.UserPoolEmail.withSES({ fromEmail: sesSenderEmail, fromName: 'TankMaze' })
+        : undefined,
     });
 
     this.userPool.addGroup('AdminGroup', {
@@ -59,6 +69,17 @@ export class AuthStack extends Stack {
     });
     const domain = this.userPool.addDomain('Domain', {
       customDomain: { domainName: authDomainName, certificate },
+    });
+
+    // SES domain identity (item 214) so verification/notification emails
+    // send from no-reply@tankmaze.org instead of Cognito's shared default
+    // sender, which mail providers routinely spam-filter. Same DNS-is-on-
+    // Cloudflare constraint as the ACM cert above: Easy DKIM verification
+    // needs 3 CNAME records added manually — see the DKIM CfnOutputs below.
+    // Creating this identity is deploy-safe on its own (additive, and
+    // Cognito only switches to it once sesSenderEmail is set above).
+    const emailIdentity = new ses.EmailIdentity(this, 'EmailIdentity', {
+      identity: ses.Identity.domain('tankmaze.org'),
     });
 
     const supportedIdentityProviders = [cognito.UserPoolClientIdentityProvider.COGNITO];
@@ -125,6 +146,19 @@ export class AuthStack extends Stack {
     new CfnOutput(this, 'CognitoDomainCloudFrontTarget', {
       value: domain.cloudFrontDomainName,
       description: 'Point a Cloudflare CNAME for auth.tankmaze.org at this value',
+    });
+
+    // Add these 3 as CNAME records in Cloudflare (proxy status: DNS only,
+    // not proxied) to complete SES Easy DKIM verification for item 214.
+    emailIdentity.dkimRecords.forEach((record, i) => {
+      new CfnOutput(this, `SesDkimRecordName${i + 1}`, {
+        value: record.name,
+        description: `Cloudflare CNAME name (record ${i + 1} of 3) for SES domain verification`,
+      });
+      new CfnOutput(this, `SesDkimRecordValue${i + 1}`, {
+        value: record.value,
+        description: `Cloudflare CNAME target (record ${i + 1} of 3) for SES domain verification`,
+      });
     });
   }
 }

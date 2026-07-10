@@ -343,8 +343,9 @@ export class ApiStack extends Stack {
     // is tank-api's own lambda:InvokeFunction call, which is what keeps the
     // enumeration-safe 202 contract intact (no request ever reaches the real
     // lookup/branch logic synchronously).
-    // sesSenderEmail is unset until item 214 (custom SES sender domain)
-    // ships; the worker no-ops the IdP-notice-email branch until then.
+    // sesSenderEmail stays unset until the SES domain identity created in
+    // AuthStack (item 214) is DKIM-verified in Cloudflare; the worker no-ops
+    // the IdP-notice-email branch until then.
     const sesSenderEmail = this.node.tryGetContext('sesSenderEmail') as string | undefined;
     const forgotPasswordWorker = goLambda('ForgotPasswordWorker', 'forgot-password-worker', {
       USER_POOL_ID:        userPoolId,
@@ -355,8 +356,9 @@ export class ApiStack extends Stack {
       actions: ['cognito-idp:ListUsers', 'cognito-idp:ForgotPassword'],
       resources: [`arn:aws:cognito-idp:${this.region}:${this.account}:userpool/${userPoolId}`],
     }));
-    // No verified SES identity exists yet (item 214) to scope this to; the
-    // code-level guard on an empty sesSender keeps this inert until then.
+    // Scoped to '*' rather than the EmailIdentity's ARN to avoid a cross-stack
+    // reference before it's verified; the code-level guard on an empty
+    // sesSenderEmail keeps this inert until then.
     forgotPasswordWorker.addToRolePolicy(new iam.PolicyStatement({
       actions: ['ses:SendEmail', 'ses:SendRawEmail'],
       resources: ['*'],

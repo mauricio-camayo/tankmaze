@@ -189,6 +189,7 @@ jobs:
           VITE_USER_POOL_ID: ${{ secrets.VITE_USER_POOL_ID }}
           VITE_USER_POOL_CLIENT_ID: ${{ secrets.VITE_USER_POOL_CLIENT_ID }}
           SITE_CERTIFICATE_ARN: ${{ secrets.SITE_CERTIFICATE_ARN }}
+          SES_SENDER_EMAIL: ${{ secrets.SES_SENDER_EMAIL }}
         run: |
           pnpm install --frozen-lockfile
           pnpm build
@@ -201,6 +202,9 @@ jobs:
           fi
           if [ -n "$SITE_CERTIFICATE_ARN" ]; then
             CONTEXT_FLAGS="$CONTEXT_FLAGS --context certificateArn=$SITE_CERTIFICATE_ARN"
+          fi
+          if [ -n "$SES_SENDER_EMAIL" ]; then
+            CONTEXT_FLAGS="$CONTEXT_FLAGS --context sesSenderEmail=$SES_SENDER_EMAIL"
           fi
           pnpm cdk deploy --all --require-approval never $CONTEXT_FLAGS
 
