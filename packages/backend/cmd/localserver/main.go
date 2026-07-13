@@ -297,6 +297,9 @@ func (srv *server) getAiTanks(w http.ResponseWriter) {
 		if err != nil {
 			continue
 		}
+		// Every tank reachable here is one of the four built-in AI tanks by
+		// construction (item 231, mirrors tank-api).
+		tank.AuthorName = aiTankAuthorName
 		versions := srv.store.listVersionsByTank(id)
 		if versions == nil {
 			versions = []db.TankVersion{}
@@ -423,6 +426,10 @@ func (srv *server) getTank(w http.ResponseWriter, _ *http.Request, tankID string
 	if errors.Is(err, db.ErrNotFound) {
 		jsonErr(w, http.StatusNotFound, "tank not found")
 		return
+	}
+	// Mirrors tank-api's item 218/231 AI-tank author override.
+	if isAITankID(tankID) {
+		tank.AuthorName = aiTankAuthorName
 	}
 	versions := srv.store.listVersionsByTank(tankID)
 	if versions == nil {
@@ -1862,6 +1869,12 @@ func (srv *server) adminListTanks(w http.ResponseWriter, r *http.Request) {
 		end = len(all)
 	}
 	page := all[start:end]
+	// Mirrors tank-api's item 218/231 AI-tank author override.
+	for i := range page {
+		if isAITankID(page[i].TankID) {
+			page[i].AuthorName = aiTankAuthorName
+		}
+	}
 
 	resp := map[string]any{"tanks": page}
 	if end < len(all) {
@@ -1983,17 +1996,22 @@ func (srv *server) patchMySettings(w http.ResponseWriter, r *http.Request) {
 
 // ── User profile handlers ──────────────────────────────────────────────────
 
-// getMyProfile mirrors tank-api's GET /me/profile (item 225). The local
-// single-user store has no separate Cognito-attribute-vs-durable-record
-// split — updateUserName already writes the one place localUser.Name lives
-// — so this just returns it, with the same sub-as-last-resort fallback as
-// the real endpoint's authorName(req) claim fallback.
+// getMyProfile mirrors tank-api's GET /me/profile (item 225, avatar added
+// item 229). The local single-user store has no separate Cognito-attribute
+// -vs-durable-record split — updateUserName/updateUserPicture already write
+// the one place localUser.Name/.Picture live — so this just returns them,
+// with the same sub-as-last-resort fallback as the real endpoint's
+// authorName(req) claim fallback.
 func (srv *server) getMyProfile(w http.ResponseWriter) {
 	name := localUserID
-	if u, ok := srv.store.getUser(localUserID); ok && u.Name != "" {
-		name = u.Name
+	picture := ""
+	if u, ok := srv.store.getUser(localUserID); ok {
+		if u.Name != "" {
+			name = u.Name
+		}
+		picture = u.Picture
 	}
-	jsonOK(w, map[string]string{"name": name})
+	jsonOK(w, map[string]string{"name": name, "picture": picture})
 }
 
 func (srv *server) patchMyProfile(w http.ResponseWriter, r *http.Request) {

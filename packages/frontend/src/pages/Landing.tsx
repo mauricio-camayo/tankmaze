@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { signIn, signInWithGoogle, signInWithFacebook, signUpWithEmail, confirmEmailSignUp, resendConfirmationCode, confirmPasswordReset } from '../services/auth';
+import { signIn, signInWithGoogle, signInWithFacebook, signUpWithEmail, confirmEmailSignUp, resendConfirmationCode, confirmPasswordReset, getAuthUser, enrichAuthUser } from '../services/auth';
 import { requestPasswordReset } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import './Landing.css';
@@ -88,7 +88,11 @@ export default function Landing() {
     try {
       const result = await signIn(username, password);
       if (result.isSignedIn) {
-        setUser({ userId: '', username });
+        // Native email+password signIn() never remounts App.tsx, so it
+        // must do the same JWT + durable-name enrichment checkUser() does
+        // for federated logins, rather than leaving a bare stub (item 228).
+        const u = await getAuthUser();
+        setUser(u ? await enrichAuthUser(u) : { userId: '', username });
         navigate('/dashboard');
       } else if (result.nextStep?.signInStep === 'CONFIRM_SIGN_UP') {
         // Amplify v6 doesn't throw for unconfirmed users — it resolves with this step instead.

@@ -45,6 +45,13 @@ type UserSettings struct {
 	// to the provider's real name on every sign-in, so given_name can't be
 	// trusted as a durable custom-name store for federated accounts.
 	DisplayName string `dynamodbav:"displayName,omitempty"  json:"displayName,omitempty"`
+	// AvatarURL is the durable source of truth for a user's profile picture
+	// (item 229), mirroring DisplayName above: auth-stack.ts's Google/Facebook
+	// IdP attribute mapping re-syncs Cognito's "picture" attribute from the
+	// provider's photo on every federated sign-in, silently overwriting an
+	// uploaded avatar. AvatarURL isn't touched by that resync, so it's
+	// preferred over the Cognito attribute everywhere an avatar is resolved.
+	AvatarURL string `dynamodbav:"avatarUrl,omitempty" json:"avatarUrl,omitempty"`
 }
 
 func userSettingsKey(userID string) map[string]dbtypes.AttributeValue {

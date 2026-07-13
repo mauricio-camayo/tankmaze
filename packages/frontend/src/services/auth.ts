@@ -11,6 +11,7 @@ import {
   updatePassword as amplifyUpdatePassword,
   confirmResetPassword as amplifyConfirmResetPassword,
 } from 'aws-amplify/auth';
+import { getMyProfile } from './api';
 
 const LOCAL_DEV = import.meta.env.VITE_LOCAL_DEV === 'true';
 const LOCAL_USER = { userId: 'local-user', username: 'local' };
@@ -105,6 +106,37 @@ export async function getUserProfile(): Promise<{ sub?: string; name?: string; p
   } catch {
     return {};
   }
+}
+
+export interface EnrichedAuthUser {
+  userId: string;
+  username: string;
+  name?: string;
+  picture?: string;
+  email?: string;
+  isAdmin?: boolean;
+  isFederated?: boolean;
+}
+
+// Shared by App.tsx's checkUser() (session restore / federated-redirect
+// return) and Landing.tsx's email+password sign-in (item 228) — both need
+// the same JWT-derived profile plus the durable backend display name
+// (item 225's fix for federated re-login clobbering given_name), not just
+// the bare username Amplify hands back on a successful signIn().
+export async function enrichAuthUser(u: { userId: string; username: string }): Promise<EnrichedAuthUser> {
+  const profile = await getUserProfile();
+  let name = profile.name;
+  let picture = profile.picture;
+  try {
+    const durable = await getMyProfile();
+    name = durable.name || name;
+    // Empty means "never uploaded one" (item 229) — keep the JWT-derived
+    // picture in that case rather than blanking out a federated avatar.
+    picture = durable.picture || picture;
+  } catch {
+    // keep the JWT-derived name/picture
+  }
+  return { userId: profile.sub ?? u.userId, username: u.username, name, picture, email: profile.email, isAdmin: profile.isAdmin, isFederated: profile.isFederated };
 }
 
 export async function changePassword(oldPassword: string, newPassword: string) {

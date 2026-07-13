@@ -47,6 +47,16 @@
   display: flex;
 }
 
+/* Nav display name: truncate with ellipsis rather than let a long name push
+   the whole right-pair (avatar+name+Sign-out) onto its own wrapped line
+   (item 230). Full name still available via the Link's title tooltip. */
+.tm-nav-username {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Touch target minimum 44×44 */
 .tm-touch { min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; }
 
@@ -99,8 +109,17 @@
      off-screen if it doesn't fit). */
   .tm-nav { flex-wrap: wrap; height: auto; min-height: 56px; justify-content: flex-start !important; }
 
-  /* Shift sign-out / avatar to right; hamburger on far left */
+  /* Shift avatar/name to right; hamburger on far left. Sign-out itself
+     moves into the drawer below (item 230) so this group only ever needs
+     to fit avatar+name, which is far less likely to overflow than
+     avatar+name+button. */
   .tm-nav-right-pair { gap: 8px; margin-left: auto; }
+
+  /* Name truncates tighter on mobile/tablet than the desktop default. */
+  .tm-nav-username { max-width: 120px; }
+
+  /* Sign-out lives in .tm-nav-drawer instead at these widths (item 230) */
+  .tm-signout-desktop { display: none; }
 
   /* Right-rail ad hidden on tablet+mobile */
   .tm-ad-right-rail { display: none; }

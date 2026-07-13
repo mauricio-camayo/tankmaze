@@ -600,6 +600,13 @@ func (h *handler) getTank(ctx context.Context, req events.APIGatewayV2HTTPReques
 		Versions []db.TankVersion `json:"versions"`
 	}
 
+	// Item 218's AI-tank author override (getRankings) never extended to
+	// this endpoint (item 231) — built-in tanks otherwise show whichever
+	// real Cognito account happens to own the seeded record.
+	if h.isAiTankID(tankID) {
+		tank.AuthorName = aiTankAuthorName
+	}
+
 	if tank.UserID != uid && !isAdmin(req) {
 		// Public view: only the latest major version, build artifacts and compile
 		// metadata stripped.
@@ -633,7 +640,10 @@ func (h *handler) getTank(ctx context.Context, req events.APIGatewayV2HTTPReques
 
 	// Lazy backfill: if the owner has no authorName stored, derive it from their
 	// current JWT and persist it so it appears on the leaderboard going forward.
-	if tank.AuthorName == "" {
+	// Skipped for AI tanks (item 231) — otherwise viewing a built-in tank
+	// through this endpoint (e.g. the admin Game Day roster) permanently
+	// overwrites its stored AuthorName with the *viewing* admin's own name.
+	if tank.AuthorName == "" && !h.isAiTankID(tankID) {
 		if name := authorName(req); name != "" {
 			tank.AuthorName = name
 			if err := h.store.UpdateAuthorName(ctx, tankID, name); err != nil {
@@ -665,6 +675,11 @@ func (h *handler) getAiTanks(ctx context.Context) (events.APIGatewayV2HTTPRespon
 		if err != nil {
 			continue
 		}
+		// Every tank reachable here is one of the four built-in AI tanks by
+		// construction (item 231, for consistency with getRankings/getTank/
+		// adminListTanks — not currently rendered anywhere, but the same
+		// stale-owner data would surface here too if that changes).
+		tank.AuthorName = aiTankAuthorName
 		versions, err := h.store.ListVersionsByTank(ctx, p[0])
 		if err != nil || versions == nil {
 			versions = []db.TankVersion{}
@@ -1701,12 +1716,18 @@ type publicTankSummary struct {
 	LastActiveAt  int64  `json:"lastActiveAt"`
 }
 
-// lookupUserPicture returns a user's Cognito "picture" attribute by sub, or
-// "" if not found/set. Deliberately extracts only this one attribute — never
-// "email" or any other — so callers on public/other-user paths (item 210's
-// getPublicUserProfile, item 213's getRankings) can't accidentally leak
-// email just by reusing this helper.
+// lookupUserPicture returns a user's avatar by sub, preferring the durable
+// UserSettings.AvatarURL (item 229 — immune to Google/Facebook's IdP
+// attribute mapping re-syncing Cognito's "picture" attribute on every
+// federated login) over the Cognito attribute (set directly for
+// non-federated accounts, or pre-fix federated ones). Deliberately extracts
+// only the "picture" Cognito attribute — never "email" or any other — so
+// callers on public/other-user paths (item 210's getPublicUserProfile, item
+// 213's getRankings) can't accidentally leak email just by reusing this helper.
 func (h *handler) lookupUserPicture(ctx context.Context, sub string) string {
+	if us, err := h.store.GetUserSettings(ctx, sub); err == nil && us.AvatarURL != "" {
+		return us.AvatarURL
+	}
 	out, err := h.cognito.ListUsers(ctx, &cognitoidp.ListUsersInput{
 		UserPoolId: aws.String(h.userPoolID),
 		Filter:     aws.String(fmt.Sprintf(`sub = "%s"`, sub)),
@@ -3015,6 +3036,14 @@ func (h *handler) adminListTanks(ctx context.Context, req events.APIGatewayV2HTT
 		log.Printf("admin list tanks: %v", err)
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
+	// Item 218's AI-tank author override (getRankings) never extended to
+	// this endpoint (item 231) — the admin tank table otherwise shows
+	// whichever real Cognito account happens to own the seeded record.
+	for i := range tanks {
+		if h.isAiTankID(tanks[i].TankID) {
+			tanks[i].AuthorName = aiTankAuthorName
+		}
+	}
 	resp := map[string]interface{}{"tanks": tanks}
 	if nextCursor != "" {
 		resp["nextToken"] = nextCursor
@@ -3197,19 +3226,25 @@ func (h *handler) patchMyProfile(ctx context.Context, req events.APIGatewayV2HTT
 	return jsonResp(http.StatusOK, map[string]string{"name": name}), nil
 }
 
-// getMyProfile is GET /me/profile (item 225) — returns the caller's durable
-// display name, preferring UserSettings.DisplayName (set by patchMyProfile,
-// immune to federated IdP re-login resync) over the tanks' denormalized
-// authorName (for names set before this fix shipped) over the JWT's own
-// given_name/name/email claim (new users with neither yet set).
+// getMyProfile is GET /me/profile (item 225, avatar added item 229) —
+// returns the caller's durable display name, preferring
+// UserSettings.DisplayName (set by patchMyProfile, immune to federated IdP
+// re-login resync) over the tanks' denormalized authorName (for names set
+// before this fix shipped) over the JWT's own given_name/name/email claim
+// (new users with neither yet set); and the caller's durable avatar,
+// UserSettings.AvatarURL (set by uploadProfilePicture, immune to the same
+// federated resync for Cognito's "picture" attribute), empty if never
+// uploaded so the frontend falls back to the JWT's own picture claim.
 func (h *handler) getMyProfile(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	uid := userID(req)
 	if uid == "" {
 		return errResp(http.StatusUnauthorized, "unauthorized"), nil
 	}
 	name := ""
+	picture := ""
 	if us, err := h.store.GetUserSettings(ctx, uid); err == nil {
 		name = us.DisplayName
+		picture = us.AvatarURL
 	}
 	if name == "" {
 		if tanks, err := h.store.ListTanksByUser(ctx, uid); err == nil {
@@ -3224,7 +3259,7 @@ func (h *handler) getMyProfile(ctx context.Context, req events.APIGatewayV2HTTPR
 	if name == "" {
 		name = authorName(req)
 	}
-	return jsonResp(http.StatusOK, map[string]string{"name": name}), nil
+	return jsonResp(http.StatusOK, map[string]string{"name": name, "picture": picture}), nil
 }
 
 // uploadProfilePicture is PUT /me/profile/picture (item 198) — reuses item
@@ -3291,6 +3326,19 @@ func (h *handler) uploadProfilePicture(ctx context.Context, req events.APIGatewa
 	if err != nil {
 		log.Printf("uploadProfilePicture update attrs %s: %v", uid, err)
 		return errResp(http.StatusInternalServerError, "failed to update profile"), nil
+	}
+
+	// Durable copy (item 229) — survives the next Google/Facebook re-login,
+	// which otherwise re-syncs the Cognito "picture" attribute above back to
+	// the provider's photo via auth-stack.ts's IdP attribute mapping.
+	if us, err := h.store.GetUserSettings(ctx, uid); err != nil {
+		log.Printf("uploadProfilePicture get settings %s: %v", uid, err)
+	} else {
+		us.UserID = uid
+		us.AvatarURL = url
+		if err := h.store.PutUserSettings(ctx, us); err != nil {
+			log.Printf("uploadProfilePicture put settings %s: %v", uid, err)
+		}
 	}
 
 	return jsonResp(http.StatusOK, map[string]string{"picture": url}), nil

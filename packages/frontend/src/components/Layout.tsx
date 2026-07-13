@@ -119,15 +119,15 @@ export default function Layout({ children }: LayoutProps) {
           {clock}
         </span>
 
-        <div className="tm-nav-right-pair" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div className="tm-nav-right-pair" style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
           {user && (
-            <Link to="/account" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
+            <Link to="/account" title={user.name ?? user.username} style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none', minWidth: 0 }}>
               {user.picture ? (
                 <img
                   src={user.picture}
                   alt=""
                   referrerPolicy="no-referrer"
-                  style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--bp-hairline)' }}
+                  style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--bp-hairline)', flexShrink: 0 }}
                 />
               ) : (
                 <div style={{
@@ -138,12 +138,16 @@ export default function Layout({ children }: LayoutProps) {
                   {(user.name ?? user.username).charAt(0).toUpperCase()}
                 </div>
               )}
-              <span style={{ color: 'var(--bp-steel)', fontSize: 14 }}>
+              {/* Truncated rather than left to overflow/wrap the whole
+                  right-pair — the full name is still available via the
+                  Link's title tooltip above (item 230). */}
+              <span className="tm-nav-username" style={{ color: 'var(--bp-steel)', fontSize: 14 }}>
                 {user.name ?? user.username}
               </span>
             </Link>
           )}
-          <button onClick={handleSignOut} style={ghostButtonStyle}>Sign out</button>
+          {/* Desktop-only; moves into the drawer below at <1024px (item 230) */}
+          <button onClick={handleSignOut} className="tm-signout-desktop" style={ghostButtonStyle}>Sign out</button>
         </div>
       </nav>
 
@@ -167,6 +171,17 @@ export default function Layout({ children }: LayoutProps) {
             {label}
           </Link>
         ))}
+        {user && (
+          <button
+            onClick={handleSignOut}
+            style={{
+              ...navLinkStyle, fontSize: 16, minHeight: 44, display: 'flex', alignItems: 'center',
+              background: 'none', border: 'none', padding: 0, width: '100%', textAlign: 'left', cursor: 'pointer',
+            }}
+          >
+            Sign out
+          </button>
+        )}
       </div>
 
       {showAds && <AdSlots position="top" />}

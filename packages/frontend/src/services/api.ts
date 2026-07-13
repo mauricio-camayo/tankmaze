@@ -249,11 +249,13 @@ export const adminSetUserTier = (userId: string, tier: string) =>
   });
 
 // User profile
-// getMyProfile (item 225) returns the durable display name — unlike the ID
-// token's given_name claim, it isn't reverted by a federated (Google/
-// Facebook) re-login, so callers that need the caller's own name (nav,
-// /account) should prefer this over decoding the JWT.
-export const getMyProfile = () => request<{ name: string }>('/me/profile');
+// getMyProfile (item 225, avatar added item 229) returns the durable display
+// name and avatar — unlike the ID token's given_name/picture claims, neither
+// is reverted by a federated (Google/Facebook) re-login, so callers that
+// need the caller's own name/picture (nav, /account) should prefer this over
+// decoding the JWT. picture is "" when the user has never uploaded one —
+// callers should fall back to the JWT's own picture claim in that case.
+export const getMyProfile = () => request<{ name: string; picture?: string }>('/me/profile');
 export const updateMyProfile = (name: string) =>
   request<{ name: string }>('/me/profile', { method: 'PATCH', body: JSON.stringify({ name }) });
 export const uploadProfilePicture = (data: string, contentType: string) =>

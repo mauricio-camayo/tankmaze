@@ -1,8 +1,7 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate, useLocation, Outlet } from 'react-router-dom';
 import { Hub } from 'aws-amplify/utils';
-import { getAuthUser, getUserProfile } from './services/auth';
-import { getMyProfile } from './services/api';
+import { getAuthUser, enrichAuthUser } from './services/auth';
 import { useAuthStore } from './store/authStore';
 import Landing from './pages/Landing';
 import Dashboard from './pages/Dashboard';
@@ -105,23 +104,7 @@ export default function App() {
 
     const checkUser = () =>
       getAuthUser().then(async (u) => {
-        if (u) {
-          const profile = await getUserProfile();
-          // The ID token's given_name claim is reverted to the provider's
-          // real name on every federated (Google/Facebook) re-login (item
-          // 225), so it can't be trusted as the display name for those
-          // accounts. Prefer the backend's durable name instead, falling
-          // back to the JWT-derived one if the call fails (e.g. offline).
-          let name = profile.name;
-          try {
-            name = (await getMyProfile()).name || name;
-          } catch {
-            // keep the JWT-derived name
-          }
-          setUser({ userId: profile.sub ?? u.userId, username: u.username, name, picture: profile.picture, email: profile.email, isAdmin: profile.isAdmin, isFederated: profile.isFederated });
-        } else {
-          setUser(null);
-        }
+        setUser(u ? await enrichAuthUser(u) : null);
         setLoading(false);
       });
 

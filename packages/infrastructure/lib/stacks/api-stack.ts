@@ -11,6 +11,9 @@ import * as apigwv2integrations from 'aws-cdk-lib/aws-apigatewayv2-integrations'
 import * as apigwv2authorizers from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import * as scheduler from 'aws-cdk-lib/aws-scheduler';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as cloudwatchActions from 'aws-cdk-lib/aws-cloudwatch-actions';
+import * as sns from 'aws-cdk-lib/aws-sns';
+import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
@@ -78,6 +81,21 @@ export class ApiStack extends Stack {
       });
     };
 
+    // Ops alerts (item 239) — a single SNS topic every CloudWatch alarm in
+    // this stack notifies, so an alarm firing actually reaches someone
+    // instead of only changing color in the console (the gap that let the
+    // item 232 outage go unnoticed until a user reported it). Subscription
+    // is optional/context-gated so this stays inert until an address is
+    // configured — same pattern as sesSenderEmail/googleClientId elsewhere
+    // in this stack.
+    const opsAlertTopic = new sns.Topic(this, 'OpsAlertTopic', {
+      topicName: 'tankmaze-ops-alerts',
+    });
+    const opsAlertEmail = this.node.tryGetContext('opsAlertEmail') as string | undefined;
+    if (opsAlertEmail) {
+      opsAlertTopic.addSubscription(new snsSubscriptions.EmailSubscription(opsAlertEmail));
+    }
+
     // ---- EventBridge Scheduler group -----------------------------------
     // Individual schedules (one per Game Day phase) are created at runtime
     // by the admin when configuring a Game Day.
@@ -109,7 +127,7 @@ export class ApiStack extends Stack {
         },
       },
     }));
-    new cloudwatch.Alarm(this, 'SchedulerDLQAlarm', {
+    const schedulerDLQAlarm = new cloudwatch.Alarm(this, 'SchedulerDLQAlarm', {
       alarmName: 'tankmaze-scheduler-dlq-depth',
       alarmDescription: 'EventBridge Scheduler failed to invoke tournament-scheduler — a game day phase was silently dropped',
       metric: schedulerDLQ.metricApproximateNumberOfMessagesVisible({
@@ -121,6 +139,7 @@ export class ApiStack extends Stack {
       comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
+    schedulerDLQAlarm.addAlarmAction(new cloudwatchActions.SnsAction(opsAlertTopic));
 
     // ---- Lambda functions ----------------------------------------------
 
@@ -235,7 +254,7 @@ export class ApiStack extends Stack {
 
     // CloudWatch alarm: alert when tournament-scheduler Lambda errors so silent
     // phase-transition failures are immediately visible (root cause of bug #106).
-    new cloudwatch.Alarm(this, 'TournamentSchedulerErrorAlarm', {
+    const tournamentSchedulerErrorAlarm = new cloudwatch.Alarm(this, 'TournamentSchedulerErrorAlarm', {
       alarmName: 'tankmaze-tournament-scheduler-errors',
       alarmDescription: 'tournament-scheduler Lambda returned an error — a Game Day phase may have silently failed to advance',
       metric: tournamentScheduler.metricErrors({
@@ -247,6 +266,7 @@ export class ApiStack extends Stack {
       comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
+    tournamentSchedulerErrorAlarm.addAlarmAction(new cloudwatchActions.SnsAction(opsAlertTopic));
 
     // wss-handler — needs WebSocket APIGW endpoint added after API is created
     const wssHandler = goLambda('WssHandler', 'wss-handler', {
@@ -365,6 +385,41 @@ export class ApiStack extends Stack {
     }));
     forgotPasswordWorker.grantInvoke(tankApi);
     tankApi.addEnvironment('FORGOT_PASSWORD_WORKER_FUNCTION', forgotPasswordWorker.functionArn);
+
+    // CloudWatch alarms: tank-api serves every REST route behind one Lambda
+    // (ADR-004/ADR-005), so an init panic, OOM kill, or account-level
+    // concurrency exhaustion here 503s the whole platform at once rather
+    // than degrading a single endpoint (item 232 — a 2026-07-10 outage was
+    // only ever surfaced via a user's browser console, not paged). Errors
+    // catches init/handler panics; Throttles catches concurrency exhaustion
+    // (tank-api has no reserved concurrency of its own, so it's exposed to
+    // the account-wide unreserved pool being consumed elsewhere).
+    const tankApiErrorAlarm = new cloudwatch.Alarm(this, 'TankApiErrorAlarm', {
+      alarmName: 'tankmaze-tank-api-errors',
+      alarmDescription: 'tank-api Lambda returned an error — since every REST route shares this one Lambda, this can mean a platform-wide outage, not just one endpoint',
+      metric: tankApi.metricErrors({
+        period: Duration.minutes(5),
+        statistic: 'Sum',
+      }),
+      threshold: 5,
+      evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    tankApiErrorAlarm.addAlarmAction(new cloudwatchActions.SnsAction(opsAlertTopic));
+    const tankApiThrottleAlarm = new cloudwatch.Alarm(this, 'TankApiThrottleAlarm', {
+      alarmName: 'tankmaze-tank-api-throttles',
+      alarmDescription: 'tank-api Lambda is being throttled — likely account-level concurrency exhaustion, surfaces to users as platform-wide 503s',
+      metric: tankApi.metricThrottles({
+        period: Duration.minutes(5),
+        statistic: 'Sum',
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    tankApiThrottleAlarm.addAlarmAction(new cloudwatchActions.SnsAction(opsAlertTopic));
 
     // ---- WebSocket API (observer) --------------------------------------
 

@@ -203,3 +203,33 @@ func TestBracketRoundtrip(t *testing.T) {
 		t.Errorf("r2[1] status: %s", got.Bracket["r2"][1].Status)
 	}
 }
+
+// TestUserSettingsRoundtrip covers DisplayName (item 225) and AvatarURL
+// (item 229) — both are durable copies that must survive a marshal/
+// unmarshal cycle unchanged, since a federated re-login relies on them
+// overriding the Cognito attribute that gets resynced from the IdP.
+func TestUserSettingsRoundtrip(t *testing.T) {
+	orig := UserSettings{
+		UserID:                 "user-abc",
+		Tier:                   TierPro,
+		CompilationsThisWindow: 5,
+		WindowStart:            "2026-07-01T00:00:00Z",
+		DisplayName:            "Alexandria Montgomery-Fitzgerald",
+		AvatarURL:              "https://assets.example.com/user-avatars/user-abc/avatar.png",
+	}
+	got := marshalRoundtrip(t, orig)
+	if got != orig {
+		t.Errorf("roundtrip mismatch:\n got  %+v\n want %+v", got, orig)
+	}
+}
+
+func TestUserSettingsEmptyOptionalFields(t *testing.T) {
+	orig := UserSettings{UserID: "user-new", Tier: TierFree}
+	got := marshalRoundtrip(t, orig)
+	if got.DisplayName != "" {
+		t.Errorf("expected empty DisplayName, got %q", got.DisplayName)
+	}
+	if got.AvatarURL != "" {
+		t.Errorf("expected empty AvatarURL, got %q", got.AvatarURL)
+	}
+}
