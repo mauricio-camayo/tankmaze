@@ -72,11 +72,11 @@
 
 ---
 
-## ADR-010: Six DynamoDB tables with explicit separation of concerns
+## ADR-010: One DynamoDB table per distinct entity, not multipurpose tables
 
-**Decision:** Use six tables (`tanks`, `tank-versions`, `matches`, `connections`, `gamedays`, `rankings`) rather than a smaller number of multipurpose tables.
+**Decision:** Use a separate table per entity (originally six — `tanks`, `tank-versions`, `matches`, `connections`, `gamedays`, `rankings` — grown since to thirteen as features were added: `maps`, `user-settings`, `friendships`, `messages`, `platform-config`, `gameday-series`, `oidc-shim-codes`; see `technical-spec.md` §3 for the current full list) rather than a smaller number of multipurpose tables.
 
-**Rationale:** Each table models a distinct entity with a different lifecycle and access pattern. Tank-level stats (`globalScore`, `bestFinish`) are updated after every Game Day regardless of version. Version-level stats (`winRate`, `matchesPlayed`) reset on promotion. Ranking records need TTL-based expiry independent of the tank record. Conflating these into fewer tables would require complex conditional updates and make GSI design awkward. DynamoDB costs per table are negligible; clarity is worth it.
+**Rationale:** Each table models a distinct entity with a different lifecycle and access pattern. Tank-level stats (`globalScore`, `bestFinish`) are updated after every Game Day regardless of version. Version-level stats (`winRate`, `matchesPlayed`) reset on promotion. Ranking records need TTL-based expiry independent of the tank record. Conflating these into fewer tables would require complex conditional updates and make GSI design awkward. DynamoDB costs per table are negligible; clarity is worth it. This decision has held up well as the platform grew — every new feature (friends, chat, ad config, recurring series) added its own table rather than needing to be shoehorned into an existing one.
 
 ---
 
@@ -101,6 +101,46 @@
 **Decision:** Each bracket slot carries an explicit `status` field (`playing`, `won`, `lost`, `both_lose`, `bye`) rather than inferring slot state from match results at query time.
 
 **Rationale:** The both-lose outcome creates a structural gap in the bracket — a slot that has no winner. Inferring this at query time (joining match results to bracket position) requires complex logic that must be re-evaluated every time the bracket is read. Storing status explicitly on each slot makes the bracket self-describing: `tournament-scheduler` can walk the bracket tree once per phase, detect `both_lose` slots, propagate `bye` to the opposing next-round slot, and detect the no-survivors edge case (all remaining slots are `both_lose`) without re-querying match records. It also makes the bracket display on the frontend a straightforward read with no server-side inference.
+
+---
+
+## ADR-014: OIDC shim for OAuth2-only identity providers (GitHub, Discord)
+
+**Decision:** Front GitHub and Discord with a single self-hosted Lambda (`cmd/oidc-shim`, parameterized by `PROVIDER=github|discord`) that terminates each provider's OAuth2 flow and re-presents it to Cognito as a standards-compliant OIDC provider (`cognito.UserPoolIdentityProviderOidc` with explicit, non-discovery endpoints), rather than adding either as a native CDK social-provider construct.
+
+**Rationale:** CDK's built-in Cognito social-provider constructs are Google, Facebook, Amazon, and Apple — no more. GitHub and Discord OAuth Apps only speak classic OAuth2: no `/.well-known/openid-configuration` discovery document, no `id_token`, just an authorization code redeemable for a bearer token plus a REST call to fetch the profile. Cognito's federation model requires an `id_token` it can verify, so *something* has to bridge the gap. Two options were considered: (a) a Lambda-based OIDC shim that performs the OAuth2 exchange and mints a signed `id_token` Cognito can consume, matching the existing Google/Facebook attribute-mapping shape once shimmed; or (b) a fully custom Cognito Lambda auth-challenge flow that bypasses federation entirely. (a) was chosen because it keeps GitHub/Discord consistent with how Google/Facebook already work (same attribute-mapping shape, same durable-name/avatar resync rules), rather than diverging into a second, harder-to-maintain auth path. Both providers share one Lambda (parameterized, not duplicated), one DynamoDB table for the ephemeral authorization-code hand-off (`tankmaze-oidc-shim-codes`), and the same hand-rolled JWT signer (ADR-015) — Discord's addition reused essentially all of GitHub's shim infrastructure.
+
+**Consequence:** each provider's OAuth App must redirect to the *shim's own* `/callback` URL (a generated API Gateway endpoint, output by CDK as `<Provider>OidcShimCallbackUrl`), not directly to Cognito's `idpresponse` endpoint — the shim sits one hop upstream of Cognito. This is easy to get backwards when configuring the OAuth App by hand, since Cognito's own callback URL is the more "obvious" value to reach for.
+
+---
+
+## ADR-015: Hand-rolled RS256 JWT signing in the OIDC shim, no library dependency
+
+**Decision:** The OIDC shim signs its `id_token`s with a small hand-written RS256 implementation (`crypto/rsa`, `crypto/sha256`, stdlib `encoding/json`/`encoding/base64` only) rather than pulling in a JWT library.
+
+**Rationale:** This repo pins Go toolchain versions carefully (`GOTOOLCHAIN=local`, explicit version checks in CI) because of a prior incident where `go get` silently bumped the `go` directive in `go.mod` and broke the pinned toolchain. Adding a third-party JWT dependency risks pulling in a wider transitive dependency tree and its own Go-version constraints, for what is fundamentally a small, well-specified piece of code (RFC 7515 compact JWS serialization: base64url-encode header + payload, sign with `rsa.SignPKCS1v15`, concatenate with dots). The signing key itself is generated on the shim's first cold start directly into a dedicated Secrets Manager secret — no manual `openssl`-and-paste key-generation step at deploy time. Verified with unit tests that actually execute the signer end-to-end (sign → verify with the derived public key, plus a negative case confirming a different key's signature does *not* verify) — the highest-risk part of this code, and the one part exercisable without a live deployed OAuth round-trip.
+
+---
+
+## ADR-016: Rolling materialization for recurring Game Day series, not pre-created occurrences
+
+**Decision:** A recurring Game Day series (functional spec §6.8) only ever has its *next* occurrence materialized as a real Game Day record. A dedicated Lambda (`series-materializer`) runs hourly, creates the next occurrence once it's within a configurable lead time of firing, then advances the series forward — rather than pre-creating every future occurrence up front when the series is defined.
+
+**Rationale:** Pre-creating every occurrence works cleanly for a fixed repeat count, but breaks down for indefinite recurrence — there's no upper bound to materialize toward. Rolling materialization handles both cases uniformly with one mechanism, and keeps the `tankmaze-gameday-series`/`tankmaze-gamedays` tables free of far-future speculative rows that might never need to exist (e.g. if the series is cancelled). The tradeoff is that the *first* occurrence still needs to appear immediately for a usable admin experience — that one is materialized synchronously in the `POST /gameday-series` handler itself, using the same `internal/scheduling` package the rolling job calls, so the two code paths can't drift apart. An optimistic-lock conditional update (`AdvanceGameDaySeries`) plus a dedup check against existing occurrences (matching `seriesId` + round-robin time) guards against double-materializing if a prior tick's advance step failed after its materialize step had already succeeded — the two aren't in the same transaction, so this had to be handled explicitly rather than assumed atomic.
+
+---
+
+## Lambda account concurrency limit: root cause of the full-platform 503 outage
+
+Not an architecture *decision* so much as an operational lesson worth recording here for anyone investigating a similar symptom in the future.
+
+**Symptom:** every `tank-api` REST route failed simultaneously with `503` during two separate incidents (2026-07-10 and 2026-07-14), rather than one handler misbehaving while others kept working.
+
+**Root cause:** this AWS account's Lambda **concurrent-execution limit was 10** (`aws lambda get-account-settings` → `ConcurrentExecutions: 10`), far below AWS's standard default of 1000 — apparently never raised from a new-account starting quota. `tank-api` alone serves nearly every REST route (single-Lambda design, ADR-004), and a single Dashboard page load fires roughly ten parallel requests; CloudWatch metrics confirmed account-wide `ConcurrentExecutions` hitting 9/10 in the same one-minute window `tank-api` recorded throttles — ordinary traffic, not a bug or an attack, was enough to exhaust the account-wide ceiling shared by all ~16 Lambda functions in the account.
+
+**Fix:** a Service Quotas request to raise the "Concurrent executions" quota (`L-B99A9384`) from 10 to 1000 — the standard default, and the same one nearly every AWS account starts with. This has no direct cost: the limit is a ceiling, not reserved/pre-paid capacity, and Lambda bills only for invocations that actually run (throttled requests were never billed either way).
+
+**Lesson:** when every route behind a single-Lambda REST API fails at once, check the account-wide concurrency limit before looking for a code defect — `aws lambda get-account-settings` takes one call to check and rules out (or confirms) an entire class of "not a bug" outages.
 
 ---
 

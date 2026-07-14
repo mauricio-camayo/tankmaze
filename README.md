@@ -34,7 +34,7 @@ Match end: a configurable tick limit (default: 100 ticks). Tiebreakers in order 
 | Frontend | React 18 + TypeScript + Phaser 3 |
 | Tank language | Go → WebAssembly (`GOOS=wasip1 GOARCH=wasm`) |
 | WASM runtime | Wazero (pure-Go, runs in Lambda) |
-| Auth | AWS Cognito + Amplify v6 |
+| Auth | AWS Cognito + Amplify v6 — email/password, Google, GitHub, Discord (Facebook built, currently disabled) |
 | Real-time | AWS API Gateway WebSocket API |
 | Game logic | AWS Lambda (Go) |
 | State store | AWS DynamoDB |
@@ -117,14 +117,18 @@ npx cdk deploy --all --context domainName=tankmaze.example.com
 
 The platform is complete and production-deployed on AWS. All core features are live:
 
+- Sign-in: email/password, Google, GitHub, and Discord (Facebook is fully built but currently disabled behind a feature flag pending a business decision)
 - Tank authoring: Monaco editor with hidden preamble, optional stdlib imports (`fmt`, `log`, `math`, `math/rand`, `sort`), browser-side Go syntax pre-check, and CodeBuild layer caching
 - Version lifecycle: minor/major versioning, fork flow with score transfer, unsaved-changes guard
 - AI reference tanks: Scout, Bruiser, Ranger, Randy — all seeded as real DB records and forkable
 - Static maps: Open, Donut, X, Rooms, Double Spiral — hand-crafted layouts selectable in test matches
 - Game Day scheduling: EventBridge cron triggers, round-robin pot seeding, up to 5 elimination rounds (R1–R5), single-elimination bracket with bye propagation, placement points formula
+- Recurring Game Day series: weekly/monthly/every-N-days repetition with a rolling materialization job, independent of one-off Game Days
 - Global leaderboard with 1-year point validity window
 - Observer / replay: Phaser canvas, sensor range overlays, avatar sprites, bracket connector lines, Watch links per match, full debug panel (sensor indicators, memory JSON, console output)
-- Admin panel: user management (disable, role toggle, delete), tank management (edit, force-delete), game day roster management, auto-fill bracket with all four AI tanks
+- Friends & direct messaging: friend requests, block/unblock, 1:1 chat between accepted friends
+- Subscription tiers: Free/Builder/Pro with per-tier tank and compilation quotas
+- Admin panel: user management (disable, role toggle, tier change, delete, with IdP/first-seen/last-seen/tank-quota visibility), tank management (edit, force-delete), Game Day roster management (including bulk "add all eligible tanks"), auto-fill bracket with all four AI tanks, Google AdSense configuration
 - Tank avatars: 16 built-in sprites, per-tank selection, CloudFront-served uploads (API available)
 - Security: SAST (gosec, staticcheck, semgrep), vulnerability scanning (govulncheck, trivy), secrets detection (trufflehog, gitleaks), BOLA and JWT tamper testing completed
 - CI/CD: GitHub Actions with OIDC AWS auth; automated deploy on push to main; AI tank WASMs compiled from source on every deploy

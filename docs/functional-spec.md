@@ -18,8 +18,23 @@ Third-party observers can watch any live match or replay any past match with ful
 |---|---|---|
 | **Tank Author** | Writes, submits, and manages tank programs | Yes (Cognito) |
 | **Observer** | Watches a live match with full map visibility | No (session link) |
+| **Platform Admin** | Tank Author additionally granted the `platform-admin` role — see §18 Administration | Yes (Cognito) |
 
 > There is no "manual player" role. Tank Authors never control their tanks in real time.
+
+### 2.1 Sign-in Methods
+
+A Tank Author account is a single Cognito identity that can be created and signed into via any of the following. All methods resolve to the same underlying user model (§13.3 subscription/tier fields, tank ownership, etc.) — which sign-in method was used has no gameplay effect.
+
+| Method | Status | Notes |
+|---|---|---|
+| Email + password | Live | Native Cognito sign-up with email verification |
+| Google | Live | Standard OAuth2/OIDC federation |
+| Facebook | **Disabled** | Fully built and previously live; the sign-in button is currently hidden by a feature flag pending a business decision — all backend/CDK plumbing remains in place for a fast re-enable |
+| GitHub | Live | GitHub's OAuth App speaks classic OAuth2 only (no OIDC discovery document, no `id_token`) — a small platform-operated shim terminates GitHub's OAuth2 exchange and re-presents it to Cognito as a standards-compliant OIDC provider. See ADR in `docs/architecture.md` for why this was necessary. |
+| Discord | Live | Same OIDC-shim approach as GitHub, sharing the same shim infrastructure (parameterized by provider) |
+
+**Profile name and picture:** for federated sign-ins, the provider's name/photo populate the account on first sign-in. If the Author later sets a custom display name or avatar, that choice is durable and is never silently overwritten by a subsequent federated re-login re-syncing the provider's original name/photo.
 
 ---
 
@@ -530,6 +545,28 @@ Global Score = Σ placement_points(game_day)
 **Ranking tiebreaker** (equal Global Score): tank with the higher Best Finish wins; if still tied, the one with more Game Days participated.
 
 **Decay visibility:** on a tank's profile, authors can see a breakdown of points per Game Day with an expiry date for each entry — so they know when a high-scoring result is about to drop off their total.
+
+---
+
+### 6.8 Recurring Game Day Series
+
+Rather than only creating one-off dated Game Days, an admin can define a **recurring series** — a template that automatically produces a new Game Day occurrence on a schedule, without an admin manually creating each one.
+
+**Recurrence rule** — chosen when the series is created, alongside the same fields as a one-off Game Day (round robin time, registration-close lead time, final lead time, autofill/forced-maps/random-maps settings — these become the template reapplied to every occurrence):
+
+| Frequency | Meaning |
+|---|---|
+| Weekly | Same weekday and time as the series' first occurrence |
+| Monthly | A fixed day-of-month (clamped to the last day of the month if that day doesn't exist, e.g. day 31 in a 30-day month) |
+| Every N days | A fixed interval from the previous occurrence |
+
+**Ending a series:** either indefinite (repeats until an admin cancels it) or a fixed occurrence count set at creation time.
+
+**Materialization:** only the *next* occurrence is ever pre-created as a real Game Day — not the whole future series at once. The first occurrence is created immediately when the series is set up, so admins see it right away; each following occurrence is created automatically as its turn approaches, following the same registration/round-robin/elimination scheduling as any other Game Day (§6.1). Roster, registration, and results are entirely independent per occurrence — nothing carries over from one occurrence of a series to the next.
+
+**Cancelling a series** stops future occurrences from being created. It does **not** retroactively affect any occurrence already created — those continue on their own schedule and results independently, exactly as if they'd been created one-off. Cancelling one specific occurrence (rather than the whole series) uses the same cancellation as any other Game Day and likewise has no effect on the series' future occurrences.
+
+**Admin UI:** the Game Day creation form has a "Repeats" section (frequency, day/interval, and an "ends never / after N occurrences" choice); the Game Day list shows a recurring badge on occurrences that belong to a series, with a "Cancel series" action distinct from cancelling that single occurrence.
 
 ---
 
@@ -1113,3 +1150,210 @@ When `enabled` is `false`, the endpoint still returns the full config object wit
 - Mobile native app
 - Tank-to-tank communication (multi-tank alliances)
 - Subscription payment processing (payment integration is deferred; tier limits and enforcement are in scope, payment collection is not)
+
+---
+
+## 17. Friends & Social
+
+TankMaze includes a lightweight social layer independent of Game Day competition: Tank Authors can befriend each other, block unwanted contact, and exchange direct messages with accepted friends. This is a companion feature to the public Tank Author profile (`pages/UserProfile.tsx`) — friend actions and messaging both originate from that page and from the dedicated Friends page (`pages/Friends.tsx`).
+
+### 17.1 Relationship Model
+
+A relationship between two users is stored as **one row per direction** in the `tankmaze-friendships` table — `(userId=A, friendId=B)` and `(userId=B, friendId=A)` — rather than a single canonicalized pair-key. This lets a lookup from either side of the relationship be a plain `GetItem`/`Query` against that user's own partition, with no GSI required (`packages/backend/internal/db/friendships.go`).
+
+```
+friendships[userId][friendId] = {
+  userId, friendId,
+  status:      "pending" | "accepted" | "blocked",
+  requestedBy: "<userId who initiated the request, or who placed the block>",
+  createdAt:   <unix timestamp>
+}
+```
+
+| Status | Meaning | Set by |
+|---|---|---|
+| `pending` | A friend request has been sent and not yet answered | `SendFriendRequest` — writes both directions |
+| `accepted` | Both users are friends | `AcceptFriendRequest` — flips both directions |
+| `blocked` | One user has blocked the other | `BlockUser` — reuses the same table/dual-item model rather than a separate blocks table |
+
+`requestedBy` is dual-purpose: for a `pending` row it records who sent the request (so the recipient's side can be told apart from the sender's side); for a `blocked` row it is repurposed to record **who placed the block**, which is what lets `UnblockUser` enforce that only that person may lift it.
+
+Deleting both direction-rows is the single underlying operation (`RemoveFriendship`) behind three different user actions: rejecting an incoming request, cancelling an outgoing request, and unfriending an accepted friend. All three are "delete the pairing" from the data model's point of view.
+
+### 17.2 Friend Requests
+
+**Send** — `POST /friends/requests { toUserId }` (`sendFriendRequest`, from a Tank Author's profile page):
+- Rejected with `400` if `toUserId` is empty or equal to the caller's own ID (no self-friending).
+- The backend looks up the existing relationship from the caller's side first:
+  - If a `blocked` row exists (in **either** direction — see §17.3), the request is rejected with a generic `403 "unable to send friend request"`. The error is deliberately non-specific: it never reveals *which* of the two users placed the block.
+  - If already `accepted`, rejected with `409 "already friends"`.
+  - If already `pending` (either direction), rejected with `409 "friend request already pending"`.
+  - Otherwise, `SendFriendRequest` writes a `pending` row on both sides with `requestedBy` set to the sender.
+
+**Accept / Reject** — `POST /friends/requests/{fromUserId}/accept` and `.../reject` (`respondFriendRequest` handles both, sharing one code path):
+- The caller must have a `pending` relationship with `fromUserId` where `requestedBy != caller` — i.e. it must be an **incoming** request. Responding to your own outgoing request, or to a non-existent request, fails (`404` if no relationship exists at all, `409 "no pending incoming request from this user"` otherwise).
+- Accept flips both direction-rows to `accepted` (`AcceptFriendRequest`).
+- Reject deletes both direction-rows (`RemoveFriendship`) — a rejected request leaves no trace of ever having existed.
+
+**Cancel** (an outgoing request the caller sent) — reuses the same endpoint as removing a friend: `DELETE /friends/{friendId}` (`removeFriend`, see §17.4). The handler doesn't distinguish "cancel a pending outgoing request" from "unfriend an accepted friend" — both are `RemoveFriendship` on the caller's pairing with that user.
+
+### 17.3 Removing a Friend
+
+`DELETE /friends/{friendId}` deletes both direction-rows of the relationship regardless of its current status (`pending` or `accepted`). This single endpoint backs three UI actions:
+- **Remove friend** on an accepted friendship (Friends page and UserProfile).
+- **Cancel** an outgoing request the caller sent (Friends page "Sent requests" section).
+- **Cancel request** from the target's UserProfile page while `friendStatus === 'outgoing'`.
+
+Removing a friendship is unilateral — either party can end it, and it takes effect immediately with no confirmation step from the other side.
+
+### 17.4 Blocking & Unblocking
+
+**Block** — `POST /friends/block { targetUserId }` (`blockUser`):
+1. Rejected with `400` if `targetUserId` is empty or equal to the caller's own ID.
+2. `BlockUser` first calls `RemoveFriendship` to delete **any existing relationship** between the two users — an existing friendship, or a pending request in either direction, is torn down as a side effect of blocking (equivalent to an implicit unfriend).
+3. It then writes a fresh `blocked`-status pair on both direction-rows, with `requestedBy` set to the blocker.
+4. Once blocked, the target cannot send a new friend request (§17.2) and neither user can message the other (§17.5) — `canMessage` requires `accepted` status, which a block precludes by construction.
+
+**Unblock** — `POST /friends/unblock { targetUserId }` (`unblockUser`):
+- Looks up the relationship from the caller's side; `404 "no block exists"` if there is none, or if it exists but isn't `blocked` status.
+- **Only the user who placed the block may lift it.** If `requestedBy != caller`, the backend returns `403` with `db.ErrNotBlocker` ("only the user who placed the block can unblock") — the blocked party has no way to remove the block themselves.
+- Otherwise `RemoveFriendship` deletes both rows, returning the pair to a clean, relationship-free state. A new friend request can then be sent normally.
+
+**Visibility asymmetry:** `listFriends` (§17.6) only surfaces a `blocked` row in the caller's own `blocked` bucket **if `requestedBy == caller`** — i.e. a user only ever sees blocks *they* placed. The person who got blocked never sees "blocked" reflected anywhere in their own friend list; their friend-request and message attempts against that user simply fail with the same generic errors any stranger would get, so the block itself is never revealed to them.
+
+On `UserProfile.tsx`, this asymmetry drives the `friendStatus` state machine: `'blocked'` is only ever set from the *viewer's* perspective (checking whether the profile's `sub` appears in the viewer's own `blocked` list). When blocked, the profile shows a single **"Blocked · Unblock"** button in place of the normal Add/Remove/Block controls.
+
+### 17.5 Direct Messaging
+
+Messaging is restricted to **accepted, non-blocked friends only**. Because blocking always tears down any existing friendship first (§17.4), an `accepted` status is sufficient proof that no block exists between the two users — `canMessage` does not need a separate block check:
+
+```go
+// canMessage — packages/backend/cmd/tank-api/main.go
+func (h *handler) canMessage(ctx, uid, otherID) (bool, error) {
+    f, err := h.store.GetFriendship(ctx, uid, otherID)
+    if errors.Is(err, db.ErrNotFound) { return false, nil }
+    if err != nil { return false, err }
+    return f.Status == db.FriendshipAccepted, nil
+}
+```
+
+**Send** — `POST /messages { toUserId, body }` (`sendMessage`):
+- `400` if `toUserId` or `body` (after trimming) is empty.
+- `400` if `body` exceeds **2000 characters** (`maxMessageBodyLen`).
+- `403 "you can only message accepted friends"` if `canMessage` returns false.
+- On success, `Store.SendMessage` writes the message and returns it (`201`).
+
+**List** — `GET /messages/{userId}?since=<messageId>` (`listMessages`):
+- Same `canMessage` gate as send; `403` if the two users aren't accepted friends.
+- Without `since`: returns the most recent page (limit **50**), fetched by scanning backward and re-sorting ascending so the response is always chronological.
+- With `since=<messageId>`: returns everything strictly after that cursor (limit **200**, to avoid missing a burst of messages between polling intervals).
+- Chat is **polling-based, not WebSocket push** — `pages/Chat.tsx` calls `listMessages(userId, since)` on an interval while a conversation is open, and calls `sendMessage` on submit.
+
+**Message data model** (`packages/backend/internal/db/messages.go`):
+
+| Field | Description |
+|---|---|
+| `conversationId` | Partition key — the two participants' user IDs, sorted and joined with `#` (`ConversationID(a, b)`), so either side computes the same key regardless of who sends |
+| `messageId` | Sort key — zero-padded millisecond timestamp + random hex suffix, so lexicographic order matches chronological order even for same-millisecond messages |
+| `senderId` / `recipientId` | The two participants |
+| `body` | Message text (≤ 2000 chars) |
+| `sentAt` | Unix timestamp |
+| `ttl` | `sentAt + 30 days` — messages TTL-expire automatically via DynamoDB TTL; there is no manual delete UI |
+
+**Unread indicator:** `listFriends` (§17.6) populates each accepted-friend entry with `lastMessageAt` / `lastMessageFromMe` via `GetLatestMessage` (the single most recent message in that conversation). The frontend (`utils/chatUnread.ts`, `isUnread()`) uses this to render a small orange unread-dot on the "Message" link on the Friends page — there is no dedicated read-receipt schema; "unread" is inferred purely from "the latest message wasn't from me."
+
+### 17.6 Listing Friends (`GET /friends`)
+
+`listFriends` queries the caller's own partition (`ListFriendships`) — every direction-row involving the caller, of any status — and buckets it into four groups in a single pass:
+
+| Bucket | Condition |
+|---|---|
+| `blocked` | `status == blocked` **and** `requestedBy == caller` (blocks the caller placed only — see §17.4 asymmetry) |
+| `friends` | `status == accepted` — includes `lastMessageAt` / `lastMessageFromMe` when a conversation exists |
+| `outgoing` | `status == pending` and `requestedBy == caller` (requests the caller sent) |
+| `incoming` | `status == pending` and `requestedBy != caller` (requests the caller received) |
+
+Each entry resolves the other user's display name and picture (`resolveUserDisplay`) so the frontend never needs a separate profile lookup per row.
+
+### 17.7 API Reference
+
+| Method & Path | Handler | Purpose |
+|---|---|---|
+| `GET /friends` | `listFriends` | Bucketed list: friends, incoming, outgoing, blocked |
+| `POST /friends/requests` | `sendFriendRequest` | Send a friend request — body `{ toUserId }` |
+| `POST /friends/requests/{fromUserId}/accept` | `respondFriendRequest(accept=true)` | Accept an incoming request |
+| `POST /friends/requests/{fromUserId}/reject` | `respondFriendRequest(accept=false)` | Reject an incoming request |
+| `DELETE /friends/{friendId}` | `removeFriend` | Remove a friend, or cancel an outgoing request |
+| `POST /friends/block` | `blockUser` | Block a user — body `{ targetUserId }` |
+| `POST /friends/unblock` | `unblockUser` | Unblock a user (blocker only) — body `{ targetUserId }` |
+| `POST /messages` | `sendMessage` | Send a direct message — body `{ toUserId, body }` |
+| `GET /messages/{userId}?since=<messageId>` | `listMessages` | Fetch conversation history, or new messages since a cursor |
+
+All endpoints require an authenticated caller (`401` if `userID(req)` is empty); none are accessible to Observers.
+
+### 17.8 UI Surfaces
+
+**Friends page** (`pages/Friends.tsx`) — three sections, shown only when non-empty:
+- **Friend requests** (incoming) — each row has **Accept** / **Decline** buttons.
+- **Friends** — each row has a **Message** link (routes to `/chat/{userId}`, shows the unread dot from §17.5) and a **Remove** button.
+- **Sent requests** (outgoing) — each row has a **Cancel** button (calls `removeFriend`).
+
+**UserProfile page** (`pages/UserProfile.tsx`) — the profile of any other Tank Author shows a friend-status–dependent action cluster, derived by cross-referencing `listFriends()` against the viewed `sub`:
+
+| `friendStatus` | Buttons shown |
+|---|---|
+| `none` | **Add friend** |
+| `outgoing` | **Cancel request** |
+| `incoming` | **Accept** / **Decline** |
+| `friends` | **Remove friend** |
+| `blocked` | **Blocked · Unblock** (replaces all other controls) |
+
+A low-key **Block user** text action is always available alongside the primary buttons (except when already `blocked`, where Unblock is the only control shown). Friend-action errors surface inline beneath the action cluster rather than as a toast.
+
+### 17.9 Access & Privacy Rules
+
+| Rule | Enforcement point |
+|---|---|
+| A user cannot send a friend request to, or message, someone who has blocked them (or whom they've blocked) | `sendFriendRequest` (generic 403), `canMessage` (accepted-only gate) |
+| Only the blocker can unblock | `UnblockUser` / `db.ErrNotBlocker` |
+| A blocked user is never told they've been blocked | `listFriends` blocked-bucket filter (`requestedBy == caller` only); generic error messages on request/message attempts |
+| Messages are only ever readable by the two participants | `canMessage` gate on both `sendMessage` and `listMessages`; there is no admin or observer read path for chat content |
+| Messages are not retained indefinitely | DynamoDB TTL, 30 days from `sentAt`, no manual delete |
+
+---
+
+## 18. Administration
+
+Users in the Cognito `platform-admin` group get an `/admin` area with tools for user support, tank moderation, ad configuration, and Game Day roster management. Nothing here confers any in-game advantage — it's operational tooling, not gameplay.
+
+### 18.1 User Management (`/admin/users`)
+
+| Column / Action | Description |
+|---|---|
+| Name / Email | The user's display name and account email |
+| Status | Active / Disabled, toggled by the admin (a disabled user cannot sign in) |
+| Admin | Checkbox toggling `platform-admin` membership — an admin cannot demote themselves |
+| Tier | Subscription tier (§13), directly editable by an admin |
+| **IdP** | Which sign-in method the account uses (§2.1) — `Email/Password`, `Google`, `Facebook`, `GitHub`, or `Discord` |
+| **First seen** | Account creation date |
+| **Last seen** | Most recent sign-in date. Falls back to displaying "First seen" until a genuine second sign-in has occurred — a brand-new federated account's very first sign-in is a signup event from Cognito's point of view, not an authentication event, so there is nothing to distinguish it from account creation until the *next* sign-in |
+| **Tanks** | Tank count vs. the account's tier limit, e.g. `3/5` |
+| Delete | Force-deletes the user and all of their tanks |
+
+### 18.2 Tank Management (`/admin/tanks`)
+
+Admins can rename or force-delete any tank regardless of owner, and force-reset a tank version stuck in a `"compiling"` state back to a resolvable status.
+
+### 18.3 Game Day Roster Management
+
+From a Game Day's page, an admin can manually add or remove individual tanks from the roster (§6.2 covers an Author's own registration; this is the admin override for building out a field). A **"Add all tanks"** action registers every eligible user-owned tank in a single click instead of adding them one at a time:
+
+- **Eligible**: the tank has at least one promoted major version with `compileStatus == "ready"` — its highest such version is used.
+- **Skipped**: tanks already on the roster, and tanks with no ready major version (shown as a count in a confirmation step before submitting, along with how many tanks will actually be added).
+- Built-in AI tanks (Scout/Bruiser/Ranger/Randy) have their own separate one-click quick-add list and aren't affected by this action.
+
+### 18.4 Ad Configuration
+
+See §16.4 — the AdSense publisher ID, per-placement slot IDs, and the global enabled toggle are managed entirely through `/admin/ads`.
+
+---
