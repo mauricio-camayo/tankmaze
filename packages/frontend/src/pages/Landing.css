@@ -176,6 +176,26 @@
 }
 .tm-bp-btn-facebook:focus-visible { outline: 2px solid var(--bp-readout); outline-offset: 2px; }
 
+.tm-bp-btn-github {
+  width: 100%; padding: 10px 0; margin-top: 8px;
+  background: #24292e; color: #fff; border: 1px solid #24292e;
+  cursor: pointer; font-family: 'IBM Plex Sans', sans-serif;
+  font-weight: 600; font-size: 13.5px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.tm-bp-btn-github:disabled { cursor: not-allowed; opacity: 0.7; }
+.tm-bp-btn-github:focus-visible { outline: 2px solid var(--bp-readout); outline-offset: 2px; }
+
+.tm-bp-btn-discord {
+  width: 100%; padding: 10px 0; margin-top: 8px;
+  background: #5865F2; color: #fff; border: 1px solid #5865F2;
+  cursor: pointer; font-family: 'IBM Plex Sans', sans-serif;
+  font-weight: 600; font-size: 13.5px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.tm-bp-btn-discord:disabled { cursor: not-allowed; opacity: 0.7; }
+.tm-bp-btn-discord:focus-visible { outline: 2px solid var(--bp-readout); outline-offset: 2px; }
+
 .tm-bp-divider { display: flex; align-items: center; margin: 18px 0; }
 .tm-bp-divider hr { flex: 1; border: none; border-top: 1px solid var(--bp-hairline); margin: 0; }
 .tm-bp-divider span {

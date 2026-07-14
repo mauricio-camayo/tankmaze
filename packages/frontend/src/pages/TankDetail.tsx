@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import Layout, { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
 import { getTank, deleteTank, withdrawRegistration, getRankings, listGameDays, registerForGameDay, startMatch, listMaps, listTanks, getMySettings, type OpponentSpec } from '../services/api';
-import type { Tank, TankVersion, GameDay, GameMap, RankingEntry } from '../types';
+import type { Tank, TankVersion, GameDay, GameMap } from '../types';
 import ForkDialog from '../components/ForkDialog';
 import { avatarSrc } from '../components/AvatarPicker';
 import { useAuthStore } from '../store/authStore';
@@ -72,6 +72,15 @@ const overlay: React.CSSProperties = {
   display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
 };
 
+// Item 236: TestDialog's "Your tank"/"Opponent" tank pickers use a <select>
+// instead of a radio list — an owner's own tanks, or a target author's
+// ready tanks, are both unbounded over time, unlike the fixed 4-entry AI
+// archetype list (which stays radio) or the small Map list.
+const selectStyle: React.CSSProperties = {
+  width: '100%', background: '#072943', border: '1px solid #23577a', borderRadius: 0,
+  color: '#e7f1f7', padding: '8px 10px', fontSize: 14, boxSizing: 'border-box', cursor: 'pointer',
+};
+
 function GameDayPickerModal({
   gameDays, loading, onSelect, onClose,
 }: {
@@ -128,16 +137,45 @@ function GameDayPickerModal({
   );
 }
 
+type TestDialogMode = 'ai' | 'challenge';
+
+// TestDialog serves both "Test vs AI" and, since item 234, "Challenge"
+// (item 37's Informal match, reworked): the two differ only in what fills
+// the "Opponent" section (AI archetypes vs. an author's real tanks) and
+// whether a "Your tank" section is shown above it — everything else (the Map
+// section, dialog chrome) is shared rather than duplicated into a second
+// component.
 function TestDialog({
-  maps, loadingMaps, onTest, onClose,
+  mode, maps, loadingMaps, onTest, onClose,
+  yourTanks, loadingYourTanks, opponentTanks, loadingOpponentTanks, defaultOpponentTankId, onChallenge,
 }: {
+  mode: TestDialogMode;
   maps: GameMap[];
   loadingMaps: boolean;
-  onTest: (opponent: TestOpponent, mapId: string | null) => void;
   onClose: () => void;
+  // mode="ai"
+  onTest?: (opponent: TestOpponent, mapId: string | null) => void;
+  // mode="challenge"
+  yourTanks?: Tank[];
+  loadingYourTanks?: boolean;
+  opponentTanks?: Tank[];
+  loadingOpponentTanks?: boolean;
+  defaultOpponentTankId?: string;
+  onChallenge?: (yourTankId: string, opponentTankId: string, mapId: string | null) => void;
 }) {
   const [opponent, setOpponent] = useState<TestOpponent>('scout');
+  const [yourTankId, setYourTankId] = useState('');
+  const [opponentTankId, setOpponentTankId] = useState(defaultOpponentTankId ?? '');
   const [mapId, setMapId] = useState<string | null>(() => localStorage.getItem('tankmaze:lastMapId') ?? null);
+
+  // Default "Your tank" to the first ready tank once the list arrives —
+  // there's no equivalent of defaultOpponentTankId for it, since which of
+  // the challenger's tanks to lead with has no natural default otherwise.
+  useEffect(() => {
+    if (mode === 'challenge' && !yourTankId && yourTanks && yourTanks.length > 0) {
+      setYourTankId(yourTanks[0].tankId);
+    }
+  }, [mode, yourTanks, yourTankId]);
 
   function selectMap(id: string | null) {
     setMapId(id);
@@ -145,19 +183,62 @@ function TestDialog({
     else localStorage.setItem('tankmaze:lastMapId', id);
   }
 
+  const canLaunch = mode === 'challenge' ? !!yourTankId && !!opponentTankId : true;
+
   return (
     <div style={overlay}>
       <div style={{ ...cardStyle, width: 420, maxHeight: '80vh', overflowY: 'auto' }}>
-        <h3 style={{ margin: '0 0 16px', color: '#e7f1f7' }}>Test vs AI</h3>
+        <h3 style={{ margin: '0 0 16px', color: '#e7f1f7' }}>{mode === 'challenge' ? 'Challenge' : 'Test vs AI'}</h3>
+
+        {mode === 'challenge' && (
+          <div style={{ marginBottom: 16 }}>
+            <p style={{ margin: '0 0 8px', fontSize: 13, color: '#7fa2ba' }}>Your tank</p>
+            {loadingYourTanks ? (
+              <span style={{ color: '#5b87a3', fontSize: 13 }}>Loading your tanks…</span>
+            ) : (yourTanks ?? []).length === 0 ? (
+              <span style={{ color: '#5b87a3', fontSize: 13 }}>You have no tanks to challenge with.</span>
+            ) : (
+              <select
+                aria-label="Your tank"
+                value={yourTankId}
+                onChange={(e) => setYourTankId(e.target.value)}
+                style={selectStyle}
+              >
+                {(yourTanks ?? []).map((t) => (
+                  <option key={t.tankId} value={t.tankId}>{t.name}</option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
+
         <div style={{ marginBottom: 16 }}>
           <p style={{ margin: '0 0 8px', fontSize: 13, color: '#7fa2ba' }}>Opponent</p>
-          {(['scout', 'bruiser', 'ranger', 'randy'] as TestOpponent[]).map((op) => (
-            <label key={op} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, cursor: 'pointer' }}>
-              <input type="radio" name="td-opponent" value={op} checked={opponent === op} onChange={() => setOpponent(op)} />
-              <span style={{ color: '#e7f1f7', textTransform: 'capitalize', fontSize: 14 }}>{op}</span>
-            </label>
-          ))}
+          {mode === 'ai' ? (
+            (['scout', 'bruiser', 'ranger', 'randy'] as TestOpponent[]).map((op) => (
+              <label key={op} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, cursor: 'pointer' }}>
+                <input type="radio" name="td-opponent" value={op} checked={opponent === op} onChange={() => setOpponent(op)} />
+                <span style={{ color: '#e7f1f7', textTransform: 'capitalize', fontSize: 14 }}>{op}</span>
+              </label>
+            ))
+          ) : loadingOpponentTanks ? (
+            <span style={{ color: '#5b87a3', fontSize: 13 }}>Loading opponent's tanks…</span>
+          ) : (opponentTanks ?? []).length === 0 ? (
+            <span style={{ color: '#5b87a3', fontSize: 13 }}>This author has no other tanks.</span>
+          ) : (
+            <select
+              aria-label="Opponent tank"
+              value={opponentTankId}
+              onChange={(e) => setOpponentTankId(e.target.value)}
+              style={selectStyle}
+            >
+              {(opponentTanks ?? []).map((t) => (
+                <option key={t.tankId} value={t.tankId}>{t.name}</option>
+              ))}
+            </select>
+          )}
         </div>
+
         <div style={{ marginBottom: 20 }}>
           <p style={{ margin: '0 0 8px', fontSize: 13, color: '#7fa2ba' }}>Map</p>
           {loadingMaps ? (
@@ -180,74 +261,16 @@ function TestDialog({
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button onClick={onClose} style={ghostButtonStyle}>Cancel</button>
-          <button onClick={() => onTest(opponent, mapId)} style={primaryButtonStyle}>Launch Match</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ChallengeDialog is the "Informal match" flow (item 37): search the global
-// leaderboard for another author's tank and challenge it directly. No map
-// picker here — Informal matches always use a randomly generated maze,
-// same as Ranked (§6.4).
-function ChallengeDialog({
-  rankings, loadingRankings, ownTankId, onChallenge, onClose,
-}: {
-  rankings: RankingEntry[];
-  loadingRankings: boolean;
-  ownTankId: string;
-  onChallenge: (opponentTankId: string) => void;
-  onClose: () => void;
-}) {
-  const [query, setQuery] = useState('');
-  const q = query.trim().toLowerCase();
-  const results = rankings
-    .filter((r) => r.tankId !== ownTankId)
-    .filter((r) => !q || (r.tankName ?? '').toLowerCase().includes(q) || (r.authorUsername ?? '').toLowerCase().includes(q))
-    .slice(0, 25);
-
-  return (
-    <div style={overlay}>
-      <div style={{ ...cardStyle, width: 420, maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
-        <h3 style={{ margin: '0 0 4px', color: '#e7f1f7' }}>Challenge an author</h3>
-        <p style={{ margin: '0 0 16px', color: '#7fa2ba', fontSize: 13 }}>
-          Unranked — doesn't affect either tank's Global Score.
-        </p>
-        <input
-          autoFocus
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by tank or author name…"
-          style={{
-            width: '100%', background: '#072943', border: '1px solid #23577a', borderRadius: 0,
-            color: '#e7f1f7', padding: '8px 10px', fontSize: 14, boxSizing: 'border-box', marginBottom: 12,
-          }}
-        />
-        <div style={{ overflowY: 'auto', flex: 1, marginBottom: 16 }}>
-          {loadingRankings ? (
-            <span style={{ color: '#5b87a3', fontSize: 13 }}>Loading tanks…</span>
-          ) : results.length === 0 ? (
-            <span style={{ color: '#5b87a3', fontSize: 13 }}>No tanks match.</span>
-          ) : (
-            results.map((r) => (
-              <button
-                key={r.tankId}
-                onClick={() => onChallenge(r.tankId)}
-                style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%',
-                  background: 'none', border: '1px solid #23577a', borderRadius: 0, cursor: 'pointer',
-                  padding: '8px 10px', marginBottom: 6, textAlign: 'left',
-                }}
-              >
-                <span style={{ color: '#e7f1f7', fontSize: 14, fontWeight: 600 }}>{r.tankName ?? r.tankId}</span>
-                <span style={{ color: '#7fa2ba', fontSize: 12 }}>{r.authorUsername ?? ''}</span>
-              </button>
-            ))
-          )}
-        </div>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={ghostButtonStyle}>Cancel</button>
+          <button
+            disabled={!canLaunch}
+            onClick={() => {
+              if (mode === 'challenge') onChallenge!(yourTankId, opponentTankId, mapId);
+              else onTest!(opponent, mapId);
+            }}
+            style={{ ...primaryButtonStyle, opacity: canLaunch ? 1 : 0.5, cursor: canLaunch ? 'pointer' : 'not-allowed' }}
+          >
+            Launch Match
+          </button>
         </div>
       </div>
     </div>
@@ -455,14 +478,16 @@ export default function TankDetail() {
   const [gameDaysLoaded, setGameDaysLoaded] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [registerError, setRegisterError] = useState<string | null>(null);
-  // Test vs AI
+  // Test vs AI / Challenge (item 234: shared dialog, see TestDialog above)
   const [showTestDialog, setShowTestDialog] = useState(false);
+  const [testDialogMode, setTestDialogMode] = useState<'ai' | 'challenge'>('ai');
   const [maps, setMaps] = useState<GameMap[]>([]);
   const [loadingMaps, setLoadingMaps] = useState(false);
-  // Challenge another author (Informal match, item 37)
-  const [showChallengeDialog, setShowChallengeDialog] = useState(false);
-  const [rankings, setRankings] = useState<RankingEntry[]>([]);
-  const [loadingRankings, setLoadingRankings] = useState(false);
+  // Challenge another author's tank (Informal match, item 37, reworked by 234)
+  const [yourTanks, setYourTanks] = useState<Tank[]>([]);
+  const [loadingYourTanks, setLoadingYourTanks] = useState(false);
+  const [opponentTanks, setOpponentTanks] = useState<Tank[]>([]);
+  const [loadingOpponentTanks, setLoadingOpponentTanks] = useState(false);
 
   useEffect(() => {
     if (!tankId) return;
@@ -547,6 +572,7 @@ export default function TankDetail() {
   }
 
   async function openTestDialog() {
+    setTestDialogMode('ai');
     setShowTestDialog(true);
     if (maps.length === 0) {
       setLoadingMaps(true);
@@ -566,26 +592,48 @@ export default function TankDetail() {
     }
   }
 
+  // Item 234: Challenge now lives on tanks the viewer doesn't own, reusing
+  // TestDialog's challenge mode instead of the old rankings-search dialog.
+  // "Your tank" is the challenger's own ready tanks; "Opponent" is the
+  // viewed tank's owner's own ready tanks, defaulting to the tank the user
+  // actually navigated to.
   async function openChallengeDialog() {
-    setShowChallengeDialog(true);
-    if (rankings.length === 0) {
-      setLoadingRankings(true);
-      getRankings().then(setRankings).catch(() => setRankings([])).finally(() => setLoadingRankings(false));
+    setTestDialogMode('challenge');
+    setShowTestDialog(true);
+    if (maps.length === 0) {
+      setLoadingMaps(true);
+      listMaps().then(setMaps).finally(() => setLoadingMaps(false));
+    }
+    if (yourTanks.length === 0) {
+      setLoadingYourTanks(true);
+      listTanks().then(setYourTanks).catch(() => setYourTanks([])).finally(() => setLoadingYourTanks(false));
+    }
+    if (opponentTanks.length === 0 && tank) {
+      setLoadingOpponentTanks(true);
+      listTanks(tank.userId).then(setOpponentTanks).catch(() => setOpponentTanks([])).finally(() => setLoadingOpponentTanks(false));
     }
   }
 
-  async function handleChallenge(opponentTankId: string) {
-    if (!tankId || !latestReadyMajorForActions) return;
-    setShowChallengeDialog(false);
+  async function handleChallengeSubmit(challengerTankId: string, opponentTankId: string, mapId: string | null) {
+    setShowTestDialog(false);
     try {
-      // Rankings doesn't carry a reliable challengeable version (it's shown
-      // on the leaderboard, but never actually populated by either
-      // backend — a separate pre-existing gap, items 209/213). Resolve it
-      // instead from GET /tanks/{id}: tank-api's public view for a
-      // non-owned tank already strips this down to a single latest-major
-      // entry, but localserver's local-dev stand-in returns every version
-      // unstripped (chronological order), so pick the latest major
-      // explicitly rather than assuming index 0 is it.
+      // The challenger owns this tank, so getTank returns the full owner
+      // view with real compileStatus — same "ready or unset (public-view
+      // stripped)" check latestReadyMajorForActions uses for the current page.
+      const challengerTank = await getTank(challengerTankId);
+      const challengerVersion = challengerTank.versions
+        .filter((v) => isMajor(v.version) && (v.compileStatus === 'ready' || v.compileStatus === ''))
+        .sort((a, b) => b.createdAt - a.createdAt)[0]?.version;
+      if (!challengerVersion) {
+        setRegisterError('That tank has no version ready to challenge with yet.');
+        return;
+      }
+      // Rankings doesn't carry a reliable challengeable version (items
+      // 209/213). Resolve instead from GET /tanks/{id}: tank-api's public
+      // view for a non-owned tank already strips this down to a single
+      // latest-major entry, but localserver's local-dev stand-in returns
+      // every version unstripped, so pick the latest major explicitly
+      // rather than assuming index 0 is it.
       const opponentTank = await getTank(opponentTankId);
       const opponentVersion = opponentTank.versions
         .filter((v) => isMajor(v.version))
@@ -595,7 +643,7 @@ export default function TankDetail() {
         return;
       }
       const spec: OpponentSpec = { type: 'informal', tankId: opponentTankId, version: opponentVersion };
-      const match = await startMatch(tankId, latestReadyMajorForActions.version, spec);
+      const match = await startMatch(challengerTankId, challengerVersion, spec, mapId ?? undefined);
       navigate(`/watch?matchId=${match.matchId}`);
     } catch (e) {
       setRegisterError(e instanceof Error ? e.message : 'Failed to start challenge');
@@ -631,6 +679,12 @@ export default function TankDetail() {
   const isDisqualified = !!latestReadyMajorForActions?.disqualified;
   const isRegistered = canRegister && (latestReadyMajorForActions?.registeredForGameDays?.length ?? 0) > 0;
   const canTest = isOwner && !!latestReadyMajorForActions;
+  // Item 234: Challenge is the inverse of Test vs AI — it only makes sense
+  // on tanks the viewer doesn't own (challenging *someone else's* tank),
+  // gated on the *viewed* tank having a ready major version to challenge,
+  // and requires being signed in (challenging needs one of the viewer's
+  // own tanks to challenge with).
+  const canChallenge = !isOwner && !!currentUser && !!latestReadyMajorForActions;
 
   return (
     <Layout>
@@ -709,7 +763,7 @@ export default function TankDetail() {
                 Test vs AI
               </button>
             )}
-            {canTest && (
+            {canChallenge && (
               <button onClick={openChallengeDialog} style={ghostButtonStyle}>
                 Challenge
               </button>
@@ -872,20 +926,17 @@ export default function TankDetail() {
 
       {showTestDialog && (
         <TestDialog
+          mode={testDialogMode}
           maps={maps}
           loadingMaps={loadingMaps}
           onTest={(opponent, mapId) => { handleTest(opponent, mapId); setShowTestDialog(false); }}
+          yourTanks={yourTanks}
+          loadingYourTanks={loadingYourTanks}
+          opponentTanks={opponentTanks}
+          loadingOpponentTanks={loadingOpponentTanks}
+          defaultOpponentTankId={tankId}
+          onChallenge={handleChallengeSubmit}
           onClose={() => setShowTestDialog(false)}
-        />
-      )}
-
-      {showChallengeDialog && tankId && (
-        <ChallengeDialog
-          rankings={rankings}
-          loadingRankings={loadingRankings}
-          ownTankId={tankId}
-          onChallenge={handleChallenge}
-          onClose={() => setShowChallengeDialog(false)}
         />
       )}
 

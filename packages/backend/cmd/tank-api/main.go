@@ -1420,12 +1420,10 @@ func (h *handler) startMatch(ctx context.Context, req events.APIGatewayV2HTTPReq
 		return errResp(http.StatusBadRequest, "opponent type must be 'ai', 'own', 'informal', or 'rematch'"), nil
 	}
 
-	// Informal and Ranked matches always use a randomly generated maze
-	// (§6.4) — map selection is a Test-match-only feature.
-	if matchType == "informal" && body.MapID != "" {
-		return errResp(http.StatusBadRequest, "map selection is not available for informal matches"), nil
-	}
-
+	// Item 234: Challenge (informal) reuses the same optional map picker
+	// Test vs AI already has — mapId omitted still defaults to a random
+	// maze below, exactly like Ranked (§6.4), but an explicit choice is
+	// now allowed too rather than rejected outright.
 	var mazeSeed, mapID string
 	if body.MapID != "" {
 		if _, err := h.store.GetMapByID(ctx, body.MapID); errors.Is(err, db.ErrNotFound) {

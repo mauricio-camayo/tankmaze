@@ -1,13 +1,28 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { signIn, signInWithGoogle, signInWithFacebook, signUpWithEmail, confirmEmailSignUp, resendConfirmationCode, confirmPasswordReset, getAuthUser, enrichAuthUser } from '../services/auth';
+import { signIn, signInWithGoogle, signInWithFacebook, signInWithGithub, signInWithDiscord, signUpWithEmail, confirmEmailSignUp, resendConfirmationCode, confirmPasswordReset, getAuthUser, enrichAuthUser } from '../services/auth';
 import { requestPasswordReset } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import './Landing.css';
 
-// Facebook IdP: CDK, backend, and CI wiring all done; FACEBOOK_APP_ID/
-// FACEBOOK_APP_SECRET are set as GitHub secrets. See item 189.
-const FACEBOOK_LOGIN_ENABLED = true;
+// Facebook IdP: CDK, backend, and CI wiring all done and left in place for a
+// fast re-enable; disabled pending a business decision (item 235). Flip back
+// to true to re-enable — FACEBOOK_APP_ID/FACEBOOK_APP_SECRET are still set as
+// GitHub secrets and the CDK UserPoolIdentityProviderFacebook is unchanged.
+const FACEBOOK_LOGIN_ENABLED = false;
+
+// GitHub (item 233) and Discord (item 240) sign-in via a custom OIDC shim
+// (neither provider speaks OIDC natively) — enabled per explicit request.
+// Real OAuth App credentials exist (GH_CLIENT_ID/GH_CLIENT_SECRET and
+// Discord's client id/secret, set as GitHub Actions secrets) but this has
+// NOT yet been exercised against a real deployed User Pool: it needs (1) a
+// CDK deploy with those secrets wired into githubClientId/discordClientId
+// context (see .github/workflows/ci.yml), and (2) both OAuth Apps'
+// redirect URI updated from https://auth.tankmaze.org/oauth2/idpresponse
+// to the shim's own /callback URL, which the deploy's CfnOutput reveals.
+// See PRIORITIES.md items 233/240.
+const GITHUB_LOGIN_ENABLED = true;
+const DISCORD_LOGIN_ENABLED = true;
 
 const spec = (tag: string, body: React.ReactNode) => (
   <div key={tag} className="tm-bp-spec">
@@ -76,6 +91,36 @@ export default function Landing() {
       await signInWithFacebook();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Facebook sign-in failed');
+      setLoading(false);
+    }
+  }
+
+  async function handleGithubSignIn() {
+    if (import.meta.env.VITE_LOCAL_DEV === 'true') {
+      setUser({ userId: 'local-user', username: 'local' });
+      navigate('/dashboard');
+      return;
+    }
+    setLoading(true);
+    try {
+      await signInWithGithub();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'GitHub sign-in failed');
+      setLoading(false);
+    }
+  }
+
+  async function handleDiscordSignIn() {
+    if (import.meta.env.VITE_LOCAL_DEV === 'true') {
+      setUser({ userId: 'local-user', username: 'local' });
+      navigate('/dashboard');
+      return;
+    }
+    setLoading(true);
+    try {
+      await signInWithDiscord();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Discord sign-in failed');
       setLoading(false);
     }
   }
@@ -297,6 +342,24 @@ export default function Landing() {
                         <path d="M22 12.06C22 6.51 17.52 2 12 2S2 6.51 2 12.06c0 5.02 3.66 9.18 8.44 9.94v-7.03H7.9v-2.91h2.54V9.85c0-2.51 1.49-3.9 3.77-3.9 1.09 0 2.23.2 2.23.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56v1.89h2.78l-.44 2.91h-2.34V22c4.78-.76 8.44-4.92 8.44-9.94z"/>
                       </svg>
                       {mode === 'signin' ? 'Sign in with Facebook' : 'Sign up with Facebook'}
+                    </button>
+                  )}
+
+                  {GITHUB_LOGIN_ENABLED && (
+                    <button type="button" onClick={handleGithubSignIn} disabled={loading} className="tm-bp-btn-github">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff">
+                        <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.09 3.29 9.4 7.86 10.93.57.1.78-.25.78-.55v-1.94c-3.2.7-3.88-1.54-3.88-1.54-.52-1.34-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.19-3.08-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.79 0c2.2-1.49 3.17-1.18 3.17-1.18.64 1.59.24 2.76.12 3.05.74.8 1.18 1.83 1.18 3.08 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .3.21.66.79.55A10.52 10.52 0 0 0 23.5 12c0-6.35-5.15-11.5-11.5-11.5z"/>
+                      </svg>
+                      {mode === 'signin' ? 'Sign in with GitHub' : 'Sign up with GitHub'}
+                    </button>
+                  )}
+
+                  {DISCORD_LOGIN_ENABLED && (
+                    <button type="button" onClick={handleDiscordSignIn} disabled={loading} className="tm-bp-btn-discord">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff">
+                        <path d="M20.32 4.37a19.8 19.8 0 0 0-4.89-1.52.07.07 0 0 0-.08.04c-.21.38-.45.87-.61 1.26a18.3 18.3 0 0 0-5.48 0 12.6 12.6 0 0 0-.63-1.26.08.08 0 0 0-.08-.04c-1.7.29-3.34.8-4.89 1.52a.07.07 0 0 0-.03.03C.53 8.09-.32 11.7.1 15.25a.08.08 0 0 0 .03.06 19.9 19.9 0 0 0 5.99 3.03.08.08 0 0 0 .08-.03c.46-.63.87-1.29 1.23-1.99a.08.08 0 0 0-.04-.11 13.1 13.1 0 0 1-1.87-.89.08.08 0 0 1-.01-.13c.13-.09.25-.19.37-.29a.07.07 0 0 1 .08-.01c3.93 1.79 8.18 1.79 12.06 0a.07.07 0 0 1 .08.01c.12.1.24.2.37.29a.08.08 0 0 1-.01.13c-.6.35-1.22.65-1.87.89a.08.08 0 0 0-.04.11c.36.7.78 1.36 1.23 1.99a.08.08 0 0 0 .08.03 19.8 19.8 0 0 0 6-3.03.08.08 0 0 0 .03-.06c.5-4.1-.84-7.68-3.55-10.85a.06.06 0 0 0-.03-.03zM8.02 13.08c-1.18 0-2.16-1.08-2.16-2.42 0-1.33.96-2.42 2.16-2.42 1.21 0 2.18 1.1 2.16 2.42 0 1.34-.96 2.42-2.16 2.42zm7.97 0c-1.18 0-2.16-1.08-2.16-2.42 0-1.33.96-2.42 2.16-2.42 1.21 0 2.18 1.1 2.16 2.42 0 1.34-.95 2.42-2.16 2.42z"/>
+                      </svg>
+                      {mode === 'signin' ? 'Sign in with Discord' : 'Sign up with Discord'}
                     </button>
                   )}
 

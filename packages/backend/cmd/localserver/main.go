@@ -940,11 +940,10 @@ func (srv *server) startMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if matchType == "informal" && body.MapID != "" {
-		jsonErr(w, http.StatusBadRequest, "map selection is not available for informal matches")
-		return
-	}
-
+	// Item 234: Challenge (informal) reuses the same optional map picker
+	// Test vs AI already has — mapId omitted still defaults to a random
+	// maze below, exactly like Ranked (§6.4), but an explicit choice is
+	// now allowed too rather than rejected outright.
 	var mazeSeed, mapID string
 	if body.MapID != "" {
 		if _, err := srv.store.getMapByID(body.MapID); errors.Is(err, db.ErrNotFound) {

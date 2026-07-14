@@ -191,6 +191,13 @@ jobs:
           SITE_CERTIFICATE_ARN: ${{ secrets.SITE_CERTIFICATE_ARN }}
           SES_SENDER_EMAIL: ${{ secrets.SES_SENDER_EMAIL }}
           OPS_ALERT_EMAIL: ${{ secrets.OPS_ALERT_EMAIL }}
+          # GitHub reserves the GITHUB_ secret-name prefix for its own
+          # automatic secrets, so this repo's GitHub OAuth App credentials
+          # are stored as GH_CLIENT_ID/GH_CLIENT_SECRET instead (item 233).
+          GH_CLIENT_ID: ${{ secrets.GH_CLIENT_ID }}
+          GH_CLIENT_SECRET: ${{ secrets.GH_CLIENT_SECRET }}
+          DISCORD_CLIENT_ID: ${{ secrets.DISCORD_CLIENT_ID }}
+          DISCORD_CLIENT_SECRET: ${{ secrets.DISCORD_CLIENT_SECRET }}
         run: |
           pnpm install --frozen-lockfile
           pnpm build
@@ -206,6 +213,12 @@ jobs:
           fi
           if [ -n "$SES_SENDER_EMAIL" ]; then
             CONTEXT_FLAGS="$CONTEXT_FLAGS --context sesSenderEmail=$SES_SENDER_EMAIL"
+          fi
+          if [ -n "$GH_CLIENT_ID" ] && [ -n "$GH_CLIENT_SECRET" ]; then
+            CONTEXT_FLAGS="$CONTEXT_FLAGS --context githubClientId=$GH_CLIENT_ID --context githubClientSecret=$GH_CLIENT_SECRET"
+          fi
+          if [ -n "$DISCORD_CLIENT_ID" ] && [ -n "$DISCORD_CLIENT_SECRET" ]; then
+            CONTEXT_FLAGS="$CONTEXT_FLAGS --context discordClientId=$DISCORD_CLIENT_ID --context discordClientSecret=$DISCORD_CLIENT_SECRET"
           fi
           if [ -n "$OPS_ALERT_EMAIL" ]; then
             CONTEXT_FLAGS="$CONTEXT_FLAGS --context opsAlertEmail=$OPS_ALERT_EMAIL"

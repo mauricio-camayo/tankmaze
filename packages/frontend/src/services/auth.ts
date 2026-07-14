@@ -50,6 +50,20 @@ export async function signInWithFacebook() {
   return signInWithRedirect({ provider: 'Facebook' });
 }
 
+// GitHub (item 233) and Discord (item 240) aren't one of Amplify's built-in
+// `provider` string literals (Google/Facebook/Amazon/Apple) — both are
+// wired as custom OIDC providers (see auth-stack.ts's oidc-shim), addressed
+// by the exact name Cognito registered them under.
+export async function signInWithGithub() {
+  if (LOCAL_DEV) return;
+  return signInWithRedirect({ provider: { custom: 'GitHub' } });
+}
+
+export async function signInWithDiscord() {
+  if (LOCAL_DEV) return;
+  return signInWithRedirect({ provider: { custom: 'Discord' } });
+}
+
 export async function signIn(username: string, password: string) {
   if (LOCAL_DEV) return { isSignedIn: true, nextStep: { signInStep: 'DONE' } };
   return amplifySignIn({ username, password });
