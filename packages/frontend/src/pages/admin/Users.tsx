@@ -98,7 +98,8 @@ export default function AdminUsers() {
       ) : (
         <>
         <div style={cardStyle}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', minWidth: 980, borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ color: '#5b87a3', textAlign: 'left' }}>
                 <th style={th}>Name</th>
@@ -158,7 +159,7 @@ export default function AdminUsers() {
                     <td style={td}>{fmtDate(u.createdAt)}</td>
                     <td style={td}>{fmtDate(u.lastLoginAt)}</td>
                     <td style={td}>{u.tankCount}/{u.tankLimit}</td>
-                    <td style={{ ...td, display: 'flex', gap: 8 }}>
+                    <td style={{ ...td, display: 'flex', gap: 8, flexWrap: 'nowrap', whiteSpace: 'nowrap' }}>
                       {!isSelf && (
                         <button
                           onClick={() => toggleEnabled(u)}
@@ -200,6 +201,7 @@ export default function AdminUsers() {
               })}
             </tbody>
           </table>
+          </div>
         </div>
         {(tokenStack.length > 0 || nextToken) && (
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
