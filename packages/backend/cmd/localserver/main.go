@@ -228,6 +228,12 @@ func (srv *server) route(w http.ResponseWriter, r *http.Request) {
 		srv.addRosterEntry(w, r, parts[1])
 	case method == "DELETE" && n == 4 && parts[0] == "gamedays" && parts[2] == "roster":
 		srv.removeRosterEntry(w, parts[1], parts[3])
+	case method == "GET" && rawPath == "gameday-series":
+		srv.listGameDaySeries(w)
+	case method == "POST" && rawPath == "gameday-series":
+		srv.createGameDaySeries(w, r)
+	case method == "DELETE" && n == 2 && parts[0] == "gameday-series":
+		srv.cancelGameDaySeries(w, parts[1])
 
 	// Maps
 	case method == "GET" && rawPath == "maps":
@@ -310,11 +316,7 @@ func (srv *server) getAiTanks(w http.ResponseWriter) {
 }
 
 func (srv *server) listTanks(w http.ResponseWriter, r *http.Request) {
-	uid := localUserID
-	if viewUserID := r.URL.Query().Get("userId"); viewUserID != "" {
-		uid = viewUserID
-	}
-	tanks := srv.store.listTanksByUser(uid)
+	tanks := srv.store.listTanksByUser(localUserID)
 	if tanks == nil {
 		tanks = []db.Tank{}
 	}
@@ -561,7 +563,7 @@ func (srv *server) deleteTank(w http.ResponseWriter, _ *http.Request, tankID str
 // ── Version handlers ────────────────────────────────────────────────────────
 
 type submitVersionBody struct {
-	Source string          `json:"source"`
+	Source string           `json:"source"`
 	Config db.VersionConfig `json:"config"`
 }
 
@@ -643,8 +645,8 @@ func (srv *server) submitVersion(w http.ResponseWriter, r *http.Request, tankID 
 		wasmKey := fmt.Sprintf("%s/%s/tank.wasm", tankID, nextVer)
 		srv.setWasm(wasmKey, wasmBytes)
 		srv.store.updateVersionCompile(tankID, nextVer, db.CompileUpdate{
-			Status:    "ready",
-			WasmS3Key: wasmKey,
+			Status:     "ready",
+			WasmS3Key:  wasmKey,
 			WasmSHA256: sha256hex,
 		})
 	}()
@@ -1439,6 +1441,18 @@ func (srv *server) createGameDay(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadRequest, "round robin must start before final")
 		return
 	}
+	gd := srv.materializeGameDay(strings.TrimSpace(body.Name), regClose, rrAt, finalAt, body.Autofill, body.ForcedMapIDs, body.RandomMaps, "")
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(gd)
+}
+
+// materializeGameDay creates and stores a GameDay record. seriesId is empty
+// for a standalone (non-recurring) Game Day. Local dev has no EventBridge
+// Scheduler, so unlike cmd/tank-api's equivalent (internal/scheduling), this
+// never creates any real schedules — phase transitions are driven manually
+// via the admin PATCH ?force= override, same as any other local Game Day.
+func (srv *server) materializeGameDay(name string, regClose, rrAt, finalAt time.Time, autofill bool, forcedMapIDs []string, randomMaps bool, seriesID string) db.GameDay {
 	const maxElimRounds = 5
 	elimination := make([]string, maxElimRounds)
 	for i := 0; i < maxElimRounds; i++ {
@@ -1451,26 +1465,130 @@ func (srv *server) createGameDay(w http.ResponseWriter, r *http.Request) {
 
 	gd := db.GameDay{
 		GameDayID: newUUID(),
-		Name:      gameDayDisplayName(strings.TrimSpace(body.Name), rrAt, finalAt),
+		Name:      gameDayDisplayName(name, rrAt, finalAt),
 		Schedule: db.GameDaySchedule{
-			RegistrationClose: body.RegistrationCloseAt,
-			RoundRobin:        body.RoundRobinAt,
+			RegistrationClose: regClose.UTC().Format(time.RFC3339),
+			RoundRobin:        rrAt.UTC().Format(time.RFC3339),
 			Elimination:       elimination,
-			Final:             body.FinalAt,
+			Final:             finalAt.UTC().Format(time.RFC3339),
 		},
 		Phases: db.GameDayPhases{
 			RoundRobin: db.PhaseStatus{Status: "upcoming"},
 			Final:      db.PhaseStatus{Status: "upcoming"},
 		},
 		CreatedAt:    time.Now().Unix(),
-		Autofill:     body.Autofill,
-		ForcedMapIDs: body.ForcedMapIDs,
-		RandomMaps:   body.RandomMaps,
+		Autofill:     autofill,
+		ForcedMapIDs: forcedMapIDs,
+		RandomMaps:   randomMaps,
+		SeriesID:     seriesID,
 	}
 	srv.store.putGameDay(gd)
+	return gd
+}
+
+func (srv *server) createGameDaySeries(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name                string   `json:"name"`
+		Frequency           string   `json:"frequency"`
+		ByMonthDay          int      `json:"byMonthDay"`
+		IntervalDays        int      `json:"intervalDays"`
+		RegistrationCloseAt string   `json:"registrationCloseAt"`
+		RoundRobinAt        string   `json:"roundRobinAt"`
+		FinalAt             string   `json:"finalAt"`
+		Autofill            bool     `json:"autofill"`
+		ForcedMapIDs        []string `json:"forcedMapIds"`
+		RandomMaps          bool     `json:"randomMaps"`
+		MaxOccurrences      int      `json:"maxOccurrences"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		jsonErr(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	switch body.Frequency {
+	case db.FreqWeekly:
+	case db.FreqMonthly:
+		if body.ByMonthDay < 1 || body.ByMonthDay > 31 {
+			jsonErr(w, http.StatusBadRequest, "byMonthDay must be between 1 and 31")
+			return
+		}
+	case db.FreqEveryNDays:
+		if body.IntervalDays < 1 {
+			jsonErr(w, http.StatusBadRequest, "intervalDays must be at least 1")
+			return
+		}
+	default:
+		jsonErr(w, http.StatusBadRequest, "frequency must be weekly, monthly, or every_n_days")
+		return
+	}
+	if body.MaxOccurrences < 0 {
+		jsonErr(w, http.StatusBadRequest, "maxOccurrences must be 0 (indefinite) or positive")
+		return
+	}
+	parseISO := func(s string) (time.Time, bool) {
+		t, err := time.Parse(time.RFC3339, s)
+		return t, err == nil
+	}
+	regClose, ok1 := parseISO(body.RegistrationCloseAt)
+	rrAt, ok2 := parseISO(body.RoundRobinAt)
+	finalAt, ok3 := parseISO(body.FinalAt)
+	if !ok1 || !ok2 || !ok3 {
+		jsonErr(w, http.StatusBadRequest, "timestamps must be ISO 8601")
+		return
+	}
+	if !regClose.Before(rrAt) {
+		jsonErr(w, http.StatusBadRequest, "registration must close before round robin")
+		return
+	}
+	if !rrAt.Before(finalAt) {
+		jsonErr(w, http.StatusBadRequest, "round robin must start before final")
+		return
+	}
+
+	seriesID := newUUID()
+	series := db.GameDaySeries{
+		SeriesID:                seriesID,
+		Name:                    strings.TrimSpace(body.Name),
+		Frequency:               body.Frequency,
+		ByMonthDay:              body.ByMonthDay,
+		IntervalDays:            body.IntervalDays,
+		RegistrationLeadSeconds: int64(rrAt.Sub(regClose).Seconds()),
+		FinalLeadSeconds:        int64(finalAt.Sub(rrAt).Seconds()),
+		Autofill:                body.Autofill,
+		ForcedMapIDs:            body.ForcedMapIDs,
+		RandomMaps:              body.RandomMaps,
+		MaxOccurrences:          body.MaxOccurrences,
+		NextOccurrenceAt:        rrAt.Format(time.RFC3339),
+		Status:                  db.SeriesStatusActive,
+		CreatedAt:               time.Now().Unix(),
+	}
+	gd := srv.materializeGameDay(series.Name, regClose, rrAt, finalAt, body.Autofill, body.ForcedMapIDs, body.RandomMaps, seriesID)
+
+	// No rolling job in local dev (no EventBridge here) — mark the series as
+	// already advanced/finished past its first occurrence so nothing tries
+	// to auto-materialize a second one that would never actually run.
+	nextAt := db.NextOccurrenceTime(series, rrAt)
+	series.NextOccurrenceAt = nextAt.Format(time.RFC3339)
+	series.OccurrencesCreated = 1
+	if body.MaxOccurrences == 1 {
+		series.Status = db.SeriesStatusFinished
+	}
+	srv.store.putGameDaySeries(series)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(gd)
+	json.NewEncoder(w).Encode(map[string]any{"series": series, "firstOccurrence": gd})
+}
+
+func (srv *server) listGameDaySeries(w http.ResponseWriter) {
+	jsonOK(w, srv.store.listGameDaySeries())
+}
+
+func (srv *server) cancelGameDaySeries(w http.ResponseWriter, seriesID string) {
+	if err := srv.store.cancelGameDaySeries(seriesID); err != nil {
+		jsonErr(w, http.StatusNotFound, "series not found")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (srv *server) deleteGameDay(w http.ResponseWriter, r *http.Request, gameDayID string) {
@@ -1787,12 +1905,17 @@ func (srv *server) updateMap(w http.ResponseWriter, r *http.Request, mapID strin
 
 func (srv *server) adminListUsers(w http.ResponseWriter) {
 	type userResp struct {
-		Sub     string `json:"sub"`
-		Email   string `json:"email"`
-		Name    string `json:"name"`
-		Enabled bool   `json:"enabled"`
-		IsAdmin bool   `json:"isAdmin"`
-		Tier    string `json:"tier"`
+		Sub         string `json:"sub"`
+		Email       string `json:"email"`
+		Name        string `json:"name"`
+		Enabled     bool   `json:"enabled"`
+		IsAdmin     bool   `json:"isAdmin"`
+		Tier        string `json:"tier"`
+		Idp         string `json:"idp"`
+		CreatedAt   string `json:"createdAt"`
+		LastLoginAt *int64 `json:"lastLoginAt"`
+		TankCount   int    `json:"tankCount"`
+		TankLimit   int    `json:"tankLimit"`
 	}
 	srv.mu.RLock()
 	tier := srv.userSettings.Tier
@@ -1800,12 +1923,18 @@ func (srv *server) adminListUsers(w http.ResponseWriter) {
 	if tier == "" {
 		tier = db.TierFree
 	}
+	tankLimit, _ := db.TierLimits(tier)
 	users := srv.store.listUsers()
 	resp := make([]userResp, 0, len(users))
 	for _, u := range users {
 		// localserver only tracks one global userSettings record (single local user) —
-		// every listed user shows that same tier in local dev.
-		resp = append(resp, userResp{Sub: u.Sub, Email: u.Email, Name: u.Name, Enabled: u.Enabled, IsAdmin: u.IsAdmin, Tier: tier})
+		// every listed user shows that same tier in local dev. There's no
+		// federated IdP or real Cognito sign-in event locally, so idp and
+		// lastLoginAt are simulated/absent rather than tracked per-user.
+		resp = append(resp, userResp{
+			Sub: u.Sub, Email: u.Email, Name: u.Name, Enabled: u.Enabled, IsAdmin: u.IsAdmin, Tier: tier,
+			Idp: "Email/Password", TankCount: len(srv.store.listTanksByUser(u.Sub)), TankLimit: tankLimit,
+		})
 	}
 	jsonOK(w, map[string]any{"users": resp})
 }

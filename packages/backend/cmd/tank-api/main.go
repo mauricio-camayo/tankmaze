@@ -24,6 +24,9 @@
 //	DELETE /gamedays/{id}                      – cancel game day (admin only, no phase started)
 //	GET    /gamedays/{id}                      – Game Day bracket and phase status
 //	PATCH  /gamedays/{id}                      – update phase schedule (admin only); ?force=true allows phase-status overrides on started/past game days
+//	GET    /gameday-series                     – list recurring Game Day series (admin only, item 238)
+//	POST   /gameday-series                     – create a recurring series; materializes its first occurrence immediately (admin only)
+//	DELETE /gameday-series/{id}                – cancel a series (stops future materialization only; existing occurrences are untouched, admin only)
 //	GET    /maps                               – list active maps (no auth required)
 //	POST   /maps                               – create map (admin only)
 //	PATCH  /maps/{id}                          – update map name/description/isActive (admin only)
@@ -49,8 +52,8 @@ package main
 
 import (
 	"bytes"
-	crand "crypto/rand"
 	"context"
+	crand "crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -68,10 +71,10 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
-	cognitoidp "github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
-	cognitotypes "github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
 	"github.com/aws/aws-sdk-go-v2/service/codebuild"
 	cbtypes "github.com/aws/aws-sdk-go-v2/service/codebuild/types"
+	cognitoidp "github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
+	cognitotypes "github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	lambdasvc "github.com/aws/aws-sdk-go-v2/service/lambda"
 	ltypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
@@ -81,13 +84,14 @@ import (
 	schedulertypes "github.com/aws/aws-sdk-go-v2/service/scheduler/types"
 
 	"github.com/tankmaze/backend/internal/db"
+	"github.com/tankmaze/backend/internal/scheduling"
 )
 
 const (
-	maxSourceBytes   = 1 * 1024 * 1024  // 1 MiB
-	maxWASMBytes     = 10 * 1024 * 1024 // 10 MiB (SEC-WASM-SIZE)
-	maxTankNameLen   = 64
-	testMatchTTLDays = 7
+	maxSourceBytes    = 1 * 1024 * 1024  // 1 MiB
+	maxWASMBytes      = 10 * 1024 * 1024 // 10 MiB (SEC-WASM-SIZE)
+	maxTankNameLen    = 64
+	testMatchTTLDays  = 7
 	tickLogPresignTTL = 15 * time.Minute
 )
 
@@ -149,17 +153,17 @@ type createGameDayBody struct {
 }
 
 type patchGameDayBody struct {
-	Name                string           `json:"name,omitempty"`
-	RegistrationCloseAt string           `json:"registrationCloseAt,omitempty"`
-	RoundRobinAt        string           `json:"roundRobinAt,omitempty"`
-	FinalAt             string           `json:"finalAt,omitempty"`
-	Autofill            *bool            `json:"autofill"`
-	ForcedMapIDs        *[]string        `json:"forcedMapIds"`
-	RandomMaps          *bool            `json:"randomMaps"`
+	Name                string    `json:"name,omitempty"`
+	RegistrationCloseAt string    `json:"registrationCloseAt,omitempty"`
+	RoundRobinAt        string    `json:"roundRobinAt,omitempty"`
+	FinalAt             string    `json:"finalAt,omitempty"`
+	Autofill            *bool     `json:"autofill"`
+	ForcedMapIDs        *[]string `json:"forcedMapIds"`
+	RandomMaps          *bool     `json:"randomMaps"`
 	// PhaseOverride is only accepted when the request includes ?force=true.
 	// Keys: "roundRobin", "final", or an elimination round key (e.g. "r1").
 	// Value: "upcoming" | "running" | "complete" | "cancelled"
-	PhaseOverride       map[string]string `json:"phaseOverride,omitempty"`
+	PhaseOverride map[string]string `json:"phaseOverride,omitempty"`
 }
 
 type createMapBody struct {
@@ -184,12 +188,17 @@ type adminUpdateTankBody struct {
 }
 
 type adminUserResp struct {
-	Sub     string `json:"sub"`
-	Email   string `json:"email"`
-	Name    string `json:"name"`
-	Enabled bool   `json:"enabled"`
-	IsAdmin bool   `json:"isAdmin"`
-	Tier    string `json:"tier"`
+	Sub         string `json:"sub"`
+	Email       string `json:"email"`
+	Name        string `json:"name"`
+	Enabled     bool   `json:"enabled"`
+	IsAdmin     bool   `json:"isAdmin"`
+	Tier        string `json:"tier"`
+	Idp         string `json:"idp"`
+	CreatedAt   string `json:"createdAt"`
+	LastLoginAt *int64 `json:"lastLoginAt"`
+	TankCount   int    `json:"tankCount"`
+	TankLimit   int    `json:"tankLimit"`
 }
 
 // ---- Handler ----------------------------------------------------------------
@@ -353,6 +362,14 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 	case method == "DELETE" && len(parts) == 4 && parts[0] == "gamedays" && parts[2] == "roster":
 		return h.removeRosterEntry(ctx, req, parts[1], parts[3])
 
+	// Recurring Game Day series (item 238)
+	case method == "GET" && rawPath == "gameday-series":
+		return h.listGameDaySeries(ctx, req)
+	case method == "POST" && rawPath == "gameday-series":
+		return h.createGameDaySeries(ctx, req)
+	case method == "DELETE" && len(parts) == 2 && parts[0] == "gameday-series":
+		return h.cancelGameDaySeries(ctx, req, parts[1])
+
 	// Maps
 	case method == "GET" && rawPath == "maps":
 		return h.listMaps(ctx, req)
@@ -412,9 +429,6 @@ func (h *handler) listTanks(ctx context.Context, req events.APIGatewayV2HTTPRequ
 	uid := userID(req)
 	if uid == "" {
 		return errResp(http.StatusUnauthorized, "unauthorized"), nil
-	}
-	if target := req.QueryStringParameters["userId"]; target != "" && isAdmin(req) {
-		uid = target
 	}
 	tanks, err := h.store.ListTanksByUser(ctx, uid)
 	if err != nil {
@@ -2169,96 +2183,199 @@ func (h *handler) createGameDay(ctx context.Context, req events.APIGatewayV2HTTP
 	if !rrAt.Before(finalAt) {
 		return errResp(http.StatusBadRequest, "round robin must start before final"), nil
 	}
-	const maxElimRounds = 5
-	elimTimes := make([]time.Time, maxElimRounds)
-	for i := 0; i < maxElimRounds; i++ {
-		t := finalAt.Add(-time.Duration(maxElimRounds-i) * 30 * time.Minute)
-		if t.Before(rrAt) {
-			t = rrAt
-		}
-		elimTimes[i] = t
-	}
-	elimination := make([]string, maxElimRounds)
-	for i, t := range elimTimes {
-		elimination[i] = t.UTC().Format(time.RFC3339)
-	}
 
-	gameDayID := newUUID()
-	now := time.Now().Unix()
-	gd := db.GameDay{
-		GameDayID: gameDayID,
-		Name:      gameDayDisplayName(strings.TrimSpace(body.Name), rrAt, finalAt),
-		Schedule: db.GameDaySchedule{
-			RegistrationClose: body.RegistrationCloseAt,
-			RoundRobin:        body.RoundRobinAt,
-			Elimination:       elimination,
-			Final:             body.FinalAt,
-		},
-		Phases: db.GameDayPhases{
-			RoundRobin: db.PhaseStatus{Status: "upcoming"},
-			Final:      db.PhaseStatus{Status: "upcoming"},
-		},
-		CreatedAt:    now,
-		Autofill:     body.Autofill,
-		ForcedMapIDs: body.ForcedMapIDs,
-		RandomMaps:   body.RandomMaps,
-	}
-
-	if err := h.store.PutGameDay(ctx, gd); err != nil {
-		log.Printf("put gameday: %v", err)
-		return errResp(http.StatusInternalServerError, "internal error"), nil
-	}
-
-	atExpr := func(t time.Time) string {
-		return "at(" + t.Format("2006-01-02T15:04:05") + ")"
-	}
-	phases := []struct {
-		name  string
-		phase string
-		expr  string
-	}{
-		{gameDayID + "-reg-close", "registration_close", atExpr(regClose)},
-		{gameDayID + "-rr", "round_robin", atExpr(rrAt)},
-		{gameDayID + "-elim-r1", "elimination_r1", atExpr(elimTimes[0])},
-		{gameDayID + "-elim-r2", "elimination_r2", atExpr(elimTimes[1])},
-		{gameDayID + "-elim-r3", "elimination_r3", atExpr(elimTimes[2])},
-		{gameDayID + "-elim-r4", "elimination_r4", atExpr(elimTimes[3])},
-		{gameDayID + "-elim-r5", "elimination_r5", atExpr(elimTimes[4])},
-		{gameDayID + "-final", "final", atExpr(finalAt)},
-	}
-
-	for _, p := range phases {
-		payload, _ := json.Marshal(map[string]string{"gameDayId": gameDayID, "phase": p.phase})
-		target := &schedulertypes.Target{
-			Arn:     aws.String(h.tournamentSchedulerArn),
-			RoleArn: aws.String(h.schedulerRoleArn),
-			Input:   aws.String(string(payload)),
-		}
-		if h.schedulerDLQArn != "" {
-			target.DeadLetterConfig = &schedulertypes.DeadLetterConfig{Arn: aws.String(h.schedulerDLQArn)}
-		}
-		_, err := h.schedulerSvc.CreateSchedule(ctx, &schedulersvc.CreateScheduleInput{
-			Name:                        aws.String(p.name),
-			GroupName:                   aws.String("tankmaze-gamedays"),
-			ScheduleExpression:          aws.String(p.expr),
-			ScheduleExpressionTimezone:  aws.String("UTC"),
-			FlexibleTimeWindow: &schedulertypes.FlexibleTimeWindow{
-				Mode: schedulertypes.FlexibleTimeWindowModeOff,
-			},
-			Target:                target,
-			ActionAfterCompletion: schedulertypes.ActionAfterCompletionDelete,
-		})
-		if err != nil {
-			log.Printf("create schedule %s: %v", p.name, err)
-			// Best-effort cleanup: delete the game day record since schedules couldn't be created.
-			if delErr := h.store.DeleteGameDay(ctx, gameDayID); delErr != nil {
-				log.Printf("rollback delete gameday %s: %v", gameDayID, delErr)
-			}
-			return errResp(http.StatusInternalServerError, "failed to create schedules"), nil
-		}
+	gd, err := h.materializer().Materialize(ctx, scheduling.Params{
+		Name:                strings.TrimSpace(body.Name),
+		RegistrationCloseAt: regClose,
+		RoundRobinAt:        rrAt,
+		FinalAt:             finalAt,
+		Autofill:            body.Autofill,
+		ForcedMapIDs:        body.ForcedMapIDs,
+		RandomMaps:          body.RandomMaps,
+	})
+	if err != nil {
+		log.Printf("materialize gameday: %v", err)
+		return errResp(http.StatusInternalServerError, "failed to create game day"), nil
 	}
 
 	return jsonResp(http.StatusCreated, gd), nil
+}
+
+// materializer builds a scheduling.Materializer from this handler's already-
+// configured scheduler client/ARNs, shared by createGameDay and the
+// recurring-series handlers (item 238).
+func (h *handler) materializer() *scheduling.Materializer {
+	return &scheduling.Materializer{
+		Store:                  h.store,
+		SchedulerSvc:           h.schedulerSvc,
+		SchedulerRoleArn:       h.schedulerRoleArn,
+		TournamentSchedulerArn: h.tournamentSchedulerArn,
+		SchedulerDLQArn:        h.schedulerDLQArn,
+	}
+}
+
+type createGameDaySeriesBody struct {
+	Name      string `json:"name"`
+	Frequency string `json:"frequency"` // weekly | monthly | every_n_days
+	// ByMonthDay (monthly only, 1-31) and IntervalDays (every_n_days only,
+	// >=1) are validated against Frequency below.
+	ByMonthDay   int `json:"byMonthDay"`
+	IntervalDays int `json:"intervalDays"`
+	// The first occurrence's own schedule — its gaps become the template
+	// reapplied to every later occurrence (registrationLeadSeconds /
+	// finalLeadSeconds).
+	RegistrationCloseAt string   `json:"registrationCloseAt"`
+	RoundRobinAt        string   `json:"roundRobinAt"`
+	FinalAt             string   `json:"finalAt"`
+	Autofill            bool     `json:"autofill"`
+	ForcedMapIDs        []string `json:"forcedMapIds"`
+	RandomMaps          bool     `json:"randomMaps"`
+	// MaxOccurrences is 0 for indefinite repetition, or a fixed repeat count.
+	MaxOccurrences int `json:"maxOccurrences"`
+}
+
+// createGameDaySeries creates a recurring Game Day series (item 238) and
+// materializes its first occurrence immediately, so an admin sees it in the
+// Game Day list right away rather than waiting for the next
+// series-materializer tick. Subsequent occurrences are created by that
+// rolling job as each prior one's roundRobin time approaches.
+func (h *handler) createGameDaySeries(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	if !isAdmin(req) {
+		return errResp(http.StatusForbidden, "admin access required"), nil
+	}
+	var body createGameDaySeriesBody
+	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
+		return errResp(http.StatusBadRequest, "invalid request body"), nil
+	}
+
+	switch body.Frequency {
+	case db.FreqWeekly:
+	case db.FreqMonthly:
+		if body.ByMonthDay < 1 || body.ByMonthDay > 31 {
+			return errResp(http.StatusBadRequest, "byMonthDay must be between 1 and 31"), nil
+		}
+	case db.FreqEveryNDays:
+		if body.IntervalDays < 1 {
+			return errResp(http.StatusBadRequest, "intervalDays must be at least 1"), nil
+		}
+	default:
+		return errResp(http.StatusBadRequest, "frequency must be weekly, monthly, or every_n_days"), nil
+	}
+	if body.MaxOccurrences < 0 {
+		return errResp(http.StatusBadRequest, "maxOccurrences must be 0 (indefinite) or positive"), nil
+	}
+
+	parseAt := func(s string) (time.Time, bool) {
+		t, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			return time.Time{}, false
+		}
+		return t.UTC(), true
+	}
+	regClose, ok := parseAt(body.RegistrationCloseAt)
+	if !ok {
+		return errResp(http.StatusBadRequest, "registrationCloseAt must be ISO 8601"), nil
+	}
+	rrAt, ok := parseAt(body.RoundRobinAt)
+	if !ok {
+		return errResp(http.StatusBadRequest, "roundRobinAt must be ISO 8601"), nil
+	}
+	finalAt, ok := parseAt(body.FinalAt)
+	if !ok {
+		return errResp(http.StatusBadRequest, "finalAt must be ISO 8601"), nil
+	}
+	if !regClose.Before(rrAt) {
+		return errResp(http.StatusBadRequest, "registration must close before round robin"), nil
+	}
+	if !rrAt.Before(finalAt) {
+		return errResp(http.StatusBadRequest, "round robin must start before final"), nil
+	}
+
+	seriesID := newUUID()
+	series := db.GameDaySeries{
+		SeriesID:                seriesID,
+		Name:                    strings.TrimSpace(body.Name),
+		Frequency:               body.Frequency,
+		ByMonthDay:              body.ByMonthDay,
+		IntervalDays:            body.IntervalDays,
+		RegistrationLeadSeconds: int64(rrAt.Sub(regClose).Seconds()),
+		FinalLeadSeconds:        int64(finalAt.Sub(rrAt).Seconds()),
+		Autofill:                body.Autofill,
+		ForcedMapIDs:            body.ForcedMapIDs,
+		RandomMaps:              body.RandomMaps,
+		MaxOccurrences:          body.MaxOccurrences,
+		OccurrencesCreated:      0,
+		NextOccurrenceAt:        rrAt.Format(time.RFC3339),
+		Status:                  db.SeriesStatusActive,
+		CreatedAt:               time.Now().Unix(),
+	}
+	if err := h.store.PutGameDaySeries(ctx, series); err != nil {
+		log.Printf("put gameday series: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+
+	gd, err := h.materializer().Materialize(ctx, scheduling.Params{
+		Name:                series.Name,
+		RegistrationCloseAt: regClose,
+		RoundRobinAt:        rrAt,
+		FinalAt:             finalAt,
+		Autofill:            body.Autofill,
+		ForcedMapIDs:        body.ForcedMapIDs,
+		RandomMaps:          body.RandomMaps,
+		SeriesID:            seriesID,
+	})
+	if err != nil {
+		log.Printf("materialize first occurrence for series %s: %v", seriesID, err)
+		if delErr := h.store.CancelGameDaySeries(ctx, seriesID); delErr != nil {
+			log.Printf("rollback cancel series %s: %v", seriesID, delErr)
+		}
+		return errResp(http.StatusInternalServerError, "failed to create first occurrence"), nil
+	}
+
+	finished := body.MaxOccurrences == 1
+	nextAt := db.NextOccurrenceTime(series, rrAt)
+	if err := h.store.AdvanceGameDaySeries(ctx, seriesID, series.NextOccurrenceAt, nextAt.Format(time.RFC3339), finished); err != nil {
+		// Non-fatal: the series and its first occurrence both already exist.
+		// Worst case, series-materializer's next tick re-evaluates this
+		// series against a stale NextOccurrenceAt — acceptable for a
+		// low-traffic admin feature, logged loudly so it's visible if it
+		// ever actually recurs.
+		log.Printf("advance gameday series %s past first occurrence: %v", seriesID, err)
+	}
+
+	return jsonResp(http.StatusCreated, map[string]interface{}{"series": series, "firstOccurrence": gd}), nil
+}
+
+func (h *handler) listGameDaySeries(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	if !isAdmin(req) {
+		return errResp(http.StatusForbidden, "admin access required"), nil
+	}
+	all, err := h.store.ListGameDaySeries(ctx)
+	if err != nil {
+		log.Printf("list gameday series: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	return jsonResp(http.StatusOK, all), nil
+}
+
+// cancelGameDaySeries stops future materialization only — already-materialized
+// occurrences are untouched (item 238, point 6). Cancelling one occurrence
+// remains a separate action via the existing DELETE /gamedays/{id}.
+func (h *handler) cancelGameDaySeries(ctx context.Context, req events.APIGatewayV2HTTPRequest, seriesID string) (events.APIGatewayV2HTTPResponse, error) {
+	if !isAdmin(req) {
+		return errResp(http.StatusForbidden, "admin access required"), nil
+	}
+	if _, err := h.store.GetGameDaySeries(ctx, seriesID); err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			return errResp(http.StatusNotFound, "series not found"), nil
+		}
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	if err := h.store.CancelGameDaySeries(ctx, seriesID); err != nil {
+		log.Printf("cancel gameday series %s: %v", seriesID, err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusNoContent}, nil
 }
 
 // upsertSchedule creates or updates an EventBridge Scheduler schedule so that
@@ -2285,13 +2402,13 @@ func (h *handler) upsertSchedule(ctx context.Context, name, phase, gameDayID str
 	ftw := &schedulertypes.FlexibleTimeWindow{Mode: schedulertypes.FlexibleTimeWindowModeOff}
 
 	_, err := h.schedulerSvc.UpdateSchedule(ctx, &schedulersvc.UpdateScheduleInput{
-		Name:                        aws.String(name),
-		GroupName:                   aws.String("tankmaze-gamedays"),
-		ScheduleExpression:          aws.String(expr),
-		ScheduleExpressionTimezone:  aws.String("UTC"),
-		FlexibleTimeWindow:          ftw,
-		Target:                      target,
-		ActionAfterCompletion:       schedulertypes.ActionAfterCompletionDelete,
+		Name:                       aws.String(name),
+		GroupName:                  aws.String("tankmaze-gamedays"),
+		ScheduleExpression:         aws.String(expr),
+		ScheduleExpressionTimezone: aws.String("UTC"),
+		FlexibleTimeWindow:         ftw,
+		Target:                     target,
+		ActionAfterCompletion:      schedulertypes.ActionAfterCompletionDelete,
 	})
 	if err == nil {
 		return
@@ -2303,13 +2420,13 @@ func (h *handler) upsertSchedule(ctx context.Context, name, phase, gameDayID str
 	}
 	// Schedule doesn't exist (already fired or was never created) — create it.
 	if _, createErr := h.schedulerSvc.CreateSchedule(ctx, &schedulersvc.CreateScheduleInput{
-		Name:                        aws.String(name),
-		GroupName:                   aws.String("tankmaze-gamedays"),
-		ScheduleExpression:          aws.String(expr),
-		ScheduleExpressionTimezone:  aws.String("UTC"),
-		FlexibleTimeWindow:          ftw,
-		Target:                      target,
-		ActionAfterCompletion:       schedulertypes.ActionAfterCompletionDelete,
+		Name:                       aws.String(name),
+		GroupName:                  aws.String("tankmaze-gamedays"),
+		ScheduleExpression:         aws.String(expr),
+		ScheduleExpressionTimezone: aws.String("UTC"),
+		FlexibleTimeWindow:         ftw,
+		Target:                     target,
+		ActionAfterCompletion:      schedulertypes.ActionAfterCompletionDelete,
 	}); createErr != nil {
 		log.Printf("create schedule %s (after update 404): %v", name, createErr)
 	}
@@ -2822,6 +2939,25 @@ func cognitoAttr(attrs []cognitotypes.AttributeType, name string) string {
 	return ""
 }
 
+// identityProviderName extracts the first linked IdP's display name (e.g.
+// "Google", "Facebook") from a Cognito "identities" attribute value, a JSON
+// array like [{"providerName":"Google", ...}]. Native email+password
+// accounts have no "identities" attribute at all. Duplicated from (rather
+// than imported from) cmd/forgot-password-worker, which uses a different
+// fallback label for its own purpose — see item 241.
+func identityProviderName(identitiesJSON string) string {
+	if identitiesJSON == "" {
+		return "Email/Password"
+	}
+	var identities []struct {
+		ProviderName string `json:"providerName"`
+	}
+	if err := json.Unmarshal([]byte(identitiesJSON), &identities); err != nil || len(identities) == 0 {
+		return "Email/Password"
+	}
+	return identities[0].ProviderName
+}
+
 func (h *handler) getUsernameBySub(ctx context.Context, sub string) (string, error) {
 	out, err := h.cognito.ListUsers(ctx, &cognitoidp.ListUsersInput{
 		UserPoolId: aws.String(h.userPoolID),
@@ -2873,9 +3009,13 @@ func (h *handler) adminListUsers(ctx context.Context, req events.APIGatewayV2HTT
 		sub := cognitoAttr(u.Attributes, "sub")
 		tier := db.TierFree
 		displayName := ""
+		var lastLoginAt *int64
 		if us, err := h.store.GetUserSettings(ctx, sub); err == nil {
 			tier = us.Tier
 			displayName = us.DisplayName
+			if us.LastLoginAt != 0 {
+				lastLoginAt = &us.LastLoginAt
+			}
 		}
 		email := cognitoAttr(u.Attributes, "email")
 		// Prefer UserSettings.DisplayName (item 225) — the only copy immune
@@ -2891,13 +3031,27 @@ func (h *handler) adminListUsers(ctx context.Context, req events.APIGatewayV2HTT
 		if name == "" {
 			name = email
 		}
+		createdAt := ""
+		if u.UserCreateDate != nil {
+			createdAt = u.UserCreateDate.UTC().Format(time.RFC3339)
+		}
+		tankLimit, _ := db.TierLimits(tier)
+		tankCount := 0
+		if tanks, err := h.store.ListTanksByUser(ctx, sub); err == nil {
+			tankCount = len(tanks)
+		}
 		users = append(users, adminUserResp{
-			Sub:     sub,
-			Email:   email,
-			Name:    name,
-			Enabled: u.Enabled,
-			IsAdmin: adminSubs[sub],
-			Tier:    tier,
+			Sub:         sub,
+			Email:       email,
+			Name:        name,
+			Enabled:     u.Enabled,
+			IsAdmin:     adminSubs[sub],
+			Tier:        tier,
+			Idp:         identityProviderName(cognitoAttr(u.Attributes, "identities")),
+			CreatedAt:   createdAt,
+			LastLoginAt: lastLoginAt,
+			TankCount:   tankCount,
+			TankLimit:   tankLimit,
 		})
 	}
 

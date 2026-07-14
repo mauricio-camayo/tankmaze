@@ -373,6 +373,10 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
   const [majorVersions, setMajorVersions] = useState<string[]>([]);
   const [verLoading, setVerLoading] = useState(false);
   const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkPending, setBulkPending] = useState<{ tankId: string; version: string; name: string }[] | null>(null);
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [bulkSummary, setBulkSummary] = useState<{ added: number; invalid: number; duplicate: number } | null>(null);
 
   const rosterKey = roster.map((r) => r.tankId).join(',');
   useEffect(() => {
@@ -495,6 +499,51 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
     } finally { setBusy(null); }
   }
 
+  async function prepareAddAll() {
+    setErr(null);
+    setBulkSummary(null);
+    setBulkLoading(true);
+    try {
+      const { tanks } = await adminListTanks();
+      const eligible: { tankId: string; version: string; name: string }[] = [];
+      let invalid = 0;
+      let duplicate = 0;
+      for (const t of tanks) {
+        if (t.tankId.startsWith('builtin-') || /^__\w+__$/.test(t.tankId)) continue; // AI tanks have their own list
+        if (roster.some((r) => r.tankId === t.tankId)) { duplicate++; continue; }
+        const full = await getTank(t.tankId);
+        const majors = full.versions.filter((v) => v.versionType === 'major' && isUsable(v)).map((v) => v.version);
+        if (majors.length === 0) { invalid++; continue; }
+        eligible.push({ tankId: t.tankId, version: majors[majors.length - 1], name: t.name });
+      }
+      setBulkSummary({ added: 0, invalid, duplicate });
+      setBulkPending(eligible);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to prepare tank list');
+    } finally {
+      setBulkLoading(false);
+    }
+  }
+
+  async function confirmAddAll() {
+    if (!bulkPending) return;
+    setBulkSubmitting(true);
+    setErr(null);
+    let added = 0;
+    for (const t of bulkPending) {
+      try {
+        await addRosterEntry(gameDayId, t.tankId, t.version);
+        added++;
+      } catch {
+        // leave uncounted; roster-changed conflicts etc. are surfaced via the summary gap
+      }
+    }
+    setBulkSubmitting(false);
+    setBulkPending(null);
+    setBulkSummary((prev) => ({ added, invalid: prev?.invalid ?? 0, duplicate: prev?.duplicate ?? 0 }));
+    onChanged();
+  }
+
   const inpStyle: React.CSSProperties = {
     background: '#0a3550', border: '1px solid #23577a', borderRadius: 0,
     color: '#e7f1f7', padding: '4px 8px', fontSize: 12, width: '100%',
@@ -507,16 +556,63 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
           Registered Tanks{roster.length > 0 ? ` — ${roster.length}` : ''}
         </span>
         {isAdmin && (
-          <button
-            onClick={() => setShowPicker((v) => !v)}
-            style={{ ...ghostButtonStyle, fontSize: 11, padding: '3px 10px', borderColor: '#ffab6b', color: '#ffab6b' }}
-          >
-            {showPicker ? 'Close' : '+ Add'}
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={prepareAddAll}
+              disabled={bulkLoading}
+              style={{ ...ghostButtonStyle, fontSize: 11, padding: '3px 10px' }}
+            >
+              {bulkLoading ? 'Checking…' : 'Add all tanks'}
+            </button>
+            <button
+              onClick={() => setShowPicker((v) => !v)}
+              style={{ ...ghostButtonStyle, fontSize: 11, padding: '3px 10px', borderColor: '#ffab6b', color: '#ffab6b' }}
+            >
+              {showPicker ? 'Close' : '+ Add'}
+            </button>
+          </div>
         )}
       </div>
 
       {err && <p style={{ color: '#ff8a75', fontSize: 12, margin: '0 0 10px' }}>{err}</p>}
+
+      {bulkPending && (
+        <div style={{ ...cardStyle, background: 'rgba(255,171,107,0.08)', border: '1px solid rgba(255,171,107,0.3)', marginBottom: 12, padding: 14 }}>
+          <p style={{ margin: '0 0 10px', color: '#ffab6b', fontSize: 13 }}>
+            This will add <strong>{bulkPending.length}</strong> eligible tank{bulkPending.length === 1 ? '' : 's'} to the roster
+            {bulkSummary && (bulkSummary.invalid > 0 || bulkSummary.duplicate > 0) && (
+              <> ({bulkSummary.duplicate > 0 ? `${bulkSummary.duplicate} already registered` : ''}
+                {bulkSummary.duplicate > 0 && bulkSummary.invalid > 0 ? ', ' : ''}
+                {bulkSummary.invalid > 0 ? `${bulkSummary.invalid} without a ready major version` : ''} skipped)</>
+            )}
+            . Continue?
+          </p>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={confirmAddAll}
+              disabled={bulkSubmitting || bulkPending.length === 0}
+              style={{ ...primaryButtonStyle, fontSize: 12, padding: '4px 14px' }}
+            >
+              {bulkSubmitting ? 'Adding…' : `Add ${bulkPending.length} tank${bulkPending.length === 1 ? '' : 's'}`}
+            </button>
+            <button
+              onClick={() => { setBulkPending(null); setBulkSummary(null); }}
+              disabled={bulkSubmitting}
+              style={{ ...ghostButtonStyle, fontSize: 12, padding: '4px 14px' }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!bulkPending && bulkSummary && (
+        <p style={{ color: '#5b87a3', fontSize: 12, margin: '0 0 10px' }}>
+          Added {bulkSummary.added} tank{bulkSummary.added === 1 ? '' : 's'}
+          {bulkSummary.duplicate > 0 ? `, skipped ${bulkSummary.duplicate} already registered` : ''}
+          {bulkSummary.invalid > 0 ? `, skipped ${bulkSummary.invalid} without a ready major version` : ''}.
+        </p>
+      )}
 
       {roster.length === 0 ? (
         <p style={{ color: '#4a7291', fontSize: 13, margin: 0 }}>No tanks registered yet.</p>

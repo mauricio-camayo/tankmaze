@@ -17,6 +17,7 @@ export interface TableSet {
   matches: dynamodb.Table;
   connections: dynamodb.Table;
   gamedays: dynamodb.Table;
+  gamedaySeries: dynamodb.Table;
   rankings: dynamodb.Table;
   maps: dynamodb.Table;
   platformConfig: dynamodb.Table;
@@ -33,6 +34,7 @@ export function tableEnvVars(t: TableSet): Record<string, string> {
     MATCHES_TABLE:          t.matches.tableName,
     CONNECTIONS_TABLE:      t.connections.tableName,
     GAMEDAYS_TABLE:         t.gamedays.tableName,
+    GAMEDAY_SERIES_TABLE:   t.gamedaySeries.tableName,
     RANKINGS_TABLE:         t.rankings.tableName,
     MAPS_TABLE:             t.maps.tableName,
     PLATFORM_CONFIG_TABLE:  t.platformConfig.tableName,
@@ -109,6 +111,14 @@ export class StorageStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN,
     });
 
+    const gamedaySeries = new dynamodb.Table(this, 'GamedaySeriesTable', {
+      tableName: 'tankmaze-gameday-series',
+      partitionKey: { name: 'seriesId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: true,
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
     const rankings = new dynamodb.Table(this, 'RankingsTable', {
       tableName: 'tankmaze-rankings',
       partitionKey: { name: 'tankId',    type: dynamodb.AttributeType.STRING },
@@ -171,7 +181,7 @@ export class StorageStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN,
     });
 
-    this.tables = { tanks, tankVersions, matches, connections, gamedays, rankings, maps, platformConfig, userSettings, friendships, messages };
+    this.tables = { tanks, tankVersions, matches, connections, gamedays, gamedaySeries, rankings, maps, platformConfig, userSettings, friendships, messages };
 
     // ---- S3 buckets ----------------------------------------------------
 

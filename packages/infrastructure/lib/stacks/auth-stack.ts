@@ -136,10 +136,12 @@ export class AuthStack extends Stack {
     // ---- GitHub (item 233) / Discord (item 240) via a shared OIDC shim --
     // Neither provider speaks OIDC natively (no discovery doc, no
     // id_token — see cmd/oidc-shim's package doc for the full flow this
-    // Lambda implements). DISABLED on the frontend regardless of whether
-    // real credentials are configured here — see Landing.tsx's
-    // GITHUB_LOGIN_ENABLED/DISCORD_LOGIN_ENABLED, both false. Not yet
-    // verified end-to-end against a real deployed User Pool.
+    // Lambda implements). Enabled on the frontend (Landing.tsx's
+    // GITHUB_LOGIN_ENABLED/DISCORD_LOGIN_ENABLED are both true), but not yet
+    // verified end-to-end against a real deployed User Pool — in particular
+    // the GitHub/Discord OAuth Apps still need their redirect URIs pointed
+    // at this shim's own /callback (see the CfnOutputs below), not
+    // Cognito's idpresponse endpoint.
     const oidcShimBackendDir = path.join(__dirname, '../../../backend');
     const oidcShimGoBin = require('fs').existsSync(
       '/home/macaco/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.22.12.linux-amd64/bin/go',
@@ -305,6 +307,49 @@ export class AuthStack extends Stack {
     if (discordIdp) {
       this.userPoolClient.node.addDependency(discordIdp);
     }
+
+    // ---- PostAuthentication trigger (item 241) --------------------------
+    // Records a per-user "last sign-in" timestamp — Cognito exposes no such
+    // field natively via ListUsers/AdminGetUser, so this is the only way to
+    // surface it in the admin Users panel. Fires after every successful
+    // sign-in (native or federated). This is the first lambdaTrigger wired
+    // on this pool. The table is referenced by its fixed literal name
+    // (defined in storage-stack.ts) rather than passed in as a construct,
+    // matching this stack's existing avoid-cross-stack-imports convention
+    // (see the userPoolId/userPoolClientId context-string comment above).
+    const postAuthLambda = new lambda.Function(this, 'PostAuthTrigger', {
+      runtime: lambda.Runtime.PROVIDED_AL2023,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'bootstrap',
+      code: lambda.Code.fromAsset(oidcShimBackendDir, {
+        bundling: {
+          image: lambda.Runtime.PROVIDED_AL2023.bundlingImage,
+          local: {
+            tryBundle(outDir: string): boolean {
+              try {
+                childProcess.execSync(
+                  `GOTOOLCHAIN=local GOOS=linux GOARCH=arm64 ${oidcShimGoBin} build -tags lambda.norpc -o ${outDir}/bootstrap ./cmd/post-auth-trigger`,
+                  { cwd: oidcShimBackendDir, stdio: 'inherit' },
+                );
+                return true;
+              } catch {
+                return false;
+              }
+            },
+          },
+          command: [
+            'bash', '-c',
+            'GOTOOLCHAIN=local GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o /asset-output/bootstrap ./cmd/post-auth-trigger',
+          ],
+        },
+      }),
+      environment: { USER_SETTINGS_TABLE: 'tankmaze-user-settings' },
+      timeout: Duration.seconds(10),
+      memorySize: 128,
+    });
+    dynamodb.Table.fromTableName(this, 'ImportedUserSettingsTable', 'tankmaze-user-settings')
+      .grantWriteData(postAuthLambda);
+    this.userPool.addTrigger(cognito.UserPoolOperation.POST_AUTHENTICATION, postAuthLambda);
 
     new CfnOutput(this, 'UserPoolId',     { value: this.userPool.userPoolId });
     new CfnOutput(this, 'UserPoolClientId', { value: this.userPoolClient.userPoolClientId });

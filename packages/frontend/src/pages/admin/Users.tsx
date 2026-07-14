@@ -9,6 +9,13 @@ import { useAuthStore } from '../../store/authStore';
 
 const TIERS = ['free', 'builder', 'pro'] as const;
 
+function fmtDate(value: string | number | null): string {
+  if (!value) return '—';
+  const d = typeof value === 'number' ? new Date(value * 1000) : new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString();
+}
+
 export default function AdminUsers() {
   const currentUser = useAuthStore((s) => s.user);
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -99,6 +106,10 @@ export default function AdminUsers() {
                 <th style={th}>Status</th>
                 <th style={th}>Admin</th>
                 <th style={th}>Tier</th>
+                <th style={th}>IdP</th>
+                <th style={th}>First seen</th>
+                <th style={th}>Last seen</th>
+                <th style={th}>Tanks</th>
                 <th style={th}>Actions</th>
               </tr>
             </thead>
@@ -109,7 +120,7 @@ export default function AdminUsers() {
                 return (
                   <tr key={u.sub} style={{ borderTop: '1px solid #23577a' }}>
                     <td style={td}>
-                      <Link to={`/dashboard?userId=${u.sub}`} style={{ color: '#e7f1f7', textDecoration: 'none' }}>
+                      <Link to={`/users/${u.sub}`} style={{ color: '#e7f1f7', textDecoration: 'none' }}>
                         {u.name || u.email}
                       </Link>
                     </td>
@@ -143,6 +154,10 @@ export default function AdminUsers() {
                         ))}
                       </select>
                     </td>
+                    <td style={td}>{u.idp}</td>
+                    <td style={td}>{fmtDate(u.createdAt)}</td>
+                    <td style={td}>{fmtDate(u.lastLoginAt)}</td>
+                    <td style={td}>{u.tankCount}/{u.tankLimit}</td>
                     <td style={{ ...td, display: 'flex', gap: 8 }}>
                       {!isSelf && (
                         <button

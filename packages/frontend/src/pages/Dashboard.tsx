@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, Link, useSearchParams } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { listTanks, listAiTanks, forkTank, listGameDays, getMySettings } from '../services/api';
 import { useAuthStore } from '../store/authStore';
@@ -336,10 +336,7 @@ function AiTemplateRow({ aiTanks, onForked }: { aiTanks: AiTank[]; onForked: () 
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const currentUser = useAuthStore((s) => s.user);
-  // Admin-only: view another user's tanks via ?userId=
-  const viewUserId = currentUser?.isAdmin ? (searchParams.get('userId') ?? undefined) : undefined;
 
   const [tanks, setTanks] = useState<Tank[]>([]);
   const [aiTanks, setAiTanks] = useState<AiTank[]>([]);
@@ -350,7 +347,7 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
 
   function reload() {
-    listTanks(viewUserId)
+    listTanks()
       .then((data) => setTanks(data ?? []))
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
@@ -358,9 +355,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     reload();
-    if (!viewUserId) {
-      getMySettings().then(setSettings).catch(() => {});
-    }
+    getMySettings().then(setSettings).catch(() => {});
     listAiTanks().then((data) => setAiTanks(data ?? [])).catch(() => {});
     listGameDays()
       .then((days) => {
@@ -381,7 +376,7 @@ export default function Dashboard() {
       .catch(() => {});
   }, []);
 
-  const atTankLimit = !viewUserId && settings !== null && tanks.length >= settings.tankLimit;
+  const atTankLimit = settings !== null && tanks.length >= settings.tankLimit;
 
   function handleNewTank() {
     navigate('/tanks/new/edit');
@@ -389,17 +384,9 @@ export default function Dashboard() {
 
   return (
     <Layout>
-      {viewUserId && (
-        <div style={{ ...cardStyle, marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(124,106,247,0.08)', border: '1px solid rgba(124,106,247,0.3)' }}>
-          <span style={{ color: '#ffab6b', fontSize: 13 }}>
-            Viewing tanks for user <code style={{ background: 'rgba(124,106,247,0.15)', padding: '2px 6px', borderRadius: 0 }}>{viewUserId}</code>
-          </span>
-          <Link to="/admin/users" style={{ color: '#ff7a29', fontSize: 13 }}>← Back to Users</Link>
-        </div>
-      )}
-      {!viewUserId && runningGameDay && <GameDayCard gd={runningGameDay} />}
-      {!viewUserId && upcomingGameDay && <GameDayCard gd={upcomingGameDay} />}
-      {!viewUserId && aiTanks.length > 0 && (
+      {runningGameDay && <GameDayCard gd={runningGameDay} />}
+      {upcomingGameDay && <GameDayCard gd={upcomingGameDay} />}
+      {aiTanks.length > 0 && (
         <div style={{ marginBottom: 36 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 600, color: '#5b87a3', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             Start from a template
@@ -408,19 +395,17 @@ export default function Dashboard() {
         </div>
       )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
-        <h2 style={{ margin: 0, fontSize: 22, color: '#e7f1f7' }}>{viewUserId ? 'Tanks' : 'My Tanks'}</h2>
-        {!viewUserId && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {atTankLimit && (
-              <span style={{ fontSize: 13, color: '#e8b339' }}>
-                Tank limit reached ({tanks.length}/{settings?.tankLimit})
-              </span>
-            )}
-            <button onClick={handleNewTank} disabled={atTankLimit} style={{ ...primaryButtonStyle, opacity: atTankLimit ? 0.5 : 1, cursor: atTankLimit ? 'not-allowed' : 'pointer' }}>
-              + New Tank
-            </button>
-          </div>
-        )}
+        <h2 style={{ margin: 0, fontSize: 22, color: '#e7f1f7' }}>My Tanks</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {atTankLimit && (
+            <span style={{ fontSize: 13, color: '#e8b339' }}>
+              Tank limit reached ({tanks.length}/{settings?.tankLimit})
+            </span>
+          )}
+          <button onClick={handleNewTank} disabled={atTankLimit} style={{ ...primaryButtonStyle, opacity: atTankLimit ? 0.5 : 1, cursor: atTankLimit ? 'not-allowed' : 'pointer' }}>
+            + New Tank
+          </button>
+        </div>
       </div>
 
       {loading && (
@@ -436,13 +421,11 @@ export default function Dashboard() {
       {!loading && !error && tanks.length === 0 && (
         <div style={{ ...cardStyle, textAlign: 'center', padding: '48px 24px' }}>
           <p style={{ color: '#5b87a3', marginBottom: 16 }}>
-            {viewUserId ? 'This user has no tanks.' : "You haven't created any tanks yet."}
+            You haven't created any tanks yet.
           </p>
-          {!viewUserId && (
-            <button onClick={handleNewTank} disabled={atTankLimit} style={{ ...primaryButtonStyle, opacity: atTankLimit ? 0.5 : 1, cursor: atTankLimit ? 'not-allowed' : 'pointer' }}>
-              + New Tank
-            </button>
-          )}
+          <button onClick={handleNewTank} disabled={atTankLimit} style={{ ...primaryButtonStyle, opacity: atTankLimit ? 0.5 : 1, cursor: atTankLimit ? 'not-allowed' : 'pointer' }}>
+            + New Tank
+          </button>
         </div>
       )}
 

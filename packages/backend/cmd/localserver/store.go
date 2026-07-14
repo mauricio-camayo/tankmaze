@@ -30,31 +30,33 @@ type localFriendship struct {
 }
 
 type memStore struct {
-	mu          sync.RWMutex
-	tanks       map[string]db.Tank
-	versions    map[string][]db.TankVersion // tankId → slice
-	matches     map[string]db.Match
-	maps        map[string]db.Map
-	mapSlugs    map[string]string       // slug → mapId
-	rankings    map[string][]db.Ranking // tankId → []Ranking
-	users       map[string]localUser    // sub → user
-	gamedays    map[string]db.GameDay
-	friendships map[string]map[string]localFriendship // userId → friendId → relationship
-	messages    map[string][]db.Message               // conversationId → messages, chronological
+	mu            sync.RWMutex
+	tanks         map[string]db.Tank
+	versions      map[string][]db.TankVersion // tankId → slice
+	matches       map[string]db.Match
+	maps          map[string]db.Map
+	mapSlugs      map[string]string       // slug → mapId
+	rankings      map[string][]db.Ranking // tankId → []Ranking
+	users         map[string]localUser    // sub → user
+	gamedays      map[string]db.GameDay
+	gamedaySeries map[string]db.GameDaySeries
+	friendships   map[string]map[string]localFriendship // userId → friendId → relationship
+	messages      map[string][]db.Message               // conversationId → messages, chronological
 }
 
 func newStore() *memStore {
 	s := &memStore{
-		tanks:       make(map[string]db.Tank),
-		versions:    make(map[string][]db.TankVersion),
-		matches:     make(map[string]db.Match),
-		maps:        make(map[string]db.Map),
-		mapSlugs:    make(map[string]string),
-		rankings:    make(map[string][]db.Ranking),
-		users:       make(map[string]localUser),
-		gamedays:    make(map[string]db.GameDay),
-		friendships: make(map[string]map[string]localFriendship),
-		messages:    make(map[string][]db.Message),
+		tanks:         make(map[string]db.Tank),
+		versions:      make(map[string][]db.TankVersion),
+		matches:       make(map[string]db.Match),
+		maps:          make(map[string]db.Map),
+		mapSlugs:      make(map[string]string),
+		rankings:      make(map[string][]db.Ranking),
+		users:         make(map[string]localUser),
+		gamedays:      make(map[string]db.GameDay),
+		gamedaySeries: make(map[string]db.GameDaySeries),
+		friendships:   make(map[string]map[string]localFriendship),
+		messages:      make(map[string][]db.Message),
 	}
 	s.users[localUserID] = localUser{
 		Sub:     localUserID,
@@ -493,6 +495,51 @@ func (s *memStore) deleteGameDay(gameDayID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.gamedays, gameDayID)
+}
+
+// ── Game Day series (item 238) ─────────────────────────────────────────────
+// local dev has no EventBridge Scheduler and no rolling materializer job —
+// createGameDaySeries materializes only the first occurrence synchronously,
+// same as it will in production, but subsequent occurrences never
+// auto-materialize here since there's nothing to run the rolling job.
+
+func (s *memStore) putGameDaySeries(series db.GameDaySeries) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.gamedaySeries[series.SeriesID] = series
+}
+
+func (s *memStore) getGameDaySeries(seriesID string) (db.GameDaySeries, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	series, ok := s.gamedaySeries[seriesID]
+	if !ok {
+		return db.GameDaySeries{}, db.ErrNotFound
+	}
+	return series, nil
+}
+
+func (s *memStore) listGameDaySeries() []db.GameDaySeries {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	result := make([]db.GameDaySeries, 0, len(s.gamedaySeries))
+	for _, series := range s.gamedaySeries {
+		result = append(result, series)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].CreatedAt > result[j].CreatedAt })
+	return result
+}
+
+func (s *memStore) cancelGameDaySeries(seriesID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	series, ok := s.gamedaySeries[seriesID]
+	if !ok {
+		return db.ErrNotFound
+	}
+	series.Status = db.SeriesStatusCancelled
+	s.gamedaySeries[seriesID] = series
+	return nil
 }
 
 // isAITankID reports whether tankID belongs to a built-in AI tank.

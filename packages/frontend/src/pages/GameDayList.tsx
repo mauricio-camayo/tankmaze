@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useBlocker, useLocation } from 'react-router-dom';
 import Layout, { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
-import { listGameDays, createGameDay, deleteGameDay, patchGameDay, listMaps, overrideGameDayPhase } from '../services/api';
+import { listGameDays, createGameDay, createGameDaySeries, cancelGameDaySeries, deleteGameDay, patchGameDay, listMaps, overrideGameDayPhase } from '../services/api';
 import { useAuthStore } from '../store/authStore';
-import type { GameDay, GameDayPhaseStatus, GameMap } from '../types';
+import type { GameDay, GameDayPhaseStatus, GameDaySeriesFrequency, GameMap } from '../types';
 
 function phaseOverallStatus(gd: GameDay): 'upcoming' | 'active' | 'complete' | 'past' {
   const { phases, schedule } = gd;
@@ -285,11 +285,29 @@ function GameDayRow({ gd, onDeleted, onRefresh, autoOpen }: { gd: GameDay; onDel
   const [overriding, setOverriding] = useState(false);
   const [confirmOverride, setConfirmOverride] = useState(false);
   const [editing, setEditing] = useState(autoOpen ?? false);
+  const [cancellingSeries, setCancellingSeries] = useState(false);
+  const [confirmCancelSeries, setConfirmCancelSeries] = useState(false);
+  const [seriesCancelled, setSeriesCancelled] = useState(false);
   const { user } = useAuthStore();
   const status = phaseOverallStatus(gd);
 
   const isUpcoming = status === 'upcoming';
   const stuck = isStuck(gd);
+
+  async function handleCancelSeries() {
+    if (!gd.seriesId) return;
+    if (!confirmCancelSeries) { setConfirmCancelSeries(true); return; }
+    setCancellingSeries(true);
+    try {
+      await cancelGameDaySeries(gd.seriesId);
+      setSeriesCancelled(true);
+    } catch {
+      // ignore — button resets on next render
+    } finally {
+      setCancellingSeries(false);
+      setConfirmCancelSeries(false);
+    }
+  }
 
   async function handleDelete() {
     if (!confirmDelete) { setConfirmDelete(true); return; }
@@ -336,6 +354,14 @@ function GameDayRow({ gd, onDeleted, onRefresh, autoOpen }: { gd: GameDay; onDel
                 weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
               })}
             </span>
+            {gd.seriesId && (
+              <span
+                title="Part of a recurring series"
+                style={{ fontSize: 11, color: '#7c6af7', background: 'rgba(124,106,247,0.1)', border: '1px solid #7c6af7', borderRadius: 0, padding: '2px 8px', fontWeight: 600 }}
+              >
+                ↻ Recurring
+              </span>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12, color: '#5b87a3' }}>
             <span>
@@ -377,6 +403,19 @@ function GameDayRow({ gd, onDeleted, onRefresh, autoOpen }: { gd: GameDay; onDel
                 >
                   {overriding ? 'Cancelling…' : confirmOverride ? 'Confirm cancel?' : 'Cancel stuck'}
                 </button>
+              )}
+              {gd.seriesId && !seriesCancelled && (
+                <button
+                  onClick={handleCancelSeries}
+                  disabled={cancellingSeries}
+                  title="Stop future occurrences of this series — this occurrence is untouched"
+                  style={{ ...ghostButtonStyle, borderColor: '#7c6af7', color: '#7c6af7', cursor: 'pointer' }}
+                >
+                  {cancellingSeries ? 'Cancelling…' : confirmCancelSeries ? 'Confirm?' : 'Cancel series'}
+                </button>
+              )}
+              {gd.seriesId && seriesCancelled && (
+                <span style={{ fontSize: 12, color: '#5b87a3', alignSelf: 'center' }}>Series cancelled</span>
               )}
               <button
                 onClick={handleDelete}
@@ -431,6 +470,14 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // Repeats (item 238)
+  const [recurring, setRecurring] = useState(false);
+  const [frequency, setFrequency] = useState<GameDaySeriesFrequency>('weekly');
+  const [byMonthDay, setByMonthDay] = useState(1);
+  const [intervalDays, setIntervalDays] = useState(14);
+  const [endless, setEndless] = useState(true);
+  const [maxOccurrences, setMaxOccurrences] = useState(4);
+
   // Baseline captured at mount; updated after a successful create so that a
   // re-open of the reset form starts clean again.
   const initialRef = useRef({ name: '', fields: defaultSchedule(), autofill: false, randomMaps: false, forcedMapIds: [] as string[] });
@@ -442,7 +489,8 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
     fields.final !== initialRef.current.fields.final ||
     autofill !== initialRef.current.autofill ||
     randomMaps !== initialRef.current.randomMaps ||
-    JSON.stringify(forcedMapIds) !== JSON.stringify(initialRef.current.forcedMapIds)
+    JSON.stringify(forcedMapIds) !== JSON.stringify(initialRef.current.forcedMapIds) ||
+    recurring
   );
 
   const blocker = useBlocker(dirty);
@@ -460,10 +508,18 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
       setErr('Round robin must start before the final');
       return false;
     }
+    if (recurring && frequency === 'every_n_days' && intervalDays < 1) {
+      setErr('Repeat interval must be at least 1 day');
+      return false;
+    }
+    if (recurring && !endless && maxOccurrences < 1) {
+      setErr('Number of occurrences must be at least 1');
+      return false;
+    }
     setSaving(true);
     setErr(null);
     try {
-      await createGameDay({
+      const shared = {
         ...(name.trim() ? { name: name.trim() } : {}),
         registrationCloseAt: toISO(fields.registrationClose),
         roundRobinAt: toISO(fields.roundRobin),
@@ -471,7 +527,18 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
         autofill,
         randomMaps,
         forcedMapIds,
-      });
+      };
+      if (recurring) {
+        await createGameDaySeries({
+          ...shared,
+          frequency,
+          ...(frequency === 'monthly' ? { byMonthDay } : {}),
+          ...(frequency === 'every_n_days' ? { intervalDays } : {}),
+          ...(endless ? {} : { maxOccurrences }),
+        });
+      } else {
+        await createGameDay(shared);
+      }
       const newDefaults = defaultSchedule();
       setOpen(false);
       setName('');
@@ -479,6 +546,9 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
       setAutofill(false);
       setRandomMaps(false);
       setForcedMapIds([]);
+      setRecurring(false);
+      setFrequency('weekly');
+      setEndless(true);
       initialRef.current = { name: '', fields: newDefaults, autofill: false, randomMaps: false, forcedMapIds: [] };
       onCreated();
       return true;
@@ -552,6 +622,79 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
               />
             </div>
           ))}
+        </div>
+        <div style={{ border: '1px solid #23577a', padding: 14, marginBottom: 16 }}>
+          <label style={{ ...checkLabel, marginBottom: recurring ? 12 : 0 }}>
+            <input type="checkbox" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} style={{ accentColor: '#7c6af7' }} />
+            Repeats — the dates above become the first occurrence
+          </label>
+          {recurring && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: frequency === 'weekly' ? '1fr' : '1fr 1fr', gap: 16 }}>
+                <div>
+                  <label style={labelStyle}>Frequency</label>
+                  <select
+                    value={frequency}
+                    onChange={(e) => setFrequency(e.target.value as GameDaySeriesFrequency)}
+                    style={{ ...inputStyle, cursor: 'pointer' }}
+                  >
+                    <option value="weekly">Weekly (same weekday as above)</option>
+                    <option value="monthly">Monthly (on a fixed day)</option>
+                    <option value="every_n_days">Every N days</option>
+                  </select>
+                </div>
+                {frequency === 'monthly' && (
+                  <div>
+                    <label style={labelStyle}>Day of month</label>
+                    <input
+                      type="number" min={1} max={31}
+                      value={byMonthDay}
+                      onChange={(e) => setByMonthDay(Number(e.target.value))}
+                      style={inputStyle}
+                    />
+                  </div>
+                )}
+                {frequency === 'every_n_days' && (
+                  <div>
+                    <label style={labelStyle}>Every N days</label>
+                    <input
+                      type="number" min={1}
+                      value={intervalDays}
+                      onChange={(e) => setIntervalDays(Number(e.target.value))}
+                      style={inputStyle}
+                    />
+                  </div>
+                )}
+              </div>
+              <div>
+                <label style={labelStyle}>Ends</label>
+                <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+                  <label style={checkLabel}>
+                    <input type="radio" name="ends" checked={endless} onChange={() => setEndless(true)} style={{ accentColor: '#7c6af7' }} />
+                    Never
+                  </label>
+                  <label style={checkLabel}>
+                    <input type="radio" name="ends" checked={!endless} onChange={() => setEndless(false)} style={{ accentColor: '#7c6af7' }} />
+                    After
+                  </label>
+                  {!endless && (
+                    <input
+                      type="number" min={1}
+                      value={maxOccurrences}
+                      onChange={(e) => setMaxOccurrences(Number(e.target.value))}
+                      style={{ ...inputStyle, width: 70 }}
+                    />
+                  )}
+                  {!endless && <span style={{ color: '#7fa2ba', fontSize: 13 }}>occurrences</span>}
+                </div>
+              </div>
+              <p style={{ color: '#4a7291', fontSize: 12, margin: 0 }}>
+                Only the next occurrence is ever pre-created; each following one is created automatically as its
+                turn approaches. Cancelling the series later stops future occurrences without touching ones
+                already created.
+              </p>
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
           <label style={checkLabel}>

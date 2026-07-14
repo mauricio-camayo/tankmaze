@@ -52,6 +52,13 @@ type UserSettings struct {
 	// uploaded avatar. AvatarURL isn't touched by that resync, so it's
 	// preferred over the Cognito attribute everywhere an avatar is resolved.
 	AvatarURL string `dynamodbav:"avatarUrl,omitempty" json:"avatarUrl,omitempty"`
+	// LastLoginAt is a Unix timestamp set by cmd/post-auth-trigger, a Cognito
+	// PostAuthentication Lambda trigger (item 241) — the only way to get a
+	// "last sign-in" time, since Cognito's ListUsers/AdminGetUser expose no
+	// such field natively. Fires on every successful sign-in regardless of
+	// IdP (native or federated). Absent for users who haven't signed in
+	// since this shipped — there is no historical data to backfill.
+	LastLoginAt int64 `dynamodbav:"lastLoginAt,omitempty" json:"lastLoginAt,omitempty"`
 }
 
 func userSettingsKey(userID string) map[string]dbtypes.AttributeValue {
@@ -148,3 +155,24 @@ func (s *Store) IncrementCompilations(ctx context.Context, userID string, curren
 	return nil
 }
 
+// UpdateLastLogin sets LastLoginAt (item 241), upserting the UserSettings
+// item if a user signs in before ever hitting a path that would otherwise
+// create one (e.g. compiling or changing tier). tier defaults to Free via
+// if_not_exists so a bare item created here never leaves Tier blank —
+// GetUserSettings only applies that default when the item is missing
+// entirely, not when it exists with an empty Tier field.
+func (s *Store) UpdateLastLogin(ctx context.Context, userID string, unixSeconds int64) error {
+	_, err := s.db.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName:        aws.String(s.userSettingsTable),
+		Key:              userSettingsKey(userID),
+		UpdateExpression: aws.String("SET lastLoginAt = :t, tier = if_not_exists(tier, :defaultTier)"),
+		ExpressionAttributeValues: map[string]dbtypes.AttributeValue{
+			":t":           &dbtypes.AttributeValueMemberN{Value: fmt.Sprintf("%d", unixSeconds)},
+			":defaultTier": strAttr(TierFree),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("UpdateLastLogin: %w", err)
+	}
+	return nil
+}

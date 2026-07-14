@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import Layout, { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
-import { getTank, deleteTank, withdrawRegistration, getRankings, listGameDays, registerForGameDay, startMatch, listMaps, listTanks, getMySettings, type OpponentSpec } from '../services/api';
-import type { Tank, TankVersion, GameDay, GameMap } from '../types';
+import { getTank, deleteTank, withdrawRegistration, getRankings, listGameDays, registerForGameDay, startMatch, listMaps, listTanks, getMySettings, getPublicUserProfile, type OpponentSpec } from '../services/api';
+import type { Tank, TankVersion, GameDay, GameMap, PublicTankSummary } from '../types';
 import ForkDialog from '../components/ForkDialog';
 import { avatarSrc } from '../components/AvatarPicker';
 import { useAuthStore } from '../store/authStore';
@@ -158,7 +158,7 @@ function TestDialog({
   // mode="challenge"
   yourTanks?: Tank[];
   loadingYourTanks?: boolean;
-  opponentTanks?: Tank[];
+  opponentTanks?: PublicTankSummary[];
   loadingOpponentTanks?: boolean;
   defaultOpponentTankId?: string;
   onChallenge?: (yourTankId: string, opponentTankId: string, mapId: string | null) => void;
@@ -486,7 +486,7 @@ export default function TankDetail() {
   // Challenge another author's tank (Informal match, item 37, reworked by 234)
   const [yourTanks, setYourTanks] = useState<Tank[]>([]);
   const [loadingYourTanks, setLoadingYourTanks] = useState(false);
-  const [opponentTanks, setOpponentTanks] = useState<Tank[]>([]);
+  const [opponentTanks, setOpponentTanks] = useState<PublicTankSummary[]>([]);
   const [loadingOpponentTanks, setLoadingOpponentTanks] = useState(false);
 
   useEffect(() => {
@@ -610,7 +610,10 @@ export default function TankDetail() {
     }
     if (opponentTanks.length === 0 && tank) {
       setLoadingOpponentTanks(true);
-      listTanks(tank.userId).then(setOpponentTanks).catch(() => setOpponentTanks([])).finally(() => setLoadingOpponentTanks(false));
+      getPublicUserProfile(tank.userId)
+        .then((p) => setOpponentTanks(p.tanks))
+        .catch(() => setOpponentTanks([]))
+        .finally(() => setLoadingOpponentTanks(false));
     }
   }
 

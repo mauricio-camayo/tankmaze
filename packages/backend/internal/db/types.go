@@ -38,19 +38,19 @@ type VersionConfig struct {
 
 // TankVersion is the item stored in tankmaze-tank-versions.
 type TankVersion struct {
-	TankID               string        `dynamodbav:"tankId"                json:"tankId"`
-	Version              string        `dynamodbav:"version"               json:"version"`
-	VersionType          string        `dynamodbav:"versionType"           json:"versionType"`
-	Config               VersionConfig `dynamodbav:"config"                json:"config"`
-	WasmS3Key            string        `dynamodbav:"wasmS3Key,omitempty"   json:"wasmS3Key,omitempty"`
-	SourceS3Key          string        `dynamodbav:"sourceS3Key,omitempty" json:"sourceS3Key,omitempty"`
-	WasmSHA256           string        `dynamodbav:"wasmSha256,omitempty"  json:"wasmSha256,omitempty"`
-	CompileStatus        string        `dynamodbav:"compileStatus"              json:"compileStatus"`
-	CompileError         string        `dynamodbav:"compileError,omitempty"      json:"compileError,omitempty"`
-	BuildID              string        `dynamodbav:"buildId,omitempty"           json:"-"`
-	CompileStartedAt     int64         `dynamodbav:"compileStartedAt,omitempty"  json:"-"`
-	RegisteredForGameDays []string     `dynamodbav:"registeredForGameDays,omitempty" json:"registeredForGameDays,omitempty"`
-	CreatedAt            int64         `dynamodbav:"createdAt"             json:"createdAt"`
+	TankID                string        `dynamodbav:"tankId"                json:"tankId"`
+	Version               string        `dynamodbav:"version"               json:"version"`
+	VersionType           string        `dynamodbav:"versionType"           json:"versionType"`
+	Config                VersionConfig `dynamodbav:"config"                json:"config"`
+	WasmS3Key             string        `dynamodbav:"wasmS3Key,omitempty"   json:"wasmS3Key,omitempty"`
+	SourceS3Key           string        `dynamodbav:"sourceS3Key,omitempty" json:"sourceS3Key,omitempty"`
+	WasmSHA256            string        `dynamodbav:"wasmSha256,omitempty"  json:"wasmSha256,omitempty"`
+	CompileStatus         string        `dynamodbav:"compileStatus"              json:"compileStatus"`
+	CompileError          string        `dynamodbav:"compileError,omitempty"      json:"compileError,omitempty"`
+	BuildID               string        `dynamodbav:"buildId,omitempty"           json:"-"`
+	CompileStartedAt      int64         `dynamodbav:"compileStartedAt,omitempty"  json:"-"`
+	RegisteredForGameDays []string      `dynamodbav:"registeredForGameDays,omitempty" json:"registeredForGameDays,omitempty"`
+	CreatedAt             int64         `dynamodbav:"createdAt"             json:"createdAt"`
 	// Major-only stats (zero value when not set)
 	WinRate          float64 `dynamodbav:"winRate,omitempty"          json:"winRate"`
 	MatchesPlayed    int     `dynamodbav:"matchesPlayed,omitempty"    json:"matchesPlayed"`
@@ -197,6 +197,11 @@ type GameDay struct {
 	Autofill        bool                     `dynamodbav:"autofill,omitempty"         json:"autofill,omitempty"`
 	ForcedMapIDs    []string                 `dynamodbav:"forcedMapIds,omitempty"     json:"forcedMapIds,omitempty"`
 	RandomMaps      bool                     `dynamodbav:"randomMaps,omitempty"       json:"randomMaps,omitempty"`
+	// SeriesID links this occurrence back to the GameDaySeries that
+	// materialized it (item 238) — empty for a standalone, non-recurring
+	// Game Day. Deleting/cancelling one occurrence never touches the
+	// series record or future materialization; see cmd/series-materializer.
+	SeriesID string `dynamodbav:"seriesId,omitempty" json:"seriesId,omitempty"`
 }
 
 // Ranking is the item stored in tankmaze-rankings.

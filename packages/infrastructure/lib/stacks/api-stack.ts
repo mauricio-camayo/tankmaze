@@ -356,6 +356,70 @@ export class ApiStack extends Stack {
       actions: ['iam:PassRole'],
       resources: [schedulerInvokeRole.roleArn],
     }));
+    tables.gamedaySeries.grantReadWriteData(tankApi);
+
+    // series-materializer (item 238) — rolling job behind recurring Game Day
+    // series. Runs on its own periodic rate schedule (below) rather than a
+    // per-Game-Day one-time schedule like tournament-scheduler's phases;
+    // reuses the same schedulerInvokeRole and "tankmaze-gamedays" schedule
+    // group as those one-time schedules for the *occurrences* it creates.
+    const seriesMaterializer = goLambda('SeriesMaterializer', 'series-materializer', {
+      ...tableEnvVars(tables),
+      SCHEDULER_INVOKE_ROLE_ARN:     schedulerInvokeRole.roleArn,
+      SCHEDULER_DLQ_ARN:             schedulerDLQ.queueArn,
+      TOURNAMENT_SCHEDULER_FUNCTION: tournamentScheduler.functionArn,
+      LEAD_TIME_DAYS:                '7',
+    }, 60);
+    tables.gamedaySeries.grantReadWriteData(seriesMaterializer);
+    tables.gamedays.grantReadWriteData(seriesMaterializer);
+    seriesMaterializer.addToRolePolicy(new iam.PolicyStatement({
+      actions: [
+        'scheduler:CreateSchedule',
+        'scheduler:DeleteSchedule',
+        'scheduler:GetSchedule',
+      ],
+      resources: [
+        `arn:aws:scheduler:${this.region}:${this.account}:schedule/tankmaze-gamedays/*`,
+      ],
+    }));
+    seriesMaterializer.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['iam:PassRole'],
+      resources: [schedulerInvokeRole.roleArn],
+    }));
+
+    // Periodic rate rule that invokes series-materializer — unlike the
+    // per-phase one-time `at()` schedules created at runtime, this is a
+    // single recurring schedule created once at deploy time.
+    const seriesMaterializerScheduleRole = new iam.Role(this, 'SeriesMaterializerScheduleRole', {
+      assumedBy: new iam.ServicePrincipal('scheduler.amazonaws.com'),
+    });
+    seriesMaterializerScheduleRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['lambda:InvokeFunction'],
+      resources: [seriesMaterializer.functionArn],
+    }));
+    new scheduler.CfnSchedule(this, 'SeriesMaterializerSchedule', {
+      name: 'tankmaze-series-materializer-tick',
+      groupName: 'tankmaze-gamedays',
+      scheduleExpression: 'rate(1 hour)',
+      flexibleTimeWindow: { mode: 'OFF' },
+      target: {
+        arn: seriesMaterializer.functionArn,
+        roleArn: seriesMaterializerScheduleRole.roleArn,
+      },
+    });
+    const seriesMaterializerErrorAlarm = new cloudwatch.Alarm(this, 'SeriesMaterializerErrorAlarm', {
+      alarmName: 'tankmaze-series-materializer-errors',
+      alarmDescription: 'series-materializer Lambda returned an error — a recurring Game Day series may have missed materializing its next occurrence',
+      metric: seriesMaterializer.metricErrors({
+        period: Duration.minutes(5),
+        statistic: 'Sum',
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    seriesMaterializerErrorAlarm.addAlarmAction(new cloudwatchActions.SnsAction(opsAlertTopic));
 
     // forgot-password-worker — async-only sibling of tank-api's forgotPassword
     // handler (item 217). It has no API Gateway integration of its own, so

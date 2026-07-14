@@ -1,5 +1,5 @@
 import { getIdToken } from './auth';
-import type { Tank, TankVersion, Match, RankingEntry, GameDay, GameMap, UserSettings, PublicUserProfile, FriendsResponse, ChatMessage } from '../types';
+import type { Tank, TankVersion, Match, RankingEntry, GameDay, GameDaySeries, GameMap, UserSettings, PublicUserProfile, FriendsResponse, ChatMessage } from '../types';
 
 const BASE = (import.meta.env.VITE_API_ENDPOINT as string) ?? '';
 
@@ -24,8 +24,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 // Tanks
-export const listTanks = (userId?: string) =>
-  request<Tank[]>(userId ? `/tanks?userId=${encodeURIComponent(userId)}` : '/tanks');
+export const listTanks = () => request<Tank[]>('/tanks');
 export const listAiTanks = () =>
   request<(Tank & { versions: TankVersion[] })[]>('/tanks/ai');
 export const getTank = (id: string) =>
@@ -164,6 +163,28 @@ export const createGameDay = (body: {
 }) => request<GameDay>('/gamedays', { method: 'POST', body: JSON.stringify(body) });
 export const deleteGameDay = (gameDayId: string, force?: boolean) =>
   request<void>(`/gamedays/${gameDayId}${force ? '?force=true' : ''}`, { method: 'DELETE' });
+
+// Recurring Game Day series (item 238)
+export const listGameDaySeries = () => request<GameDaySeries[]>('/gameday-series');
+export const createGameDaySeries = (body: {
+  name?: string;
+  frequency: 'weekly' | 'monthly' | 'every_n_days';
+  byMonthDay?: number;
+  intervalDays?: number;
+  registrationCloseAt: string;
+  roundRobinAt: string;
+  finalAt: string;
+  autofill?: boolean;
+  forcedMapIds?: string[];
+  randomMaps?: boolean;
+  maxOccurrences?: number;
+}) =>
+  request<{ series: GameDaySeries; firstOccurrence: GameDay }>('/gameday-series', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+export const cancelGameDaySeries = (seriesId: string) =>
+  request<void>(`/gameday-series/${seriesId}`, { method: 'DELETE' });
 export const patchGameDay = (
   gameDayId: string,
   body: {
@@ -214,6 +235,11 @@ export interface AdminUser {
   enabled: boolean;
   isAdmin: boolean;
   tier: string;
+  idp: string;
+  createdAt: string;
+  lastLoginAt: number | null;
+  tankCount: number;
+  tankLimit: number;
 }
 
 export const adminListUsers = (nextToken?: string) =>

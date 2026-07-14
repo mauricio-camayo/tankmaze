@@ -11,8 +11,8 @@ import (
 	"errors"
 	"os"
 
-	dbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	dbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
 // ErrNotFound is returned when a requested item does not exist in the table.
@@ -24,36 +24,38 @@ var ErrConflict = errors.New("optimistic lock conflict")
 
 // Store provides typed access to all TankMaze DynamoDB tables.
 type Store struct {
-	db                *dynamodb.Client
-	tanksTable        string
-	versionsTable     string
-	matchesTable      string
-	connectionsTable  string
-	gamedaysTable     string
-	rankingsTable     string
-	mapsTable         string
-	configTable       string
-	userSettingsTable string
-	friendshipsTable  string
-	messagesTable     string
+	db                 *dynamodb.Client
+	tanksTable         string
+	versionsTable      string
+	matchesTable       string
+	connectionsTable   string
+	gamedaysTable      string
+	rankingsTable      string
+	mapsTable          string
+	configTable        string
+	userSettingsTable  string
+	friendshipsTable   string
+	messagesTable      string
+	gamedaySeriesTable string
 }
 
 // New creates a Store from a pre-configured DynamoDB client. Table names are
 // read from the process environment once at construction time.
 func New(client *dynamodb.Client) *Store {
 	return &Store{
-		db:                client,
-		tanksTable:        os.Getenv("TANKS_TABLE"),
-		versionsTable:     os.Getenv("TANK_VERSIONS_TABLE"),
-		matchesTable:      os.Getenv("MATCHES_TABLE"),
-		connectionsTable:  os.Getenv("CONNECTIONS_TABLE"),
-		gamedaysTable:     os.Getenv("GAMEDAYS_TABLE"),
-		rankingsTable:     os.Getenv("RANKINGS_TABLE"),
-		mapsTable:         os.Getenv("MAPS_TABLE"),
-		configTable:       os.Getenv("PLATFORM_CONFIG_TABLE"),
-		userSettingsTable: os.Getenv("USER_SETTINGS_TABLE"),
-		friendshipsTable:  os.Getenv("FRIENDSHIPS_TABLE"),
-		messagesTable:     os.Getenv("MESSAGES_TABLE"),
+		db:                 client,
+		tanksTable:         os.Getenv("TANKS_TABLE"),
+		versionsTable:      os.Getenv("TANK_VERSIONS_TABLE"),
+		matchesTable:       os.Getenv("MATCHES_TABLE"),
+		connectionsTable:   os.Getenv("CONNECTIONS_TABLE"),
+		gamedaysTable:      os.Getenv("GAMEDAYS_TABLE"),
+		rankingsTable:      os.Getenv("RANKINGS_TABLE"),
+		mapsTable:          os.Getenv("MAPS_TABLE"),
+		configTable:        os.Getenv("PLATFORM_CONFIG_TABLE"),
+		userSettingsTable:  os.Getenv("USER_SETTINGS_TABLE"),
+		friendshipsTable:   os.Getenv("FRIENDSHIPS_TABLE"),
+		messagesTable:      os.Getenv("MESSAGES_TABLE"),
+		gamedaySeriesTable: os.Getenv("GAMEDAY_SERIES_TABLE"),
 	}
 }
 

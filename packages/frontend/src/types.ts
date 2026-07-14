@@ -193,6 +193,27 @@ export interface GameDay {
   autofill?: boolean;
   forcedMapIds?: string[];
   randomMaps?: boolean;
+  seriesId?: string;
+}
+
+export type GameDaySeriesFrequency = 'weekly' | 'monthly' | 'every_n_days';
+
+export interface GameDaySeries {
+  seriesId: string;
+  name?: string;
+  frequency: GameDaySeriesFrequency;
+  byMonthDay?: number;
+  intervalDays?: number;
+  registrationLeadSeconds: number;
+  finalLeadSeconds: number;
+  autofill?: boolean;
+  forcedMapIds?: string[];
+  randomMaps?: boolean;
+  maxOccurrences?: number;
+  occurrencesCreated: number;
+  nextOccurrenceAt: string;
+  status: 'active' | 'cancelled' | 'finished';
+  createdAt: number;
 }
 
 export type SubscriptionTier = 'free' | 'builder' | 'pro';
