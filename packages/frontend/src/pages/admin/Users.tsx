@@ -157,7 +157,7 @@ export default function AdminUsers() {
                     </td>
                     <td style={td}>{u.idp}</td>
                     <td style={td}>{fmtDate(u.createdAt)}</td>
-                    <td style={td}>{fmtDate(u.lastLoginAt)}</td>
+                    <td style={td}>{fmtDate(u.lastLoginAt ?? u.createdAt)}</td>
                     <td style={td}>{u.tankCount}/{u.tankLimit}</td>
                     <td style={{ ...td, display: 'flex', gap: 8, flexWrap: 'nowrap', whiteSpace: 'nowrap' }}>
                       {!isSelf && (

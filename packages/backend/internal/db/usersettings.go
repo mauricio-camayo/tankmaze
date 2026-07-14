@@ -162,10 +162,20 @@ func (s *Store) IncrementCompilations(ctx context.Context, userID string, curren
 // GetUserSettings only applies that default when the item is missing
 // entirely, not when it exists with an empty Tier field.
 func (s *Store) UpdateLastLogin(ctx context.Context, userID string, unixSeconds int64) error {
+	// "tier" is a DynamoDB reserved word — used bare (unaliased) here
+	// originally, which made DynamoDB reject the *entire* UpdateExpression
+	// with a ValidationException before writing anything, including
+	// lastLoginAt. Since PostAuthentication swallows this error rather than
+	// failing sign-in, that failure was invisible except as a permanently
+	// blank "Last seen" column. #tier aliases around it, same as #st already
+	// does for "status" in CancelGameDaySeries/AdvanceGameDaySeries.
 	_, err := s.db.UpdateItem(ctx, &dynamodb.UpdateItemInput{
 		TableName:        aws.String(s.userSettingsTable),
 		Key:              userSettingsKey(userID),
-		UpdateExpression: aws.String("SET lastLoginAt = :t, tier = if_not_exists(tier, :defaultTier)"),
+		UpdateExpression: aws.String("SET lastLoginAt = :t, #tier = if_not_exists(#tier, :defaultTier)"),
+		ExpressionAttributeNames: map[string]string{
+			"#tier": "tier",
+		},
 		ExpressionAttributeValues: map[string]dbtypes.AttributeValue{
 			":t":           &dbtypes.AttributeValueMemberN{Value: fmt.Sprintf("%d", unixSeconds)},
 			":defaultTier": strAttr(TierFree),
