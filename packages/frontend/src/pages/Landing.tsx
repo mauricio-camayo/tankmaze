@@ -496,7 +496,7 @@ export default function Landing() {
               )}
 
               <p className="tm-bp-legal">
-                By continuing you agree to our <Link to="/privacy">Privacy Policy</Link>.
+                By continuing you agree to our <Link to="/legal">Privacy Policy &amp; Terms of Service</Link>.
               </p>
             </div>
           </div>

@@ -200,7 +200,7 @@ export default function Layout({ children }: LayoutProps) {
         display: 'flex', justifyContent: 'center', gap: 24,
         fontSize: 11, color: 'var(--bp-steel-faint)', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em',
       }}>
-        <Link to="/privacy" style={{ color: 'var(--bp-steel-faint)', textDecoration: 'none' }}>PRIVACY POLICY</Link>
+        <Link to="/legal" style={{ color: 'var(--bp-steel-faint)', textDecoration: 'none' }}>PRIVACY &amp; TERMS</Link>
         <span>© {new Date().getFullYear()} TANKMAZE</span>
       </footer>
     </div>

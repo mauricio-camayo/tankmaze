@@ -19,7 +19,7 @@ import Account from './pages/Account';
 import Friends from './pages/Friends';
 import Chat from './pages/Chat';
 import Upgrade from './pages/Upgrade';
-import PrivacyPolicy from './pages/PrivacyPolicy';
+import Legal from './pages/Legal';
 
 // Watch imports Phaser (~1 MB) — keep it in a separate lazy chunk
 const Watch = lazy(() => import('./pages/Watch'));
@@ -59,7 +59,8 @@ function LandingRoute() {
 const router = createBrowserRouter([
   { path: '/', element: <LandingRoute /> },
   { path: '/login', element: <LandingRoute /> },
-  { path: '/privacy', element: <PrivacyPolicy /> },
+  { path: '/privacy', element: <Navigate to="/legal" replace /> },
+  { path: '/legal', element: <Legal /> },
   { path: '/watch', element: <Suspense fallback={null}><Watch /></Suspense> },
   { path: '/leaderboard', element: <Leaderboard /> },
   { path: '/users/:sub', element: <UserProfile /> },
