@@ -1,10 +1,28 @@
 import type { MatchSnapshot, TickUpdate } from '../types';
 
+export interface MatchOverStats {
+  damageA: number;
+  damageB: number;
+  movesA: number;
+  movesB: number;
+  ticksElapsed: number;
+  flawless: boolean;
+  finalHpA: number;
+  finalHpB: number;
+  shotsFiredA: number;
+  shotsFiredB: number;
+  hitsA: number;
+  hitsB: number;
+  tickViolationsA: number;
+  tickViolationsB: number;
+  durationMs: number;
+}
+
 export type WsEvent =
   | { type: 'MATCH_SNAPSHOT'; payload: MatchSnapshot }
   | { type: 'TICK_UPDATE'; payload: TickUpdate }
   | { type: 'HIT'; payload: { victim: 'a' | 'b'; damage: number; remainingHP: number } }
-  | { type: 'MATCH_OVER'; payload: { winner: 'a' | 'b' | null; reason: string; stats: unknown } }
+  | { type: 'MATCH_OVER'; payload: { winner: 'a' | 'b' | null; reason: string; stats: MatchOverStats } }
   | { type: 'ERROR'; payload: { code: string; message: string } };
 
 type EventHandler = (event: WsEvent) => void;

@@ -64,13 +64,13 @@ func makeWSEvent(typ string, payload any) json.RawMessage {
 // ── Snapshot / tick payload shapes (match frontend types.ts) ──────────────
 
 type snapshotPayload struct {
-	MatchID     string    `json:"matchId"`
-	Status      string    `json:"status"`
-	Maze        [][]bool  `json:"maze"`
+	MatchID     string      `json:"matchId"`
+	Status      string      `json:"status"`
+	Maze        [][]bool    `json:"maze"`
 	TankA       tankStateWS `json:"tankA"`
 	TankB       tankStateWS `json:"tankB"`
-	Projectiles []projWS  `json:"projectiles"`
-	Tick        int       `json:"tick"`
+	Projectiles []projWS    `json:"projectiles"`
+	Tick        int         `json:"tick"`
 }
 
 type tankStateWS struct {
@@ -103,10 +103,10 @@ type projWS struct {
 }
 
 type tickPayload struct {
-	Tick        int         `json:"tick"`
-	TankA       tankTickWS  `json:"tankA"`
-	TankB       tankTickWS  `json:"tankB"`
-	Projectiles []projWS    `json:"projectiles"`
+	Tick        int        `json:"tick"`
+	TankA       tankTickWS `json:"tankA"`
+	TankB       tankTickWS `json:"tankB"`
+	Projectiles []projWS   `json:"projectiles"`
 }
 
 type tankTickWS struct {
@@ -129,12 +129,21 @@ type matchOverPayload struct {
 }
 
 type matchOverStats struct {
-	DamageA      int  `json:"damageA"`
-	DamageB      int  `json:"damageB"`
-	MovesA       int  `json:"movesA"`
-	MovesB       int  `json:"movesB"`
-	TicksElapsed int  `json:"ticksElapsed"`
-	Flawless     bool `json:"flawless"`
+	DamageA         int   `json:"damageA"`
+	DamageB         int   `json:"damageB"`
+	MovesA          int   `json:"movesA"`
+	MovesB          int   `json:"movesB"`
+	TicksElapsed    int   `json:"ticksElapsed"`
+	Flawless        bool  `json:"flawless"`
+	FinalHPA        int   `json:"finalHpA"`
+	FinalHPB        int   `json:"finalHpB"`
+	ShotsFiredA     int   `json:"shotsFiredA"`
+	ShotsFiredB     int   `json:"shotsFiredB"`
+	HitsA           int   `json:"hitsA"`
+	HitsB           int   `json:"hitsB"`
+	TickViolationsA int   `json:"tickViolationsA"`
+	TickViolationsB int   `json:"tickViolationsB"`
+	DurationMs      int64 `json:"durationMs"`
 }
 
 // ── Conversion helpers ─────────────────────────────────────────────────────
@@ -339,6 +348,8 @@ func (srv *server) runMatch(matchID string) {
 
 	srv.store.updateMatchStatus(matchID, "active")
 
+	matchStart := time.Now()
+	var violationsA, violationsB int
 	var result *engine.Result
 	for result == nil {
 		tStart := time.Now()
@@ -353,6 +364,13 @@ func (srv *server) runMatch(matchID string) {
 		tB := time.Now()
 		actB, logsB, crashedB, timedOutB := modB.Tick(ctx, sensB)
 		durB := time.Since(tB)
+
+		if timedOutA {
+			violationsA++
+		}
+		if timedOutB {
+			violationsB++
+		}
 
 		result = eng.Step(actA, actB, crashedA, crashedB)
 		state := eng.State()
@@ -392,20 +410,31 @@ func (srv *server) runMatch(matchID string) {
 	modA.Close(ctx)
 	modB.Close(ctx)
 
+	durationMs := time.Since(matchStart).Milliseconds()
+
 	var winnerInt *int
 	if result.Winner >= 0 {
 		w := result.Winner
 		winnerInt = &w
 	}
 	srv.store.setMatchResult(matchID, db.MatchResult{
-		Winner:       winnerInt,
-		Reason:       string(result.Reason),
-		DamageA:      result.DamageA,
-		DamageB:      result.DamageB,
-		MovesA:       result.MovesA,
-		MovesB:       result.MovesB,
-		TicksElapsed: result.TicksElapsed,
-		Flawless:     result.Flawless,
+		Winner:          winnerInt,
+		Reason:          string(result.Reason),
+		DamageA:         result.DamageA,
+		DamageB:         result.DamageB,
+		MovesA:          result.MovesA,
+		MovesB:          result.MovesB,
+		TicksElapsed:    result.TicksElapsed,
+		Flawless:        result.Flawless,
+		FinalHPA:        result.FinalHPA,
+		FinalHPB:        result.FinalHPB,
+		ShotsFiredA:     result.ShotsFiredA,
+		ShotsFiredB:     result.ShotsFiredB,
+		HitsA:           result.HitsA,
+		HitsB:           result.HitsB,
+		TickViolationsA: violationsA,
+		TickViolationsB: violationsB,
+		DurationMs:      durationMs,
 	})
 
 	srv.store.incrementTestMatchCount(match.TankA.TankID, match.TankA.Version)
@@ -415,12 +444,21 @@ func (srv *server) runMatch(matchID string) {
 		Winner: winnerPtr(result.Winner),
 		Reason: string(result.Reason),
 		Stats: matchOverStats{
-			DamageA:      result.DamageA,
-			DamageB:      result.DamageB,
-			MovesA:       result.MovesA,
-			MovesB:       result.MovesB,
-			TicksElapsed: result.TicksElapsed,
-			Flawless:     result.Flawless,
+			DamageA:         result.DamageA,
+			DamageB:         result.DamageB,
+			MovesA:          result.MovesA,
+			MovesB:          result.MovesB,
+			TicksElapsed:    result.TicksElapsed,
+			Flawless:        result.Flawless,
+			FinalHPA:        result.FinalHPA,
+			FinalHPB:        result.FinalHPB,
+			ShotsFiredA:     result.ShotsFiredA,
+			ShotsFiredB:     result.ShotsFiredB,
+			HitsA:           result.HitsA,
+			HitsB:           result.HitsB,
+			TickViolationsA: violationsA,
+			TickViolationsB: violationsB,
+			DurationMs:      durationMs,
 		},
 	})
 

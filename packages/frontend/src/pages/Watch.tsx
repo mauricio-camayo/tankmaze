@@ -6,7 +6,9 @@ import { ObserverScene } from '../game/ObserverScene';
 import ObserverHUD from '../game/ObserverHUD';
 import { ReplayController } from '../game/ReplayController';
 import { ObserverSocket } from '../services/ws';
-import { getMatch, listTanks, rematch } from '../services/api';
+import type { MatchOverStats } from '../services/ws';
+import { getMatch, getTank, listTanks, rematch } from '../services/api';
+import PostMatchSummary from '../components/PostMatchSummary';
 import type { Match } from '../types';
 import { useAuthStore } from '../store/authStore';
 import { useMatchStore } from '../store/matchStore';
@@ -46,7 +48,8 @@ export default function Watch() {
     setSnapshot, applyTickUpdate, setCurrentTick, setPlaying, setSpeed, reset,
   } = useMatchStore();
 
-  const [matchOver, setMatchOver] = useState<{ winner: 'a' | 'b' | null; reason: string } | null>(null);
+  const [matchOver, setMatchOver] = useState<{ winner: 'a' | 'b' | null; reason: string; stats: MatchOverStats } | null>(null);
+  const [authorNames, setAuthorNames] = useState<{ a?: string; b?: string }>({});
   const [wsError,   setWsError]   = useState<string | null>(null);
   const [sceneReady, setSceneReady] = useState(false);
   const [matchPending, setMatchPending] = useState(false);
@@ -175,7 +178,7 @@ export default function Watch() {
           sceneRef.current?.flashHit(event.payload.victim);
           break;
         case 'MATCH_OVER':
-          setMatchOver({ winner: event.payload.winner, reason: event.payload.reason });
+          setMatchOver({ winner: event.payload.winner, reason: event.payload.reason, stats: event.payload.stats });
           autoPlayRef.current = false;
           // Fire destroyed animation if render() missed the death tick (fast playback / tick multiplier)
           {
@@ -224,7 +227,7 @@ export default function Watch() {
 
   // ── Render scene whenever currentTick changes ──────────────────────────
   useEffect(() => {
-    if (!snapshot || !sceneRef.current) return;
+    if (!snapshot || !sceneReady || !sceneRef.current) return;
     const tick = ticks.find((t) => t.tick === currentTick);
     if (tick) {
       sceneRef.current.render(tick.tankA, tick.tankB, tick.projectiles, snapshot.tankA.tankId);
@@ -263,6 +266,16 @@ export default function Watch() {
     getMatch(matchId).then(setRestMatch).catch(() => setRestMatch(null));
     listTanks().then((tanks) => setOwnTankIds(new Set(tanks.map((t) => t.tankId)))).catch(() => setOwnTankIds(new Set()));
   }, [matchId, currentUser]);
+
+  // ── Post-match summary (item 244): author names ────────────────────────
+  // Best-effort only — getTank requires auth, so anonymous observers simply
+  // see the summary without author attribution rather than losing the panel.
+  useEffect(() => {
+    setAuthorNames({});
+    if (!snapshot || !currentUser) return;
+    getTank(snapshot.tankA.tankId).then((t) => setAuthorNames((n) => ({ ...n, a: t.authorName }))).catch(() => {});
+    getTank(snapshot.tankB.tankId).then((t) => setAuthorNames((n) => ({ ...n, b: t.authorName }))).catch(() => {});
+  }, [snapshot?.tankA.tankId, snapshot?.tankB.tankId, currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const canRematch = !!restMatch
     && restMatch.matchType === 'ranked'
@@ -359,6 +372,14 @@ export default function Watch() {
                 onSeek={handleSeek}
                 onSpeed={handleSpeed}
               />
+              {matchOver && matchId && (
+                <PostMatchSummary
+                  matchId={matchId}
+                  snapshot={snapshot}
+                  matchOver={matchOver}
+                  authorNames={authorNames}
+                />
+              )}
               {matchOver && canRematch && (
                 <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
                   <button onClick={handleRematch} disabled={rematching} style={primaryButtonStyle}>

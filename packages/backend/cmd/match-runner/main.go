@@ -58,13 +58,13 @@ type matchEvent struct {
 // ---- Tick log types (written to S3) -----------------------------------------
 
 type tickLogFile struct {
-	MatchID  string       `json:"matchId"`
-	MazeSeed string       `json:"mazeSeed,omitempty"`
-	MapID    string       `json:"mapId,omitempty"`
-	Maze     [][]bool     `json:"maze"`
-	Tanks    logTankPair  `json:"tanks"`
-	Ticks    []logTick    `json:"ticks"`
-	Result   *logResult   `json:"result"`
+	MatchID  string      `json:"matchId"`
+	MazeSeed string      `json:"mazeSeed,omitempty"`
+	MapID    string      `json:"mapId,omitempty"`
+	Maze     [][]bool    `json:"maze"`
+	Tanks    logTankPair `json:"tanks"`
+	Ticks    []logTick   `json:"ticks"`
+	Result   *logResult  `json:"result"`
 }
 
 type logTankPair struct {
@@ -80,10 +80,10 @@ type logTankMeta struct {
 }
 
 type logTick struct {
-	Tick        int          `json:"tick"`
-	A           logTankTick  `json:"a"`
-	B           logTankTick  `json:"b"`
-	Projectiles []logProj    `json:"projectiles,omitempty"`
+	Tick        int         `json:"tick"`
+	A           logTankTick `json:"a"`
+	B           logTankTick `json:"b"`
+	Projectiles []logProj   `json:"projectiles,omitempty"`
 }
 
 type logProj struct {
@@ -102,14 +102,23 @@ type logTankTick struct {
 }
 
 type logResult struct {
-	Winner       *string `json:"winner"` // "a", "b", or null
-	Reason       string  `json:"reason"`
-	DamageA      int     `json:"damageA"`
-	DamageB      int     `json:"damageB"`
-	MovesA       int     `json:"movesA"`
-	MovesB       int     `json:"movesB"`
-	TicksElapsed int     `json:"ticksElapsed"`
-	Flawless     bool    `json:"flawless"`
+	Winner          *string `json:"winner"` // "a", "b", or null
+	Reason          string  `json:"reason"`
+	DamageA         int     `json:"damageA"`
+	DamageB         int     `json:"damageB"`
+	MovesA          int     `json:"movesA"`
+	MovesB          int     `json:"movesB"`
+	TicksElapsed    int     `json:"ticksElapsed"`
+	Flawless        bool    `json:"flawless"`
+	FinalHPA        int     `json:"finalHpA"`
+	FinalHPB        int     `json:"finalHpB"`
+	ShotsFiredA     int     `json:"shotsFiredA"`
+	ShotsFiredB     int     `json:"shotsFiredB"`
+	HitsA           int     `json:"hitsA"`
+	HitsB           int     `json:"hitsB"`
+	TickViolationsA int     `json:"tickViolationsA"`
+	TickViolationsB int     `json:"tickViolationsB"`
+	DurationMs      int64   `json:"durationMs"`
 }
 
 // ---- Observer broadcast types -----------------------------------------------
@@ -124,10 +133,10 @@ type wsEnvelope struct {
 
 // tickPayload matches the frontend TickUpdate interface.
 type tickPayload struct {
-	Tick        int           `json:"tick"`
-	TankA       tankStateWS   `json:"tankA"`
-	TankB       tankStateWS   `json:"tankB"`
-	Projectiles []projWS      `json:"projectiles"`
+	Tick        int         `json:"tick"`
+	TankA       tankStateWS `json:"tankA"`
+	TankB       tankStateWS `json:"tankB"`
+	Projectiles []projWS    `json:"projectiles"`
 }
 
 // tankStateWS matches the frontend TankState interface.
@@ -169,12 +178,21 @@ type matchOverPayload struct {
 }
 
 type matchOverStats struct {
-	DamageA      int  `json:"damageA"`
-	DamageB      int  `json:"damageB"`
-	MovesA       int  `json:"movesA"`
-	MovesB       int  `json:"movesB"`
-	TicksElapsed int  `json:"ticksElapsed"`
-	Flawless     bool `json:"flawless"`
+	DamageA         int   `json:"damageA"`
+	DamageB         int   `json:"damageB"`
+	MovesA          int   `json:"movesA"`
+	MovesB          int   `json:"movesB"`
+	TicksElapsed    int   `json:"ticksElapsed"`
+	Flawless        bool  `json:"flawless"`
+	FinalHPA        int   `json:"finalHpA"`
+	FinalHPB        int   `json:"finalHpB"`
+	ShotsFiredA     int   `json:"shotsFiredA"`
+	ShotsFiredB     int   `json:"shotsFiredB"`
+	HitsA           int   `json:"hitsA"`
+	HitsB           int   `json:"hitsB"`
+	TickViolationsA int   `json:"tickViolationsA"`
+	TickViolationsB int   `json:"tickViolationsB"`
+	DurationMs      int64 `json:"durationMs"`
 }
 
 // cardinalStr maps Direction int (N=0,S=1,E=2,W=3) to letter.
@@ -326,6 +344,7 @@ func (h *handler) handle(ctx context.Context, evt matchEvent) error {
 
 	// ---- Game loop ----------------------------------------------------------
 
+	matchStart := time.Now()
 	var ticks []logTick
 	var violationsA, violationsB int
 	var result *engine.Result
@@ -402,6 +421,8 @@ func (h *handler) handle(ctx context.Context, evt matchEvent) error {
 	modA.Close(ctx)
 	modB.Close(ctx)
 
+	durationMs := time.Since(matchStart).Milliseconds()
+
 	// ---- Write tick log to S3 -----------------------------------------------
 
 	tickLogKey := fmt.Sprintf("matches/%s/ticks.json.gz", matchID)
@@ -416,7 +437,7 @@ func (h *handler) handle(ctx context.Context, evt matchEvent) error {
 			B: logTankMeta{TankID: match.TankB.TankID, Version: match.TankB.Version, Name: nameB, Config: verB.Config},
 		},
 		Ticks:  ticks,
-		Result: engineResultToLog(result),
+		Result: engineResultToLog(result, violationsA, violationsB, durationMs),
 	}
 
 	if err := h.writeTickLog(ctx, tickLogKey, logFile); err != nil {
@@ -427,14 +448,14 @@ func (h *handler) handle(ctx context.Context, evt matchEvent) error {
 
 	// ---- Persist result -----------------------------------------------------
 
-	dbResult := engineResultToDB(result)
+	dbResult := engineResultToDB(result, violationsA, violationsB, durationMs)
 	if err := h.store.SetMatchResult(ctx, matchID, tickLogKey, dbResult); err != nil {
 		return fmt.Errorf("set match result: %w", err)
 	}
 
 	// ---- Broadcast MATCH_OVER to observers ----------------------------------
 
-	h.broadcastMatchOver(ctx, matchID, result)
+	h.broadcastMatchOver(ctx, matchID, result, violationsA, violationsB, durationMs)
 
 	// ---- Update version stats -----------------------------------------------
 
@@ -565,8 +586,10 @@ func (h *handler) recordForfeit(ctx context.Context, match db.Match, _ string, e
 	}
 
 	result := db.MatchResult{
-		Winner: winner,
-		Reason: reason,
+		Winner:   winner,
+		Reason:   reason,
+		FinalHPA: 100, // no ticks ran — neither tank took damage
+		FinalHPB: 100,
 	}
 	if err := h.store.SetMatchResult(ctx, match.MatchID, "", result); err != nil {
 		return fmt.Errorf("set forfeit result: %w", err)
@@ -591,7 +614,7 @@ func (h *handler) recordLoadForfeit(ctx context.Context, match db.Match, errA, e
 		winner = &w
 		reason = "forfeit"
 	}
-	result := db.MatchResult{Winner: winner, Reason: reason}
+	result := db.MatchResult{Winner: winner, Reason: reason, FinalHPA: 100, FinalHPB: 100}
 	if err := h.store.SetMatchResult(ctx, match.MatchID, "", result); err != nil {
 		return fmt.Errorf("set load-forfeit result: %w", err)
 	}
@@ -654,7 +677,7 @@ func (h *handler) broadcast(ctx context.Context, match db.Match, verA, verB db.T
 }
 
 // broadcastMatchOver sends a MATCH_OVER event to all live observers.
-func (h *handler) broadcastMatchOver(ctx context.Context, matchID string, result *engine.Result) {
+func (h *handler) broadcastMatchOver(ctx context.Context, matchID string, result *engine.Result, violationsA, violationsB int, durationMs int64) {
 	conns, err := h.store.ListConnectionsByMatch(ctx, matchID)
 	if err != nil {
 		log.Printf("list connections for match %s: %v", matchID, err)
@@ -667,12 +690,21 @@ func (h *handler) broadcastMatchOver(ctx context.Context, matchID string, result
 		Winner: winnerStr(result.Winner),
 		Reason: string(result.Reason),
 		Stats: matchOverStats{
-			DamageA:      result.DamageA,
-			DamageB:      result.DamageB,
-			MovesA:       result.MovesA,
-			MovesB:       result.MovesB,
-			TicksElapsed: result.TicksElapsed,
-			Flawless:     result.Flawless,
+			DamageA:         result.DamageA,
+			DamageB:         result.DamageB,
+			MovesA:          result.MovesA,
+			MovesB:          result.MovesB,
+			TicksElapsed:    result.TicksElapsed,
+			Flawless:        result.Flawless,
+			FinalHPA:        result.FinalHPA,
+			FinalHPB:        result.FinalHPB,
+			ShotsFiredA:     result.ShotsFiredA,
+			ShotsFiredB:     result.ShotsFiredB,
+			HitsA:           result.HitsA,
+			HitsB:           result.HitsB,
+			TickViolationsA: violationsA,
+			TickViolationsB: violationsB,
+			DurationMs:      durationMs,
 		},
 	}
 	data, err := json.Marshal(wsEnvelope{Type: "MATCH_OVER", Payload: payload})
@@ -781,39 +813,57 @@ func versionToTankConfig(ver db.TankVersion) tankmaze.TankConfig {
 
 // engineResultToLog converts an engine.Result to the tick log result format.
 // Winner is "a", "b", or null (nil pointer).
-func engineResultToLog(r *engine.Result) *logResult {
+func engineResultToLog(r *engine.Result, violationsA, violationsB int, durationMs int64) *logResult {
 	if r == nil {
 		return nil
 	}
 	return &logResult{
-		Winner:       winnerStr(r.Winner),
-		Reason:       string(r.Reason),
-		DamageA:      r.DamageA,
-		DamageB:      r.DamageB,
-		MovesA:       r.MovesA,
-		MovesB:       r.MovesB,
-		TicksElapsed: r.TicksElapsed,
-		Flawless:     r.Flawless,
+		Winner:          winnerStr(r.Winner),
+		Reason:          string(r.Reason),
+		DamageA:         r.DamageA,
+		DamageB:         r.DamageB,
+		MovesA:          r.MovesA,
+		MovesB:          r.MovesB,
+		TicksElapsed:    r.TicksElapsed,
+		Flawless:        r.Flawless,
+		FinalHPA:        r.FinalHPA,
+		FinalHPB:        r.FinalHPB,
+		ShotsFiredA:     r.ShotsFiredA,
+		ShotsFiredB:     r.ShotsFiredB,
+		HitsA:           r.HitsA,
+		HitsB:           r.HitsB,
+		TickViolationsA: violationsA,
+		TickViolationsB: violationsB,
+		DurationMs:      durationMs,
 	}
 }
 
 // engineResultToDB converts an engine.Result to the db.MatchResult format.
 // Winner is 0, 1, or nil (for both_lose).
-func engineResultToDB(r *engine.Result) db.MatchResult {
+func engineResultToDB(r *engine.Result, violationsA, violationsB int, durationMs int64) db.MatchResult {
 	var winner *int
 	if r.Winner >= 0 {
 		w := r.Winner
 		winner = &w
 	}
 	return db.MatchResult{
-		Winner:       winner,
-		Reason:       string(r.Reason),
-		DamageA:      r.DamageA,
-		DamageB:      r.DamageB,
-		MovesA:       r.MovesA,
-		MovesB:       r.MovesB,
-		TicksElapsed: r.TicksElapsed,
-		Flawless:     r.Flawless,
+		Winner:          winner,
+		Reason:          string(r.Reason),
+		DamageA:         r.DamageA,
+		DamageB:         r.DamageB,
+		MovesA:          r.MovesA,
+		MovesB:          r.MovesB,
+		TicksElapsed:    r.TicksElapsed,
+		Flawless:        r.Flawless,
+		FinalHPA:        r.FinalHPA,
+		FinalHPB:        r.FinalHPB,
+		ShotsFiredA:     r.ShotsFiredA,
+		ShotsFiredB:     r.ShotsFiredB,
+		HitsA:           r.HitsA,
+		HitsB:           r.HitsB,
+		TickViolationsA: violationsA,
+		TickViolationsB: violationsB,
+		DurationMs:      durationMs,
 	}
 }
 

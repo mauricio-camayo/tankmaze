@@ -33,6 +33,12 @@ type Result struct {
 	MovesB       int
 	TicksElapsed int
 	Flawless     bool // true only when winner destroyed opponent with zero damage received
+	FinalHPA     int  // tank A's HP at match end (0 if destroyed)
+	FinalHPB     int  // tank B's HP at match end (0 if destroyed)
+	ShotsFiredA  int  // projectiles A fired (cooldown-gated, not raw Fire actions)
+	ShotsFiredB  int
+	HitsA        int // projectiles from A that connected with B
+	HitsB        int
 }
 
 // State is a read-only snapshot of the match at one tick, used by the match-runner
@@ -72,6 +78,8 @@ type tankState struct {
 	hp             int
 	damageDealt    int
 	moveCount      int
+	shotsFired     int
+	hits           int
 	moveCooldownMs int
 	fireCooldownMs int
 	crashed        bool
@@ -245,6 +253,12 @@ func (e *Engine) result(winner int, reason Reason) *Result {
 		MovesA:       e.tanks[0].moveCount,
 		MovesB:       e.tanks[1].moveCount,
 		TicksElapsed: e.tick,
+		FinalHPA:     e.tanks[0].hp,
+		FinalHPB:     e.tanks[1].hp,
+		ShotsFiredA:  e.tanks[0].shotsFired,
+		ShotsFiredB:  e.tanks[1].shotsFired,
+		HitsA:        e.tanks[0].hits,
+		HitsB:        e.tanks[1].hits,
 	}
 	if reason == ReasonDestroyed && winner >= 0 {
 		r.Flawless = e.tanks[winner].hp == 100

@@ -89,14 +89,23 @@ type MatchTank struct {
 // MatchResult is the outcome map written when a match ends.
 // Winner is nil when Reason is "both_lose".
 type MatchResult struct {
-	Winner       *int   `dynamodbav:"winner"       json:"winner"`
-	Reason       string `dynamodbav:"reason"       json:"reason"`
-	DamageA      int    `dynamodbav:"damageA"      json:"damageA"`
-	DamageB      int    `dynamodbav:"damageB"      json:"damageB"`
-	MovesA       int    `dynamodbav:"movesA"       json:"movesA"`
-	MovesB       int    `dynamodbav:"movesB"       json:"movesB"`
-	TicksElapsed int    `dynamodbav:"ticksElapsed" json:"ticksElapsed"`
-	Flawless     bool   `dynamodbav:"flawless"     json:"flawless"`
+	Winner          *int   `dynamodbav:"winner"                    json:"winner"`
+	Reason          string `dynamodbav:"reason"                    json:"reason"`
+	DamageA         int    `dynamodbav:"damageA"                   json:"damageA"`
+	DamageB         int    `dynamodbav:"damageB"                   json:"damageB"`
+	MovesA          int    `dynamodbav:"movesA"                    json:"movesA"`
+	MovesB          int    `dynamodbav:"movesB"                    json:"movesB"`
+	TicksElapsed    int    `dynamodbav:"ticksElapsed"               json:"ticksElapsed"`
+	Flawless        bool   `dynamodbav:"flawless"                  json:"flawless"`
+	FinalHPA        int    `dynamodbav:"finalHpA"                  json:"finalHpA"`
+	FinalHPB        int    `dynamodbav:"finalHpB"                  json:"finalHpB"`
+	ShotsFiredA     int    `dynamodbav:"shotsFiredA"               json:"shotsFiredA"`
+	ShotsFiredB     int    `dynamodbav:"shotsFiredB"               json:"shotsFiredB"`
+	HitsA           int    `dynamodbav:"hitsA"                     json:"hitsA"`
+	HitsB           int    `dynamodbav:"hitsB"                     json:"hitsB"`
+	TickViolationsA int    `dynamodbav:"tickViolationsA"           json:"tickViolationsA"`
+	TickViolationsB int    `dynamodbav:"tickViolationsB"           json:"tickViolationsB"`
+	DurationMs      int64  `dynamodbav:"durationMs"                json:"durationMs"`
 }
 
 // Match is the item stored in tankmaze-matches.

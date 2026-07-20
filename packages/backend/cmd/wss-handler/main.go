@@ -111,10 +111,10 @@ type projWS struct {
 
 // tickPayload matches the frontend TickUpdate interface.
 type tickPayload struct {
-	Tick        int               `json:"tick"`
-	TankA       tickTankStateWS   `json:"tankA"`
-	TankB       tickTankStateWS   `json:"tankB"`
-	Projectiles []projWS          `json:"projectiles"`
+	Tick        int             `json:"tick"`
+	TankA       tickTankStateWS `json:"tankA"`
+	TankB       tickTankStateWS `json:"tankB"`
+	Projectiles []projWS        `json:"projectiles"`
 }
 
 // tickTankStateWS extends tankStateWS with per-tick debug fields (action, sensors, log).
@@ -173,12 +173,21 @@ func buildTickTankStateWS(tankID, version string, e logTankEntry, cfg db.Version
 }
 
 type matchOverStats struct {
-	DamageA      int  `json:"damageA"`
-	DamageB      int  `json:"damageB"`
-	MovesA       int  `json:"movesA"`
-	MovesB       int  `json:"movesB"`
-	TicksElapsed int  `json:"ticksElapsed"`
-	Flawless     bool `json:"flawless"`
+	DamageA         int   `json:"damageA"`
+	DamageB         int   `json:"damageB"`
+	MovesA          int   `json:"movesA"`
+	MovesB          int   `json:"movesB"`
+	TicksElapsed    int   `json:"ticksElapsed"`
+	Flawless        bool  `json:"flawless"`
+	FinalHPA        int   `json:"finalHpA"`
+	FinalHPB        int   `json:"finalHpB"`
+	ShotsFiredA     int   `json:"shotsFiredA"`
+	ShotsFiredB     int   `json:"shotsFiredB"`
+	HitsA           int   `json:"hitsA"`
+	HitsB           int   `json:"hitsB"`
+	TickViolationsA int   `json:"tickViolationsA"`
+	TickViolationsB int   `json:"tickViolationsB"`
+	DurationMs      int64 `json:"durationMs"`
 }
 
 type matchOverPayload struct {
@@ -204,11 +213,11 @@ var cardinalStr = [4]string{0: "N", 1: "S", 2: "E", 3: "W"}
 
 // tickLog is the gzip-compressed JSON written to S3 by match-runner.
 type tickLog struct {
-	MatchID string       `json:"matchId"`
-	Maze    [][]bool     `json:"maze"`
-	Tanks   logTankPair  `json:"tanks"`
-	Ticks   []tickEntry  `json:"ticks"`
-	Result  *logResult   `json:"result"`
+	MatchID string      `json:"matchId"`
+	Maze    [][]bool    `json:"maze"`
+	Tanks   logTankPair `json:"tanks"`
+	Ticks   []tickEntry `json:"ticks"`
+	Result  *logResult  `json:"result"`
 }
 
 // logTankPair holds metadata for both tanks, written by match-runner at the top of the log.
@@ -225,9 +234,9 @@ type logTankMeta struct {
 }
 
 type tickEntry struct {
-	Tick        int           `json:"tick"`
-	A           logTankEntry  `json:"a"`
-	B           logTankEntry  `json:"b"`
+	Tick        int            `json:"tick"`
+	A           logTankEntry   `json:"a"`
+	B           logTankEntry   `json:"b"`
 	Projectiles []logProjEntry `json:"projectiles"`
 }
 
@@ -240,7 +249,7 @@ type logProjEntry struct {
 
 // logTankEntry holds one tank's data per tick as written by match-runner.
 type logTankEntry struct {
-	Sensors    json.RawMessage `json:"sensors"`   // raw pass-through to frontend
+	Sensors    json.RawMessage `json:"sensors"` // raw pass-through to frontend
 	Action     logAction       `json:"action"`
 	DurationMs int64           `json:"durationMs"`
 	Violation  bool            `json:"violation"`
@@ -273,14 +282,23 @@ func parseSensors(raw json.RawMessage) logSensors {
 // logResult mirrors the match result as written by match-runner.
 // Winner is "a", "b", or null (not an integer) in the tick log.
 type logResult struct {
-	Winner       *string `json:"winner"`
-	Reason       string  `json:"reason"`
-	DamageA      int     `json:"damageA"`
-	DamageB      int     `json:"damageB"`
-	MovesA       int     `json:"movesA"`
-	MovesB       int     `json:"movesB"`
-	TicksElapsed int     `json:"ticksElapsed"`
-	Flawless     bool    `json:"flawless"`
+	Winner          *string `json:"winner"`
+	Reason          string  `json:"reason"`
+	DamageA         int     `json:"damageA"`
+	DamageB         int     `json:"damageB"`
+	MovesA          int     `json:"movesA"`
+	MovesB          int     `json:"movesB"`
+	TicksElapsed    int     `json:"ticksElapsed"`
+	Flawless        bool    `json:"flawless"`
+	FinalHPA        int     `json:"finalHpA"`
+	FinalHPB        int     `json:"finalHpB"`
+	ShotsFiredA     int     `json:"shotsFiredA"`
+	ShotsFiredB     int     `json:"shotsFiredB"`
+	HitsA           int     `json:"hitsA"`
+	HitsB           int     `json:"hitsB"`
+	TickViolationsA int     `json:"tickViolationsA"`
+	TickViolationsB int     `json:"tickViolationsB"`
+	DurationMs      int64   `json:"durationMs"`
 }
 
 // ---- Handler ----------------------------------------------------------------
@@ -469,12 +487,21 @@ func (h *handler) handleObserve(ctx context.Context, connID string, raw json.Raw
 				Winner: dbWinnerToString(match.Result.Winner),
 				Reason: match.Result.Reason,
 				Stats: matchOverStats{
-					DamageA:      match.Result.DamageA,
-					DamageB:      match.Result.DamageB,
-					MovesA:       match.Result.MovesA,
-					MovesB:       match.Result.MovesB,
-					TicksElapsed: match.Result.TicksElapsed,
-					Flawless:     match.Result.Flawless,
+					DamageA:         match.Result.DamageA,
+					DamageB:         match.Result.DamageB,
+					MovesA:          match.Result.MovesA,
+					MovesB:          match.Result.MovesB,
+					TicksElapsed:    match.Result.TicksElapsed,
+					Flawless:        match.Result.Flawless,
+					FinalHPA:        match.Result.FinalHPA,
+					FinalHPB:        match.Result.FinalHPB,
+					ShotsFiredA:     match.Result.ShotsFiredA,
+					ShotsFiredB:     match.Result.ShotsFiredB,
+					HitsA:           match.Result.HitsA,
+					HitsB:           match.Result.HitsB,
+					TickViolationsA: match.Result.TickViolationsA,
+					TickViolationsB: match.Result.TickViolationsB,
+					DurationMs:      match.Result.DurationMs,
 				},
 			}})
 		}
@@ -689,12 +716,21 @@ func (h *handler) streamReplayWithSnapshot(ctx context.Context, connID, s3Key st
 			Winner: tl.Result.Winner,
 			Reason: tl.Result.Reason,
 			Stats: matchOverStats{
-				DamageA:      tl.Result.DamageA,
-				DamageB:      tl.Result.DamageB,
-				MovesA:       tl.Result.MovesA,
-				MovesB:       tl.Result.MovesB,
-				TicksElapsed: tl.Result.TicksElapsed,
-				Flawless:     tl.Result.Flawless,
+				DamageA:         tl.Result.DamageA,
+				DamageB:         tl.Result.DamageB,
+				MovesA:          tl.Result.MovesA,
+				MovesB:          tl.Result.MovesB,
+				TicksElapsed:    tl.Result.TicksElapsed,
+				Flawless:        tl.Result.Flawless,
+				FinalHPA:        tl.Result.FinalHPA,
+				FinalHPB:        tl.Result.FinalHPB,
+				ShotsFiredA:     tl.Result.ShotsFiredA,
+				ShotsFiredB:     tl.Result.ShotsFiredB,
+				HitsA:           tl.Result.HitsA,
+				HitsB:           tl.Result.HitsB,
+				TickViolationsA: tl.Result.TickViolationsA,
+				TickViolationsB: tl.Result.TickViolationsB,
+				DurationMs:      tl.Result.DurationMs,
 			},
 		}
 		_ = h.send(ctx, connID, wsEnvelope{Type: "MATCH_OVER", Payload: over})
@@ -793,7 +829,6 @@ func dbWinnerToString(w *int) *string {
 	}
 	return &s
 }
-
 
 // invertMaze converts engine convention (true=open) to frontend convention (true=wall).
 func invertMaze(cells [][]bool) [][]bool {

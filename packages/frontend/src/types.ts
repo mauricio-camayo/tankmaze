@@ -63,6 +63,15 @@ export interface MatchResult {
   movesB: number;
   ticksElapsed: number;
   flawless: boolean;
+  finalHpA: number;
+  finalHpB: number;
+  shotsFiredA: number;
+  shotsFiredB: number;
+  hitsA: number;
+  hitsB: number;
+  tickViolationsA: number;
+  tickViolationsB: number;
+  durationMs: number;
 }
 
 export interface Match {
@@ -72,8 +81,8 @@ export interface Match {
   status: MatchStatus;
   mazeSeed: string | null;
   mapId: string | null;
-  tankA: { tankId: string; version: string };
-  tankB: { tankId: string; version: string };
+  tankA: { tankId: string; version: string; tankName?: string };
+  tankB: { tankId: string; version: string; tankName?: string };
   tickLogS3Key: string | null;
   result: MatchResult | null;
   createdAt: number;

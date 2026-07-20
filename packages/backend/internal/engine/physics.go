@@ -151,6 +151,7 @@ func (e *Engine) applyAction(idx int, action tankmaze.Action, crashed bool) []pr
 		opp := &e.tanks[1-idx]
 		dmg := effectiveDamage(t.cfg.Damage, opp.cfg.Armor)
 		t.fireCooldownMs = fireCooldownFor(t.cfg.FireRate)
+		t.shotsFired++
 		return []projectile{{pos: t.pos, facing: t.facing, owner: idx, damage: dmg}}
 	}
 
@@ -187,6 +188,7 @@ func (e *Engine) advanceProjectiles() {
 				if e.tanks[ti].pos == next {
 					e.tanks[ti].hp = max(0, e.tanks[ti].hp-p.damage)
 					e.tanks[p.owner].damageDealt += p.damage
+					e.tanks[p.owner].hits++
 					destroyed = true
 					break
 				}

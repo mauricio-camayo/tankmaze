@@ -618,7 +618,16 @@ Written to S3 as gzip-compressed JSON after each match. Used for replay and data
     "movesA": 14,
     "movesB": 9,
     "ticksElapsed": 43,
-    "flawless": true         // true only when winner destroyed opponent with zero damage received
+    "flawless": true,        // true only when winner destroyed opponent with zero damage received
+    "finalHpA": 100,         // HP at match end (Post-Match Summary §11)
+    "finalHpB": 0,
+    "shotsFiredA": 8,        // cooldown-gated — only shots that actually fired, not raw Fire actions
+    "shotsFiredB": 5,
+    "hitsA": 6,              // shots from A that connected with B
+    "hitsB": 2,
+    "tickViolationsA": 0,    // ticks where the tank's WASM timed out (§10.2 tick budget)
+    "tickViolationsB": 1,
+    "durationMs": 4312       // wall-clock time match-runner spent executing the game loop
   }
 }
 ```
