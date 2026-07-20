@@ -254,10 +254,31 @@ export class ApiStack extends Stack {
 
     // CloudWatch alarm: alert when tournament-scheduler Lambda errors so silent
     // phase-transition failures are immediately visible (root cause of bug #106).
+    //
+    // item 245: the raw AWS/Lambda `Errors` metric also counts the handler's
+    // intentional "not started yet — retrying" returns (used to trigger Lambda's
+    // built-in async retry when a phase's EventBridge rule fires before the
+    // previous phase has finished — see main.go's handle()/handleEliminationR1/
+    // handleElimination/handleFinal). That happens on essentially every
+    // tournament shorter than 5 elimination rounds, so the alarm fired on
+    // 2026-07-17 and 2026-07-19 with no real incident behind either. Rather than
+    // loosen the threshold (which would just mask a real stuck-phase failure
+    // that happens to coincide with a few benign retries), this metric filter
+    // excludes known-retryable log lines so the alarm only reflects genuine
+    // errors — unknown phase, DB failures, exhausted conflict retries (item
+    // 124), etc. — which don't contain "retrying" in their message.
+    const tournamentSchedulerRealErrors = new logs.MetricFilter(this, 'TournamentSchedulerRealErrorsFilter', {
+      logGroup: tournamentScheduler.logGroup,
+      filterPattern: logs.FilterPattern.literal('{ ($.errorMessage = "*") && ($.errorMessage != "*retrying*") }'),
+      metricNamespace: 'TankMaze',
+      metricName: 'TournamentSchedulerRealErrors',
+      metricValue: '1',
+      defaultValue: 0,
+    });
     const tournamentSchedulerErrorAlarm = new cloudwatch.Alarm(this, 'TournamentSchedulerErrorAlarm', {
       alarmName: 'tankmaze-tournament-scheduler-errors',
       alarmDescription: 'tournament-scheduler Lambda returned an error — a Game Day phase may have silently failed to advance',
-      metric: tournamentScheduler.metricErrors({
+      metric: tournamentSchedulerRealErrors.metric({
         period: Duration.minutes(5),
         statistic: 'Sum',
       }),
