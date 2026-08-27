@@ -112,6 +112,8 @@ export const rematch = (matchId: string) =>
   request<Match>('/matches', { method: 'POST', body: JSON.stringify({ opponent: { type: 'rematch', matchId } }) });
 export const getMatchTicks = (matchId: string) =>
   request<unknown>(`/matches/${matchId}/ticks`);
+export const exportMatch = (matchId: string) =>
+  request<{ url: string }>(`/matches/${matchId}/export`);
 
 // Rankings
 export const getRankings = () => request<RankingEntry[]>('/rankings');

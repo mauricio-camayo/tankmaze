@@ -7,7 +7,7 @@ import ObserverHUD from '../game/ObserverHUD';
 import { ReplayController } from '../game/ReplayController';
 import { ObserverSocket } from '../services/ws';
 import type { MatchOverStats } from '../services/ws';
-import { getMatch, getTank, listTanks, rematch } from '../services/api';
+import { exportMatch, getMatch, getTank, listTanks, rematch } from '../services/api';
 import PostMatchSummary from '../components/PostMatchSummary';
 import type { Match } from '../types';
 import { useAuthStore } from '../store/authStore';
@@ -31,6 +31,14 @@ export default function Watch() {
   const [ownTankIds, setOwnTankIds] = useState<Set<string>>(new Set());
   const [rematching, setRematching] = useState(false);
   const [rematchError, setRematchError] = useState<string | null>(null);
+
+  // Match data export (item 35): generated on demand, so there's nothing to
+  // fetch up front — exportGone only flips true after a real 410 from the
+  // backend (source tick log expired off S3), at which point the button is
+  // replaced rather than left to fail again on a retry.
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportGone, setExportGone] = useState(false);
 
   const hostRef    = useRef<HTMLDivElement>(null);
   const gameRef    = useRef<Phaser.Game | null>(null);
@@ -265,6 +273,8 @@ export default function Watch() {
     if (!matchId || !currentUser) return;
     getMatch(matchId).then(setRestMatch).catch(() => setRestMatch(null));
     listTanks().then((tanks) => setOwnTankIds(new Set(tanks.map((t) => t.tankId)))).catch(() => setOwnTankIds(new Set()));
+    setExportGone(false);
+    setExportError(null);
   }, [matchId, currentUser]);
 
   // ── Post-match summary (item 244): author names ────────────────────────
@@ -291,6 +301,33 @@ export default function Watch() {
     } catch (e) {
       setRematchError(e instanceof Error ? e.message : 'Failed to start rematch');
       setRematching(false);
+    }
+  }
+
+  // §9.5: any participating Tank Author, on any match type — not gated to
+  // ranked like rematch. tickLogS3Key must be present (match has ended and
+  // match-runner has written the source tick log).
+  const canExport = !!restMatch
+    && !!restMatch.tickLogS3Key
+    && !exportGone
+    && (ownTankIds.has(restMatch.tankA.tankId) || ownTankIds.has(restMatch.tankB.tankId));
+
+  async function handleExport() {
+    if (!matchId) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      const { url } = await exportMatch(matchId);
+      window.location.href = url;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Export failed';
+      if (msg.startsWith('410')) {
+        setExportGone(true);
+      } else {
+        setExportError(msg);
+      }
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -386,6 +423,19 @@ export default function Watch() {
                     {rematching ? 'Starting rematch…' : 'Rematch'}
                   </button>
                   {rematchError && <span style={{ color: '#ff8a75', fontSize: 13 }}>{rematchError}</span>}
+                </div>
+              )}
+              {matchOver && canExport && (
+                <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <button onClick={handleExport} disabled={exporting} style={primaryButtonStyle}>
+                    {exporting ? 'Preparing download…' : 'Download match data (JSON)'}
+                  </button>
+                  {exportError && <span style={{ color: '#ff8a75', fontSize: 13 }}>{exportError}</span>}
+                </div>
+              )}
+              {matchOver && exportGone && (
+                <div style={{ marginTop: 10, color: '#5b87a3', fontSize: 13 }}>
+                  Match data export is no longer available — it expires 7 days after the match.
                 </div>
               )}
             </div>

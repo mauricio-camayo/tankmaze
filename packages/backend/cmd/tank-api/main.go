@@ -17,6 +17,7 @@
 //	POST   /matches                            – start a match; opponent.type is "ai", "own", "informal" (item 37, challenge another author's tank), or "rematch" (item 37, re-run a previous ranked match by opponent.matchId) — all unranked
 //	GET    /matches/{id}                       – match metadata + result
 //	GET    /matches/{id}/ticks                 – redirect to pre-signed S3 tick log URL
+//	GET    /matches/{id}/export                – owner-only; decompresses tick log on demand, returns { url } to a short-lived presigned JSON download (item 35)
 //	GET    /rankings                           – global leaderboard
 //	GET    /users/{sub}                         – public author profile (name, picture, public tank list; no email; no auth required)
 //	GET    /gamedays                           – list all game days (no auth required)
@@ -52,6 +53,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	crand "crypto/rand"
 	"encoding/base64"
@@ -317,6 +319,8 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 		return h.getMatch(ctx, req, parts[1])
 	case method == "GET" && len(parts) == 3 && parts[0] == "matches" && parts[2] == "ticks":
 		return h.getMatchTicks(ctx, req, parts[1])
+	case method == "GET" && len(parts) == 3 && parts[0] == "matches" && parts[2] == "export":
+		return h.getMatchExport(ctx, req, parts[1])
 
 	// Auth
 	case method == "POST" && rawPath == "auth/forgot-password":
@@ -1582,6 +1586,97 @@ func (h *handler) getMatchTicks(ctx context.Context, req events.APIGatewayV2HTTP
 		StatusCode: http.StatusFound,
 		Headers:    map[string]string{"Location": presigned.URL},
 	}, nil
+}
+
+// getMatchExport implements item 35 (functional spec §9.5): Tank Authors can
+// export the full match data as a JSON file from any replay. Nothing is
+// pre-generated — the plain-JSON copy is decompressed from the source tick
+// log and written to S3 only when a participating owner actually requests
+// it, under exports/<matchId>.json with its own short lifecycle rule
+// (storage-stack.ts), independent of the 7-day source tick log expiration.
+// Returns the presigned download URL as JSON rather than a redirect so the
+// frontend can navigate the browser to it directly (a fetch()-followed
+// redirect to S3 would hit CORS; a page navigation/download does not).
+func (h *handler) getMatchExport(ctx context.Context, req events.APIGatewayV2HTTPRequest, matchID string) (events.APIGatewayV2HTTPResponse, error) {
+	uid := userID(req)
+	if uid == "" {
+		return errResp(http.StatusUnauthorized, "unauthorized"), nil
+	}
+	match, err := h.store.GetMatch(ctx, matchID)
+	if errors.Is(err, db.ErrNotFound) {
+		return errResp(http.StatusNotFound, "match not found"), nil
+	}
+	if err != nil {
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	tankA, err := h.store.GetTank(ctx, match.TankA.TankID)
+	if err != nil {
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	tankB, err := h.store.GetTank(ctx, match.TankB.TankID)
+	if err != nil {
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	if tankA.UserID != uid && tankB.UserID != uid {
+		return errResp(http.StatusForbidden, "you did not participate in this match"), nil
+	}
+	if match.TickLogS3Key == "" {
+		return errResp(http.StatusNotFound, "tick log not yet available"), nil
+	}
+
+	obj, err := h.s3.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(h.logsBucket),
+		Key:    aws.String(match.TickLogS3Key),
+	})
+	var nsk *s3types.NoSuchKey
+	if errors.As(err, &nsk) {
+		// Source tick log already expired off S3 (7-day lifecycle rule) —
+		// distinct from a generic error so the frontend can drop the Export
+		// button for this match instead of showing it as a transient failure.
+		return errResp(http.StatusGone, "export no longer available — match data has expired"), nil
+	}
+	if err != nil {
+		log.Printf("get tick log for export %s: %v", matchID, err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	defer obj.Body.Close()
+
+	gz, err := gzip.NewReader(obj.Body)
+	if err != nil {
+		log.Printf("gunzip tick log for export %s: %v", matchID, err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	plain, err := io.ReadAll(gz)
+	gz.Close()
+	if err != nil {
+		log.Printf("read tick log for export %s: %v", matchID, err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+
+	exportKey := fmt.Sprintf("exports/%s.json", matchID)
+	if _, err := h.s3.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(h.logsBucket),
+		Key:         aws.String(exportKey),
+		Body:        bytes.NewReader(plain),
+		ContentType: aws.String("application/json"),
+	}); err != nil {
+		log.Printf("put export %s: %v", matchID, err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+
+	presigner := s3.NewPresignClient(h.s3)
+	presigned, err := presigner.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket:                     aws.String(h.logsBucket),
+		Key:                        aws.String(exportKey),
+		ResponseContentDisposition: aws.String(fmt.Sprintf(`attachment; filename="%s.json"`, matchID)),
+	}, func(opts *s3.PresignOptions) {
+		opts.Expires = tickLogPresignTTL
+	})
+	if err != nil {
+		log.Printf("presign export %s: %v", matchID, err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	return jsonResp(http.StatusOK, map[string]string{"url": presigned.URL}), nil
 }
 
 // ---- Auth --------------------------------------------------------------

@@ -349,6 +349,13 @@ export class ApiStack extends Stack {
       actions: ['s3:GetObject'],
       resources: [matchLogsBucket.arnForObjects('*')],
     }));
+    // Item 35 (match data export): write the on-demand decompressed export
+    // copy, scoped to the exports/ prefix only — tank-api has no business
+    // writing to the source tick-log keys written by match-runner.
+    tankApi.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['s3:PutObject'],
+      resources: [matchLogsBucket.arnForObjects('exports/*')],
+    }));
     // Cognito admin operations for the admin panel
     tankApi.addToRolePolicy(new iam.PolicyStatement({
       actions: [

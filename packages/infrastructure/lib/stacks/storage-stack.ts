@@ -221,6 +221,16 @@ export class StorageStack extends Stack {
           id: 'expire-match-logs',
           expiration: Duration.days(7),
         },
+        {
+          // Item 35 (match data export): decompressed export copies are
+          // generated on demand under exports/<matchId>.json and don't need
+          // to outlive the download — expire well short of the 7-day source
+          // tick log window so a stale export never outlives the ability to
+          // regenerate it.
+          id: 'expire-match-exports',
+          prefix: 'exports/',
+          expiration: Duration.hours(24),
+        },
       ],
     });
 
