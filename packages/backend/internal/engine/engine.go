@@ -87,28 +87,56 @@ type tankState struct {
 
 // Engine drives the match. Create with New; call Sensors then Step each tick.
 type Engine struct {
-	grid          maze.MazeGrid
-	tanks         [2]tankState
-	projectiles   []projectile
-	tick          int
-	tickLimit     int
-	projSpeed     int // cells a projectile travels per tick
-	wallHitDamage int // HP lost when a tank attempts to move into a wall
+	grid                 maze.MazeGrid
+	tanks                [2]tankState
+	projectiles          []projectile
+	tick                 int
+	tickLimit            int
+	projSpeed            int    // cells a projectile travels per tick
+	wallHitDamage        int    // HP lost when a tank attempts to move into a wall
+	collisionDamageTable [5]int // HP taken in a collision, indexed by own Armor-1 (item 247)
 }
+
+// Option configures optional Engine behavior not covered by New's required
+// arguments — currently just collision damage. Added as options rather than
+// more required New() parameters so the ~30 existing call sites across
+// production code and tests that don't care about this knob don't all need
+// updating every time a new tunable is added.
+type Option func(*Engine)
+
+// WithCollisionDamageTable overrides the default collision damage table
+// (DefaultCollisionDamageTable). See CollisionDamageTableFromEnv for the
+// production wiring and functional-spec.md §8.1 for the design rationale.
+func WithCollisionDamageTable(table [5]int) Option {
+	return func(e *Engine) { e.collisionDamageTable = table }
+}
+
+// DefaultCollisionDamageTable is the HP a tank takes in a collision at each
+// of its own armor levels 1–5 (item 247) — deliberately non-linear: higher
+// armor gives more-than-proportional protection, and Armor 5 reproduces the
+// flat 5 HP every armor level took before this change. Used whenever
+// COLLISION_DAMAGE_TABLE is unset; see CollisionDamageTableFromEnv to
+// override it per-environment without a code change.
+var DefaultCollisionDamageTable = [5]int{15, 12, 9, 7, 5}
 
 // New initialises a match. Tank A spawns at SpawnA facing South; tank B spawns
 // at SpawnB facing North.
-func New(grid maze.MazeGrid, cfgA, cfgB tankmaze.TankConfig, tickLimit, projSpeed, wallHitDamage int) *Engine {
-	return &Engine{
+func New(grid maze.MazeGrid, cfgA, cfgB tankmaze.TankConfig, tickLimit, projSpeed, wallHitDamage int, opts ...Option) *Engine {
+	e := &Engine{
 		grid: grid,
 		tanks: [2]tankState{
 			newTank(cfgA, grid.SpawnA, tankmaze.S),
 			newTank(cfgB, grid.SpawnB, tankmaze.N),
 		},
-		tickLimit:     tickLimit,
-		projSpeed:     projSpeed,
-		wallHitDamage: wallHitDamage,
+		tickLimit:            tickLimit,
+		projSpeed:            projSpeed,
+		wallHitDamage:        wallHitDamage,
+		collisionDamageTable: DefaultCollisionDamageTable,
 	}
+	for _, opt := range opts {
+		opt(e)
+	}
+	return e
 }
 
 func newTank(cfg tankmaze.TankConfig, spawn [2]int, facing tankmaze.Direction) tankState {

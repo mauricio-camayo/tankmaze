@@ -324,7 +324,7 @@ func (srv *server) runMatch(matchID string) {
 	tankNameA := srv.tankName(match.TankA.TankID)
 	tankNameB := srv.tankName(match.TankB.TankID)
 
-	eng := engine.New(grid, cfgA, cfgB, engine.TickLimitFromEnv(), engine.ProjSpeedFromEnv(), engine.WallHitDamageFromEnv())
+	eng := engine.New(grid, cfgA, cfgB, engine.TickLimitFromEnv(), engine.ProjSpeedFromEnv(), engine.WallHitDamageFromEnv(), engine.WithCollisionDamageTable(engine.CollisionDamageTableFromEnv()))
 
 	// Build initial snapshot before starting the game loop.
 	initState := eng.State()

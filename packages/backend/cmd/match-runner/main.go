@@ -218,6 +218,7 @@ type handler struct {
 	tickLimit             int
 	projSpeed             int
 	wallHitDamage         int
+	collisionDamageTable  [5]int
 }
 
 var h *handler
@@ -242,6 +243,7 @@ func main() {
 		tickLimit:             engine.TickLimitFromEnv(),
 		projSpeed:             engine.ProjSpeedFromEnv(),
 		wallHitDamage:         engine.WallHitDamageFromEnv(),
+		collisionDamageTable:  engine.CollisionDamageTableFromEnv(),
 	}
 
 	lambda.Start(h.handle)
@@ -320,7 +322,7 @@ func (h *handler) handle(ctx context.Context, evt matchEvent) error {
 
 	cfgA := versionToTankConfig(verA)
 	cfgB := versionToTankConfig(verB)
-	eng := engine.New(grid, cfgA, cfgB, h.tickLimit, h.projSpeed, h.wallHitDamage)
+	eng := engine.New(grid, cfgA, cfgB, h.tickLimit, h.projSpeed, h.wallHitDamage, engine.WithCollisionDamageTable(h.collisionDamageTable))
 
 	modA, errLoadA := wasm.Load(ctx, wasmPathA, verA.WasmSHA256)
 	modB, errLoadB := wasm.Load(ctx, wasmPathB, verB.WasmSHA256)

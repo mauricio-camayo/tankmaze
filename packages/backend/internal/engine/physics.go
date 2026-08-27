@@ -3,6 +3,7 @@ package engine
 import (
 	"os"
 	"strconv"
+	"strings"
 
 	tankmaze "github.com/tankmaze/sdk"
 	"github.com/tankmaze/backend/internal/maze"
@@ -34,6 +35,33 @@ func WallHitDamageFromEnv() int {
 		return 1
 	}
 	return n
+}
+
+// CollisionDamageTableFromEnv reads COLLISION_DAMAGE_TABLE — five
+// comma-separated non-negative integers giving the HP a tank takes in a
+// collision at each of its own armor levels 1 through 5 in order, e.g.
+// "15,12,9,7,5" (DefaultCollisionDamageTable, and the value used when this
+// var is unset). Any other shape (wrong count, non-integer, negative value)
+// falls back to the default rather than partially applying a bad value.
+// Item 247; functional-spec.md §8.1 documents the tunable and its default.
+func CollisionDamageTableFromEnv() [5]int {
+	v := os.Getenv("COLLISION_DAMAGE_TABLE")
+	if v == "" {
+		return DefaultCollisionDamageTable
+	}
+	parts := strings.Split(v, ",")
+	if len(parts) != 5 {
+		return DefaultCollisionDamageTable
+	}
+	var table [5]int
+	for i, p := range parts {
+		n, err := strconv.Atoi(strings.TrimSpace(p))
+		if err != nil || n < 0 {
+			return DefaultCollisionDamageTable
+		}
+		table[i] = n
+	}
+	return table
 }
 
 // TickLimitFromEnv reads TICK_LIMIT and returns the maximum number of ticks
@@ -214,7 +242,9 @@ func (e *Engine) advanceProjectiles() {
 //   - The tanks swapped cells (passed through each other).
 //
 // On collision both tanks are pushed back to their pre-move positions and
-// each takes 5 HP contact damage (ignoring armor).
+// each takes contact damage looked up from the engine's collision damage
+// table by its OWN armor — self-referential (my own armor determines what I
+// take) rather than attacker/defender like a weapon hit (item 247).
 func (e *Engine) resolveCollision() {
 	posA, posB := e.tanks[0].pos, e.tanks[1].pos
 	prevA, prevB := e.tanks[0].prevPos, e.tanks[1].prevPos
@@ -229,12 +259,35 @@ func (e *Engine) resolveCollision() {
 	e.tanks[0].pos = prevA
 	e.tanks[1].pos = prevB
 
-	e.tanks[0].hp = max(0, e.tanks[0].hp-5)
-	e.tanks[1].hp = max(0, e.tanks[1].hp-5)
+	dmgToA := e.collisionDamageTable[armorIndex(e.tanks[0].cfg.Armor)]
+	dmgToB := e.collisionDamageTable[armorIndex(e.tanks[1].cfg.Armor)]
 
-	// Each tank dealt 5 HP to the other via contact.
-	e.tanks[0].damageDealt += 5
-	e.tanks[1].damageDealt += 5
+	e.tanks[0].hp = max(0, e.tanks[0].hp-dmgToA)
+	e.tanks[1].hp = max(0, e.tanks[1].hp-dmgToB)
+
+	// Credited to whoever CAUSED the damage, not whoever took it — a
+	// collision is mutual, but damageDealt still means "damage I actually
+	// inflicted on the opponent," which is what the damage tiebreak
+	// (ReasonDamageTiebreak) compares. Now that dmgToA and dmgToB can
+	// differ (armor-mitigated, no longer always equal), getting this
+	// pairing backwards would silently reward being hit instead of being
+	// armored.
+	e.tanks[0].damageDealt += dmgToB
+	e.tanks[1].damageDealt += dmgToA
+}
+
+// armorIndex converts a 1–5 Armor stat into a 0–4 collisionDamageTable
+// index, clamping first — the stat is validated to 1–5 at tank-submission
+// time, but this is a hot path in a live match's game loop, not the place
+// to trust that and let an out-of-range value panic instead of degrade.
+func armorIndex(armor int) int {
+	if armor < 1 {
+		return 0
+	}
+	if armor > 5 {
+		return 4
+	}
+	return armor - 1
 }
 
 // ---- Cooldowns ------------------------------------------------------------

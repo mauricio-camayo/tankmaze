@@ -322,7 +322,7 @@ func main() {
 	// Fall back to hard-coded defaults only when the module does not export them.
 	scoutCfg := tankCfgOrDefault(modA, tankmaze.TankConfig{Speed: 5, SensorRange: 3, Damage: 2, Armor: 2, FireRate: 3})
 	bruiserCfg := tankCfgOrDefault(modB, tankmaze.TankConfig{Speed: 2, SensorRange: 2, Damage: 5, Armor: 5, FireRate: 1})
-	eng := engine.New(grid, scoutCfg, bruiserCfg, *limitFlag, *projSpeedFlag, *wallHitFlag)
+	eng := engine.New(grid, scoutCfg, bruiserCfg, *limitFlag, *projSpeedFlag, *wallHitFlag, engine.WithCollisionDamageTable(engine.CollisionDamageTableFromEnv()))
 
 	// ---- match loop ----
 	// Repaint in-place using cursor-up rather than clear-screen.

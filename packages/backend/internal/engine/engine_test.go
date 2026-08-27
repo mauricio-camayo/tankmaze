@@ -269,8 +269,12 @@ func TestCollision_BothTanksConverge(t *testing.T) {
 	if e.tanks[0].pos != ([2]int{5, 5}) || e.tanks[1].pos != ([2]int{5, 6}) {
 		t.Errorf("tanks not pushed back: A=%v B=%v", e.tanks[0].pos, e.tanks[1].pos)
 	}
-	if e.tanks[0].hp != 95 || e.tanks[1].hp != 95 {
-		t.Errorf("collision damage: A.hp=%d B.hp=%d, both want 95", e.tanks[0].hp, e.tanks[1].hp)
+	// balancedCfg has Armor 3 for both sides: DefaultCollisionDamageTable[2]
+	// = 9, so both tanks take the same 91 HP here — armor-mitigated collision
+	// damage happens to look flat when both sides share one armor value; see
+	// TestCollision_ArmorMitigation below for the case where it doesn't (item 247).
+	if e.tanks[0].hp != 91 || e.tanks[1].hp != 91 {
+		t.Errorf("collision damage: A.hp=%d B.hp=%d, both want 91", e.tanks[0].hp, e.tanks[1].hp)
 	}
 }
 
@@ -296,8 +300,43 @@ func TestCollision_SwapDetected(t *testing.T) {
 	e.Step(moveAct, moveAct, false, false)
 
 	// Regardless of whether it's swap or converge, both should be pushed back.
-	if e.tanks[0].hp != 95 || e.tanks[1].hp != 95 {
+	// balancedCfg has Armor 3 for both sides: DefaultCollisionDamageTable[2] = 9 -> 91.
+	if e.tanks[0].hp != 91 || e.tanks[1].hp != 91 {
 		t.Errorf("swap collision damage wrong: A=%d B=%d", e.tanks[0].hp, e.tanks[1].hp)
+	}
+}
+
+// TestCollision_ArmorMitigation covers what the two tests above can't:
+// balancedCfg gives both sides the same armor, so a damageDealt attribution
+// bug (crediting each tank with what IT took instead of what the OTHER
+// tank took) would be invisible there — the two values happen to match.
+// This uses mismatched armor (item 247) so a swapped pairing shows up as a
+// wrong number instead of silently passing.
+func TestCollision_ArmorMitigation(t *testing.T) {
+	g := openGrid()
+	// A: Armor 1 -> DefaultCollisionDamageTable[0] = 15 HP taken.
+	// B: Armor 5 -> DefaultCollisionDamageTable[4] = 5 HP taken.
+	cfgA := tankmaze.TankConfig{Name: "a", Speed: 3, SensorRange: 3, Damage: 3, Armor: 1, FireRate: 3}
+	cfgB := tankmaze.TankConfig{Name: "b", Speed: 3, SensorRange: 3, Damage: 3, Armor: 5, FireRate: 3}
+	e := New(g, cfgA, cfgB, 200, 1, 0)
+
+	e.tanks[0].pos = [2]int{5, 5}
+	e.tanks[0].prevPos = e.tanks[0].pos
+	e.tanks[0].facing = tankmaze.E
+	e.tanks[1].pos = [2]int{5, 6}
+	e.tanks[1].prevPos = e.tanks[1].pos
+	e.tanks[1].facing = tankmaze.W
+
+	moveAct := tankmaze.Action{Type: tankmaze.Move, Direction: tankmaze.Forward}
+	e.Step(moveAct, moveAct, false, false)
+
+	if e.tanks[0].hp != 85 || e.tanks[1].hp != 95 {
+		t.Errorf("armor-mitigated collision damage: A.hp=%d (want 85) B.hp=%d (want 95)", e.tanks[0].hp, e.tanks[1].hp)
+	}
+	// damageDealt is credited to whoever CAUSED the damage — A dealt B's
+	// 5, B dealt A's 15 — not to whoever took it (which would swap these).
+	if e.tanks[0].damageDealt != 5 || e.tanks[1].damageDealt != 15 {
+		t.Errorf("damageDealt attribution: A.damageDealt=%d (want 5) B.damageDealt=%d (want 15)", e.tanks[0].damageDealt, e.tanks[1].damageDealt)
 	}
 }
 
