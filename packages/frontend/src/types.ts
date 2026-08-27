@@ -29,6 +29,7 @@ export interface Tank {
   scoreTransferredTo: string | null;
   scoreTransferredFrom: string | null;
   avatarUrl?: string;
+  lastMatchId: string | null;
 }
 
 export interface TankVersion {

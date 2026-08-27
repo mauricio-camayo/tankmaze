@@ -114,6 +114,25 @@ func (s *Store) UpdateTankStats(ctx context.Context, tankID string, stats TankSt
 	return err
 }
 
+// UpdateTankLastMatch sets lastMatchId on a tank record (item 23: "watch
+// last replay" link on tank detail). Called for both tanks after every
+// match ends, regardless of match type.
+func (s *Store) UpdateTankLastMatch(ctx context.Context, tankID, matchID string) error {
+	upd := expression.Set(expression.Name("lastMatchId"), expression.Value(matchID))
+	expr, err := expression.NewBuilder().WithUpdate(upd).Build()
+	if err != nil {
+		return fmt.Errorf("build expression: %w", err)
+	}
+	_, err = s.db.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName:                 &s.tanksTable,
+		Key:                       tankKey(tankID),
+		UpdateExpression:          expr.Update(),
+		ExpressionAttributeNames:  expr.Names(),
+		ExpressionAttributeValues: expr.Values(),
+	})
+	return err
+}
+
 // UpdateTankName updates the name field on a tank record.
 func (s *Store) UpdateTankName(ctx context.Context, tankID, name string) error {
 	upd := expression.Set(expression.Name("name"), expression.Value(name))

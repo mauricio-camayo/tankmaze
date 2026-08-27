@@ -725,6 +725,11 @@ export default function TankDetail() {
                 submitted {relativeTime(tank.createdAt)}
               </span>
             )}
+            {tank.lastMatchId && (
+              <Link to={`/watch?matchId=${tank.lastMatchId}`} style={{ color: '#4fa8e0', fontSize: 13, textDecoration: 'none' }}>
+                Watch last replay →
+              </Link>
+            )}
           </div>
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

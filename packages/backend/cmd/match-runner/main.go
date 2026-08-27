@@ -453,6 +453,16 @@ func (h *handler) handle(ctx context.Context, evt matchEvent) error {
 		return fmt.Errorf("set match result: %w", err)
 	}
 
+	// Item 23: "watch last replay" link on tank detail — any match type, any
+	// version, both participants. Best-effort; a failure here shouldn't fail
+	// the match itself since the result is already durably persisted above.
+	if err := h.store.UpdateTankLastMatch(ctx, match.TankA.TankID, matchID); err != nil {
+		log.Printf("update last match A: %v", err)
+	}
+	if err := h.store.UpdateTankLastMatch(ctx, match.TankB.TankID, matchID); err != nil {
+		log.Printf("update last match B: %v", err)
+	}
+
 	// ---- Broadcast MATCH_OVER to observers ----------------------------------
 
 	h.broadcastMatchOver(ctx, matchID, result, violationsA, violationsB, durationMs)
