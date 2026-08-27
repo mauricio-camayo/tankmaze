@@ -810,6 +810,15 @@ export default function TankEditor() {
       if (!id || id === 'new') {
         const created = await createTank(config.name || 'My Tank');
         id = created.tankId;
+        // Mark as saved before navigating — this navigate() only updates
+        // the URL to reflect the newly-created tank's real ID, it isn't
+        // the user leaving. savedStateRef otherwise wouldn't update until
+        // the compile-status poll below succeeds (still seconds away), so
+        // the navigation guard would treat this own internal route change
+        // as an unsaved-changes departure and pop the "leaving before
+        // saving" modal immediately after a successful Save on a brand
+        // new tank.
+        savedStateRef.current = { source, config };
         navigate(`/tanks/${id}/edit`, { replace: true });
       } else if (tank && config.name.trim() !== '' && config.name.trim() !== tank.name) {
         await updateTank(id, { name: config.name.trim() });
