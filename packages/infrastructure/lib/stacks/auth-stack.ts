@@ -64,7 +64,7 @@ export class AuthStack extends Stack {
       },
       accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
       email: sesSenderEmail
-        ? cognito.UserPoolEmail.withSES({ fromEmail: sesSenderEmail, fromName: 'TankMaze' })
+        ? cognito.UserPoolEmail.withSES({ fromEmail: sesSenderEmail, fromName: 'TankMaze', sesVerifiedDomain: 'tankmaze.org' })
         : undefined,
     });
 
