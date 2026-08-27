@@ -358,6 +358,58 @@ Wazero is configured with:
 - **Linear memory cap** — 4 MB per module instance
 - **No host function imports** — only the `tankmaze` SDK host functions are registered (`sensors_get`, `log_write`)
 
+### 4.4 Collision Damage
+
+Resolved in `packages/backend/internal/engine/physics.go`, `resolveCollision` — called once per tick after both tanks' move actions have been applied. See functional-spec.md §8.1 for the damage table, the `COLLISION_DAMAGE_TABLE` env var format, and the design rationale; this section covers the implementation.
+
+```go
+// engine.go
+type Engine struct {
+    // ...
+    collisionDamageTable [5]int // HP taken in a collision, indexed by own Armor-1
+}
+
+// New() defaults this to DefaultCollisionDamageTable = [5]int{15, 12, 9, 7, 5}.
+// Override with the functional option:
+func WithCollisionDamageTable(table [5]int) Option
+
+// physics.go
+func (e *Engine) resolveCollision() {
+    posA, posB := e.tanks[0].pos, e.tanks[1].pos
+    prevA, prevB := e.tanks[0].prevPos, e.tanks[1].prevPos
+
+    converge := posA == posB
+    swap := posA == prevB && posB == prevA
+    if !converge && !swap {
+        return
+    }
+
+    e.tanks[0].pos = prevA
+    e.tanks[1].pos = prevB
+
+    dmgToA := e.collisionDamageTable[armorIndex(e.tanks[0].cfg.Armor)]
+    dmgToB := e.collisionDamageTable[armorIndex(e.tanks[1].cfg.Armor)]
+
+    e.tanks[0].hp = max(0, e.tanks[0].hp-dmgToA)
+    e.tanks[1].hp = max(0, e.tanks[1].hp-dmgToB)
+
+    // damageDealt is credited to the tank that CAUSED the damage, not the
+    // one that took it — a collision is mutual, but each side's stat still
+    // means "damage I actually inflicted on the opponent," which is what
+    // the damage tiebreak (engine.go, ReasonDamageTiebreak) compares.
+    e.tanks[0].damageDealt += dmgToB
+    e.tanks[1].damageDealt += dmgToA
+}
+```
+
+**Why a table instead of a formula.** Weapon damage (`effectiveDamage`) is a clean single-curve percentage formula because it only ever needed one shape. Collision damage was deliberately made *non-linear* (bigger drops at low armor, smaller at high armor — see functional-spec.md §8.1's rationale), which a single base-value/percentage-per-point formula can't express — the math only has one degree of freedom (the two are locked together), so it can't hit two independently-chosen endpoints, let alone a non-linear curve in between. A fixed-size lookup table sidesteps that entirely, at the cost of only covering the 5 defined armor levels (fine — Armor is always 1–5, enforced at tank-submission time, and `armorIndex` clamps defensively anyway since this is a hot path in a live match's game loop, not somewhere to trust that and let a bad value panic).
+
+**Why an `Option` instead of another required `New()` parameter.** Roughly 30 call sites across production code (`match-runner`, `localserver`, `matchdebug`) and `engine_test.go` construct an `Engine` via `New(grid, cfgA, cfgB, tickLimit, projSpeed, wallHitDamage)`. Adding a 7th required positional int would force updating every one of them for a knob most don't care about. `Option` (a `func(*Engine)`, `New(..., opts ...Option)`) lets `WithCollisionDamageTable` be passed only where it matters — the three production call sites (via `engine.CollisionDamageTableFromEnv()`) and the one test that needs a non-default table — while every other call site keeps working unchanged against `DefaultCollisionDamageTable`.
+
+**Attribution direction matters here in a way it didn't under the old flat-5 rule.** Previously `dmgToA == dmgToB` always, so crediting either side's `damageDealt` with either value was equivalent — direction never mattered. With per-armor table lookups they diverge: `tanks[0].damageDealt` must increase by `dmgToB` (what B actually lost), not `dmgToA` (what A itself took), or the damage tiebreak would end up silently rewarding a tank for *being hit* rather than for *being armored*. Same swapped pairing for `tanks[1]`. Covered by `TestCollision_ArmorMitigation` in `engine_test.go`, which deliberately uses mismatched armor — the two pre-existing collision tests both use `balancedCfg()` (equal armor) on both sides, so a swapped pairing would have passed them silently.
+
+Collision is still not counted as a `Fire` action — `shotsFired`/`hits` accuracy stats are untouched — and both tanks are still pushed back to their pre-move position exactly as before.
+
 ---
 
 ## 5. Lambda Functions
@@ -801,6 +853,7 @@ PRs get a `cdk diff` comment instead of a deploy. See `deploy.md` for the full o
 | `MAPS_TABLE` | Lambda env | DynamoDB maps table |
 | `MAZE_SIZE` | Lambda env | Dimension of randomly generated mazes (default: `25`; must be an odd integer ≥ 5; does not affect static maps loaded from `tankmaze-maps`) |
 | `TICK_LIMIT` | Lambda env | Max ticks per match (default: `100`) |
+| `COLLISION_DAMAGE_TABLE` | Lambda env | Five comma-separated ints: HP taken in a tank-tank collision at own armor 1–5, e.g. `15,12,9,7,5` (default; §4.4/§8.1) |
 | `POINTS_VALIDITY_DAYS` | Lambda env | Ranking point validity window (default: `365`) |
 | `USER_SETTINGS_TABLE` | Lambda env | DynamoDB user-settings table |
 | `FRIENDSHIPS_TABLE` | Lambda env | DynamoDB friendships table |

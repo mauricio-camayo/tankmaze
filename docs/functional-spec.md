@@ -613,7 +613,30 @@ All static maps are designed with corner spawn points in mind — tank start pos
 - A projectile is destroyed on hitting a wall or an opponent tank.
 - On hit: `effective_damage = attacker_damage_stat × 10 × (1 − defender_armor_reduction)`.
 - A tank reaching 0 HP is **destroyed**; the match ends immediately.
-- A move into the opponent's cell causes a **collision**: both tanks are pushed back, each takes 5 HP contact damage.
+- A move into the opponent's cell causes a **collision**: both tanks are pushed back to their pre-move position, and each takes contact damage looked up by its own armor (§8.1).
+
+### 8.1 Collision Damage
+
+Collision damage is **looked up from each tank's own armor** — a tank's own armor determines what *it* personally takes in a collision, unlike weapon damage's attacker/defender split. The table is deliberately **non-linear**: higher armor gives more-than-proportional protection, and Armor 5 reproduces the flat 5 HP every armor level took before this change.
+
+| Own Armor | Damage taken per collision |
+|---|---|
+| 1 | 15 |
+| 2 | 12 |
+| 3 | 9 |
+| 4 | 7 |
+| 5 | 5 |
+
+A collision is not counted as a "hit" — it doesn't affect `shotsFired`/`hits` accuracy stats — but the damage taken does count toward each tank's `damageDealt` total, since collisions can decide the tick-limit damage tiebreak (§10.4 rule 3, §11).
+
+**This table is configurable per environment, not hardcoded.** Set `COLLISION_DAMAGE_TABLE` to five comma-separated non-negative integers, one per own-armor level 1 through 5 in order — e.g. `COLLISION_DAMAGE_TABLE=15,12,9,7,5` (the default above). Any other shape — wrong count, a non-integer, a negative value — falls back to the default table rather than partially applying a bad one. Unset in production as of this writing; the default table above is what's live.
+
+**Rationale:**
+- **Rammer viability.** A fast, high-armor "rammer" archetype that intentionally seeks collisions previously got zero benefit from Armor against collision damage — pure ramming was a symmetric wash regardless of build. This makes Armor a real, consistent defensive stat across *every* damage source (weapon fire and collision alike), not just weapon fire.
+- **Collision stays secondary to a dedicated gun.** Sanity check: Damage 5 vs. Armor 5 on a direct hit is `effective_damage(5, 5) = 25`. The worst case for collision damage, even at max armor, is 5 — one-fifth of a top-tier weapon hit. Collision is a supplement or denial tool; by design it should never be a standalone win condition.
+- **Armor 5 is the deliberate anchor point.** Every table considered keeps max armor (5) reproducing today's flat 5 HP value unchanged — every lower armor level takes *more* than it did before. This is an intentional two-sided tradeoff for skipping Armor, not a one-way buff.
+- **Non-linear on purpose.** Early armor points matter more than later ones (drops of 3, 3, 2, 2 rather than a flat step) — a deliberate design choice over a straight-line curve, made configurable specifically so it can be retuned without a code change if the curve needs adjusting after real play.
+- **Accepted tradeoff for low-armor tanks.** This is a nerf, relative to before this change, for any tank below Armor 5 in *any* collision — intentional ram or accidental bump alike. Existing low-armor "glass cannon" builds (e.g. the community Sniper tank, Armor 1) take more incidental collision damage than before, cutting against recent work to help such tanks avoid accidental collisions. This consequence was accepted deliberately rather than watering down the mechanic to pre-emptively protect specific existing tanks; balance fallout for individual tanks will be addressed later if it becomes a real problem.
 
 ---
 
