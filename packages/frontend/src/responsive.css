@@ -71,6 +71,19 @@
   max-width: 100%;
 }
 
+/* Watch/Replay (item 246): canvas + debug/results column side-by-side at
+   desktop width, using the horizontal space that goes unused when both sit
+   in a narrow single column below the fold. */
+.tm-watch-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+}
+.tm-watch-side {
+  flex: 1;
+  min-width: 0;
+}
+
 /* Mobile view-only banner (hidden by default) */
 .tm-mobile-readonly { display: none; }
 .tm-mobile-editor   { display: block; }
@@ -123,6 +136,18 @@
 
   /* Right-rail ad hidden on tablet+mobile */
   .tm-ad-right-rail { display: none; }
+
+  /* Watch/Replay (item 246): revert to today's stacked layout exactly —
+     canvas on top, debug/results column below, both capped at the canvas
+     width. */
+  .tm-watch-layout {
+    flex-direction: column;
+    gap: 14px;
+  }
+  .tm-watch-side {
+    max-width: 560px;
+    width: 100%;
+  }
 }
 
 /* Leaderboard: grid table by default, card layout swaps in on mobile */

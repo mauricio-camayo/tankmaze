@@ -365,81 +365,83 @@ export default function Watch() {
             <div style={{ color: '#ff8a75', marginBottom: 10, fontSize: 13 }}>{wsError}</div>
           )}
 
-          {/* Canvas host — always in DOM so Phaser can mount; hidden until ready */}
-          <div className="tm-canvas-wrap" style={{
-            width: CANVAS, height: CANVAS,
-            border: '1px solid #23577a', borderRadius: 0,
-            overflow: 'hidden',
-            display: snapshot && !matchPending ? 'block' : 'none',
-          }}>
-            <div ref={hostRef} style={{ width: '100%', height: '100%' }} />
-          </div>
-
-          {/* Placeholder: connecting or waiting for match to be processed */}
-          {(!snapshot || matchPending) && !wsError && (
+          <div className="tm-watch-layout">
+            {/* Canvas host — always in DOM so Phaser can mount; hidden until ready */}
             <div className="tm-canvas-wrap" style={{
               width: CANVAS, height: CANVAS,
               border: '1px solid #23577a', borderRadius: 0,
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-              gap: 14, color: '#5b87a3', fontSize: 14, background: '#0a3550',
+              overflow: 'hidden',
+              display: snapshot && !matchPending ? 'block' : 'none',
             }}>
-              <div style={{
-                width: 28, height: 28, border: '3px solid #23577a',
-                borderTopColor: '#4fa8e0', borderRadius: '50%',
-                animation: 'spin 0.9s linear infinite',
-              }} />
-              <span>{matchPending ? 'Match is being processed… replaying automatically when ready' : 'Connecting to match…'}</span>
-              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+              <div ref={hostRef} style={{ width: '100%', height: '100%' }} />
             </div>
-          )}
 
-          {snapshot && (
-            <div style={{ maxWidth: CANVAS, width: '100%', marginTop: 14 }}>
-              <ObserverHUD
-                snapshot={snapshot}
-                ticks={ticks}
-                currentTick={currentTick}
-                isPlaying={isPlaying}
-                speed={speed}
-                matchOver={matchOver}
-                myTankSide={myTankSide}
-                onPlay={() => setPlaying(true)}
-                onPause={() => setPlaying(false)}
-                onStep={handleStep}
-                onSeek={handleSeek}
-                onSpeed={handleSpeed}
-              />
-              {matchOver && matchId && (
-                <PostMatchSummary
-                  matchId={matchId}
+            {/* Placeholder: connecting or waiting for match to be processed */}
+            {(!snapshot || matchPending) && !wsError && (
+              <div className="tm-canvas-wrap" style={{
+                width: CANVAS, height: CANVAS,
+                border: '1px solid #23577a', borderRadius: 0,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                gap: 14, color: '#5b87a3', fontSize: 14, background: '#0a3550',
+              }}>
+                <div style={{
+                  width: 28, height: 28, border: '3px solid #23577a',
+                  borderTopColor: '#4fa8e0', borderRadius: '50%',
+                  animation: 'spin 0.9s linear infinite',
+                }} />
+                <span>{matchPending ? 'Match is being processed… replaying automatically when ready' : 'Connecting to match…'}</span>
+                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+              </div>
+            )}
+
+            {snapshot && (
+              <div className="tm-watch-side">
+                <ObserverHUD
                   snapshot={snapshot}
+                  ticks={ticks}
+                  currentTick={currentTick}
+                  isPlaying={isPlaying}
+                  speed={speed}
                   matchOver={matchOver}
-                  authorNames={authorNames}
+                  myTankSide={myTankSide}
+                  onPlay={() => setPlaying(true)}
+                  onPause={() => setPlaying(false)}
+                  onStep={handleStep}
+                  onSeek={handleSeek}
+                  onSpeed={handleSpeed}
                 />
-              )}
-              {matchOver && canRematch && (
-                <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <button onClick={handleRematch} disabled={rematching} style={primaryButtonStyle}>
-                    {rematching ? 'Starting rematch…' : 'Rematch'}
-                  </button>
-                  {rematchError && <span style={{ color: '#ff8a75', fontSize: 13 }}>{rematchError}</span>}
-                </div>
-              )}
-              {matchOver && canExport && (
-                <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <button onClick={handleExport} disabled={exporting} style={primaryButtonStyle}>
-                    {exporting ? 'Preparing download…' : 'Download match data (JSON)'}
-                  </button>
-                  {exportError && <span style={{ color: '#ff8a75', fontSize: 13 }}>{exportError}</span>}
-                </div>
-              )}
-              {matchOver && exportGone && (
-                <div style={{ marginTop: 10, color: '#5b87a3', fontSize: 13 }}>
-                  Match data export is no longer available — it expires 7 days after the match.
-                </div>
-              )}
-            </div>
-          )}
+                {matchOver && matchId && (
+                  <PostMatchSummary
+                    matchId={matchId}
+                    snapshot={snapshot}
+                    matchOver={matchOver}
+                    authorNames={authorNames}
+                  />
+                )}
+                {matchOver && canRematch && (
+                  <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <button onClick={handleRematch} disabled={rematching} style={primaryButtonStyle}>
+                      {rematching ? 'Starting rematch…' : 'Rematch'}
+                    </button>
+                    {rematchError && <span style={{ color: '#ff8a75', fontSize: 13 }}>{rematchError}</span>}
+                  </div>
+                )}
+                {matchOver && canExport && (
+                  <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <button onClick={handleExport} disabled={exporting} style={primaryButtonStyle}>
+                      {exporting ? 'Preparing download…' : 'Download match data (JSON)'}
+                    </button>
+                    {exportError && <span style={{ color: '#ff8a75', fontSize: 13 }}>{exportError}</span>}
+                  </div>
+                )}
+                {matchOver && exportGone && (
+                  <div style={{ marginTop: 10, color: '#5b87a3', fontSize: 13 }}>
+                    Match data export is no longer available — it expires 7 days after the match.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </Layout>
