@@ -78,6 +78,9 @@ export class ApiStack extends Stack {
         environment: env,
         timeout: Duration.seconds(timeoutSeconds),
         memorySize: memoryMB,
+        // Default Lambda-created log groups never expire, which quietly
+        // accrues CloudWatch Logs storage cost forever. Bound it.
+        logRetention: logs.RetentionDays.TWO_WEEKS,
       });
     };
 

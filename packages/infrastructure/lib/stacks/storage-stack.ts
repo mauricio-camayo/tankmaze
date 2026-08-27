@@ -6,6 +6,7 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { Trigger } from 'aws-cdk-lib/triggers';
 import { Construct } from 'constructs';
@@ -263,6 +264,7 @@ export class StorageStack extends Stack {
       code: lambda.Code.fromAsset(path.join(__dirname, '../../lib/map-seeder')),
       environment: { TABLE_NAME: maps.tableName },
       timeout: Duration.seconds(60),
+      logRetention: logs.RetentionDays.TWO_WEEKS,
     });
     maps.grantWriteData(mapSeederFn);
     maps.grantReadData(mapSeederFn);
@@ -310,6 +312,7 @@ export class StorageStack extends Stack {
         WASM_BUCKET:         this.wasmBucket.bucketName,
       },
       timeout: Duration.seconds(60),
+      logRetention: logs.RetentionDays.TWO_WEEKS,
     });
     tanks.grantReadWriteData(tankSeederFn);
     tankVersions.grantReadWriteData(tankSeederFn);

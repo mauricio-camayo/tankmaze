@@ -31,7 +31,13 @@ export class FrontendStack extends Stack {
 
     // WAFv2 WebACL — CloudFront WAFs must be created in us-east-1 (INFRA-CF-WAF).
     // Uses managed OWASP Top 10 rule set + a rate-based rule (1000 req / 5 min per IP).
-    const webAcl = new wafv2.CfnWebACL(this, 'WebACL', {
+    // Off by default — WAF has a flat $5/mo Web ACL fee + $1/mo per rule
+    // regardless of traffic, which doesn't pencil out for a low-traffic
+    // personal project. Re-enable for a nominal cost once real public
+    // traffic (or a real threat model) justifies it:
+    //   cdk deploy --context enableWaf=true
+    const enableWaf = this.node.tryGetContext('enableWaf') === 'true' || this.node.tryGetContext('enableWaf') === true;
+    const webAcl = enableWaf ? new wafv2.CfnWebACL(this, 'WebACL', {
       name: 'tankmaze-cf-waf',
       scope: 'CLOUDFRONT',
       defaultAction: { allow: {} },
@@ -75,7 +81,7 @@ export class FrontendStack extends Stack {
           },
         },
       ],
-    });
+    }) : undefined;
 
     // INFRA-CF-HEADERS: security response headers on every CloudFront response.
     const responseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, 'SecurityHeaders', {
@@ -138,8 +144,8 @@ export class FrontendStack extends Stack {
       // TLS 1.2 minimum — drops TLS 1.0/1.1 (POODLE, BEAST) (INFRA-CF-TLS).
       minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
       sslSupportMethod: cloudfront.SSLMethod.SNI,
-      // WAF association (INFRA-CF-WAF).
-      webAclId: webAcl.attrArn,
+      // WAF association (INFRA-CF-WAF) — omitted entirely when enableWaf is off.
+      ...(webAcl ? { webAclId: webAcl.attrArn } : {}),
       // Access logging — provides visibility into cache performance and attack traffic
       // (INFRA-CF-LOG).
       enableLogging: true,

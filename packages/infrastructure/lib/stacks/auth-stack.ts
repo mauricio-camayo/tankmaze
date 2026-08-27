@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as childProcess from 'child_process';
-import { Stack, StackProps, CfnOutput, Duration, SecretValue } from 'aws-cdk-lib';
+import { Stack, StackProps, CfnOutput, Duration, SecretValue, RemovalPolicy } from 'aws-cdk-lib';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as ses from 'aws-cdk-lib/aws-ses';
@@ -75,17 +75,90 @@ export class AuthStack extends Stack {
 
     // Custom domain so Google's consent screen shows "auth.tankmaze.org"
     // instead of the default *.amazoncognito.com prefix domain. DNS is on
-    // Cloudflare (not Route53), so validation is manual: after `cdk deploy`
-    // starts, fetch the CNAME record ACM is waiting on and add it in
-    // Cloudflare, then wait for the certificate to issue.
+    // Cloudflare (not Route53), so validation is manual.
+    //
+    // Off by default. Bringing it up is a two-phase process — DON'T create
+    // the cert and attach it to the Cognito domain in the same deploy: the
+    // AWS::CertificateManager::Certificate resource returns CREATE_COMPLETE
+    // as soon as it's requested, WITHOUT waiting for DNS validation to
+    // actually finish, so a same-changeset UserPoolDomain attach fires
+    // immediately against a still-PENDING_VALIDATION cert, fails, and rolls
+    // the whole changeset back — deleting the cert before there's ever a
+    // chance to add its CNAME. (Confirmed 2026-08-26: cert CREATE_COMPLETE
+    // and UserPoolDomain UPDATE_FAILED were ~9 seconds apart.) Earlier
+    // attempts' generic "Invalid request provided" was this race, not some
+    // reattachment cooldown as previously suspected.
+    //
+    // Phase 1 — bootstrap the cert on its own, nothing else depends on it
+    // yet, so a failure elsewhere can't roll it back:
+    //   cdk deploy --context enableCustomAuthDomain=true
+    // then fetch the pending validation CNAME and add it in Cloudflare:
+    //   aws acm describe-certificate --region us-east-1 --certificate-arn <ARN from CfnOutput AuthDomainCertificateArn> \
+    //     --query 'Certificate.DomainValidationOptions[0].ResourceRecord'
+    // and poll until issued:
+    //   aws acm describe-certificate --region us-east-1 --certificate-arn <ARN> --query 'Certificate.Status'
+    //
+    // Phase 2 — once Status is ISSUED, attach it to the Cognito domain by
+    // passing its ARN back in:
+    //   cdk deploy --context enableCustomAuthDomain=true --context authDomainCertificateArn=<ARN>
+    //
+    // Retried 2026-08-26 with the race above fixed and a genuinely ISSUED
+    // cert (arn .../certificate/9ea60fcb-7568-45b0-94aa-cc79ade2564e,
+    // RemovalPolicy.RETAIN'd — safe to reuse for the next retry without
+    // redoing DNS validation) — still UPDATE_FAILED with the same generic
+    // "Invalid request provided". Also confirmed via `aws cognito-idp
+    // describe-user-pool-domain --domain auth.tankmaze.org` that the domain
+    // isn't claimed by any pool (empty DomainDescription) — not a live
+    // conflict either. This now points squarely at the original cooldown
+    // theory in the paragraph above: something CloudFront-side left over
+    // from the earlier full teardown, outside any API's visibility. Nothing
+    // left to fix in this stack's code — next step is just trying the
+    // Phase 2 deploy again after more time has passed.
+    const enableCustomAuthDomain = this.node.tryGetContext('enableCustomAuthDomain') === 'true' || this.node.tryGetContext('enableCustomAuthDomain') === true;
+    const authDomainCertificateArn: string | undefined = this.node.tryGetContext('authDomainCertificateArn');
     const authDomainName = 'auth.tankmaze.org';
-    const certificate = new acm.Certificate(this, 'AuthDomainCertificate', {
-      domainName: authDomainName,
-      validation: acm.CertificateValidation.fromDns(),
-    });
-    const domain = this.userPool.addDomain('Domain', {
-      customDomain: { domainName: authDomainName, certificate },
-    });
+    let domain: cognito.UserPoolDomain;
+    let cognitoDomainValue: string;
+    if (enableCustomAuthDomain && authDomainCertificateArn) {
+      // Phase 2: cert already exists and is ISSUED — import it by ARN
+      // (same pattern as the frontend's `certificateArn` context) so this
+      // deploy only ever touches the UserPoolDomain resource.
+      const certificate = acm.Certificate.fromCertificateArn(this, 'AuthDomainCertificate', authDomainCertificateArn);
+      domain = this.userPool.addDomain('Domain', {
+        customDomain: { domainName: authDomainName, certificate },
+      });
+      cognitoDomainValue = authDomainName;
+    } else {
+      // Default, and also Phase 1 (enableCustomAuthDomain=true but no ARN
+      // yet): keep the Cognito-hosted prefix domain live so the app keeps
+      // working, and — only in the Phase 1 case — also stand up the cert
+      // by itself so it can be validated out-of-band. Globally unique
+      // domain prefix across all of Cognito in the region — account id
+      // suffix guarantees that without needing to coordinate a name.
+      const domainPrefix = `tankmaze-auth-${this.account}`;
+      domain = this.userPool.addDomain('Domain', {
+        cognitoDomain: { domainPrefix },
+      });
+      cognitoDomainValue = `${domainPrefix}.auth.${this.region}.amazoncognito.com`;
+
+      if (enableCustomAuthDomain) {
+        const bootstrapCertificate = new acm.Certificate(this, 'AuthDomainCertificate', {
+          domainName: authDomainName,
+          validation: acm.CertificateValidation.fromDns(),
+        });
+        // RETAIN, not the default DESTROY: Phase 2 drops this resource from
+        // the template (imports the same cert by ARN instead, via
+        // fromCertificateArn) so CDK stops managing it — without RETAIN,
+        // CloudFormation would delete the actual certificate as part of
+        // that same changeset, racing the UserPoolDomain update that's
+        // trying to attach that exact ARN.
+        bootstrapCertificate.applyRemovalPolicy(RemovalPolicy.RETAIN);
+        new CfnOutput(this, 'AuthDomainCertificateArn', {
+          value: bootstrapCertificate.certificateArn,
+          description: 'Phase 1 output — pass this back as --context authDomainCertificateArn once ISSUED to run Phase 2',
+        });
+      }
+    }
 
     // SES domain identity (item 214) so verification/notification emails
     // send from no-reply@tankmaze.org instead of Cognito's shared default
@@ -353,7 +426,7 @@ export class AuthStack extends Stack {
 
     new CfnOutput(this, 'UserPoolId',     { value: this.userPool.userPoolId });
     new CfnOutput(this, 'UserPoolClientId', { value: this.userPoolClient.userPoolClientId });
-    new CfnOutput(this, 'CognitoDomain',  { value: authDomainName });
+    new CfnOutput(this, 'CognitoDomain',  { value: cognitoDomainValue });
     new CfnOutput(this, 'CognitoDomainCloudFrontTarget', {
       value: domain.cloudFrontDomainName,
       description: 'Point a Cloudflare CNAME for auth.tankmaze.org at this value',

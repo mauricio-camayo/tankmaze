@@ -33,25 +33,29 @@ export class BuildStack extends Stack {
     });
 
     // INFRA-VPC-FLOW: flow logs provide forensic evidence of unexpected traffic
-    // from the isolated build VPC (Trivy AWS-0178).
+    // from the isolated build VPC (Trivy AWS-0178). Explicit retention on the
+    // log group — the addFlowLog default never expires, which quietly
+    // accrues storage cost forever.
+    const flowLogGroup = new logs.LogGroup(this, 'FlowLogGroup', {
+      retention: logs.RetentionDays.TWO_WEEKS,
+    });
     vpc.addFlowLog('FlowLog', {
-      destination: ec2.FlowLogDestination.toCloudWatchLogs(),
+      destination: ec2.FlowLogDestination.toCloudWatchLogs(flowLogGroup),
       trafficType: ec2.FlowLogTrafficType.ALL,
     });
 
     // Gateway endpoints allow the build container to reach S3 and DynamoDB
-    // without traversing the public internet.
+    // without traversing the public internet. Gateway endpoints are free
+    // (unlike interface endpoints, which bill per-AZ per-hour) — this is
+    // also why CodeBuild logs are routed to S3 (below) instead of
+    // CloudWatch Logs: it avoids needing a CLOUDWATCH_LOGS interface
+    // endpoint (~$13/mo for 2 AZs) just so the isolated build container can
+    // stream a few minutes of logs a day.
     vpc.addGatewayEndpoint('S3Endpoint', {
       service: ec2.GatewayVpcEndpointAwsService.S3,
     });
     vpc.addGatewayEndpoint('DynamoEndpoint', {
       service: ec2.GatewayVpcEndpointAwsService.DYNAMODB,
-    });
-
-    // Interface endpoint so CodeBuild can stream logs to CloudWatch from the
-    // isolated VPC (no internet egress means the public endpoint is unreachable).
-    vpc.addInterfaceEndpoint('CwLogsEndpoint', {
-      service: ec2.InterfaceVpcEndpointAwsService.CLOUDWATCH_LOGS,
     });
 
     // CodeBuild IAM role
@@ -148,6 +152,18 @@ export class BuildStack extends Stack {
       // S3-backed build cache — persists Go build artifacts and the module proxy
       // between runs so warm compiles skip recompiling unchanged packages.
       cache: codebuild.Cache.bucket(props.wasmBucket, { prefix: 'codebuild-cache' }),
+      // Logs go to S3 (reachable via the free gateway endpoint above) instead
+      // of CloudWatch Logs, so the isolated VPC needs no interface endpoint
+      // for it. role already has read/write on the whole bucket.
+      logging: {
+        s3: {
+          bucket: props.wasmBucket,
+          prefix: 'build-logs',
+        },
+        cloudWatch: {
+          enabled: false,
+        },
+      },
       environment: {
         buildImage: codebuild.LinuxBuildImage.STANDARD_7_0,
         computeType: codebuild.ComputeType.SMALL,

@@ -1,7 +1,8 @@
 {
   "app": "node dist/app.js",
   "context": {
-    "userPoolId": "us-east-1_UTKL8MgiG",
-    "userPoolClientId": "1pfsic72hm41r2au9rf6vb4h69"
+    "userPoolId": "us-east-1_vShuYi3nm",
+    "userPoolClientId": "6vinldcmmas4n9uuq4jdsjd6ut",
+    "certificateArn": "arn:aws:acm:us-east-1:897722684267:certificate/2f348c85-55de-4157-8413-05aedab64d4f"
   }
 }
