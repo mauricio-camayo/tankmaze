@@ -9,7 +9,7 @@ import { ObserverSocket } from '../services/ws';
 import type { MatchOverStats } from '../services/ws';
 import { exportMatch, getMatch, getTank, listTanks, rematch } from '../services/api';
 import PostMatchSummary from '../components/PostMatchSummary';
-import type { Match } from '../types';
+import type { Match, TickUpdate } from '../types';
 import { useAuthStore } from '../store/authStore';
 import { useMatchStore } from '../store/matchStore';
 import type { PlaybackSpeed } from '../store/matchStore';
@@ -78,6 +78,12 @@ export default function Watch() {
   const snapshotTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollRef        = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoPlayRef    = useRef(false);
+  // Stashed final-tick state from a MATCH_OVER that arrived before the
+  // deferred replay-from-scratch has started (see the MATCH_OVER handler
+  // below) — consumed once playback actually stops, as a safety net for
+  // #183 (speed multiplier skipping the exact death tick), not applied
+  // immediately.
+  const finalTickRef   = useRef<TickUpdate | null>(null);
 
   const setPending = (val: boolean) => {
     matchPendingRef.current = val;
@@ -132,6 +138,7 @@ export default function Watch() {
     setPending(false);
     setPendingAutoPlay(false);
     autoPlayRef.current = false;
+    finalTickRef.current = null;
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
 
     const socket = new ObserverSocket();
@@ -185,28 +192,41 @@ export default function Watch() {
         case 'HIT':
           sceneRef.current?.flashHit(event.payload.victim);
           break;
-        case 'MATCH_OVER':
+        case 'MATCH_OVER': {
           setMatchOver({ winner: event.payload.winner, reason: event.payload.reason, stats: event.payload.stats });
           autoPlayRef.current = false;
-          // Fire destroyed animation if render() missed the death tick (fast playback / tick multiplier)
-          {
-            const ts = useMatchStore.getState().ticks;
-            const lastTick = ts[ts.length - 1];
+          const ts = useMatchStore.getState().ticks;
+          const lastTick = ts[ts.length - 1];
+          if (useMatchStore.getState().snapshot?.status !== 'ended') {
+            // Live match ended: the scene has been tracking ticks in
+            // near-real time as they streamed in, so it's already at (or
+            // essentially at) the final tick — safe to fire the
+            // destroyed-animation fallback immediately (render() missed
+            // the death tick — fast playback / tick multiplier).
             if (lastTick && sceneRef.current) {
               sceneRef.current.notifyMatchOver(lastTick.tankA, lastTick.tankB);
             }
-          }
-          if (useMatchStore.getState().snapshot?.status !== 'ended') {
-            // Live match ended: stop immediately
             setPlaying(false);
-          } else if (useMatchStore.getState().ticks.length > 0) {
-            // Ended match with buffered ticks: defer auto-play until the Phaser scene
-            // has finished its create() cycle (sceneReady). Calling setPlaying(true)
-            // here races with preload() still loading avatar images — the render effect
-            // fires before initMaze() is called, so tanks render with default 0,0 offsets.
+          } else if (ts.length > 0) {
+            // Ended match with buffered ticks: this also fires the instant
+            // we connect to an already-finished match (e.g. Test vs AI,
+            // which redirects straight into a match that's often fully
+            // computed by the time the socket connects) — well before any
+            // playback has started, while the scene is still showing tick
+            // 0. Firing the destroyed animation right here showed the
+            // explosion and the "X wins" banner before the tank had even
+            // moved (2026-08-27). Stash the final tick instead and defer
+            // auto-play until the Phaser scene has finished its create()
+            // cycle (sceneReady) — calling setPlaying(true) here races with
+            // preload() still loading avatar images, and the effect below
+            // fires the stashed fallback only once that real playback
+            // actually stops, in case a speed multiplier skipped straight
+            // over the exact death tick.
+            finalTickRef.current = lastTick ?? null;
             setPendingAutoPlay(true);
           }
           break;
+        }
         case 'ERROR':
           setWsError(event.payload.message);
           break;
@@ -258,6 +278,19 @@ export default function Watch() {
 
     return () => ctrl.stop();
   }, [isPlaying, speed]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Deferred destroyed-animation fallback ───────────────────────────────
+  // Consumes finalTickRef (stashed by MATCH_OVER above) once playback
+  // actually stops, instead of applying it the instant MATCH_OVER arrives.
+  // ObserverScene.notifyMatchOver only acts if its own tracked HP is still
+  // >0 for that side, so this is a genuine no-op whenever render() already
+  // caught the death transition during normal playback — it only does
+  // something when a speed multiplier skipped the exact tick.
+  useEffect(() => {
+    if (isPlaying || !finalTickRef.current || !sceneRef.current) return;
+    sceneRef.current.notifyMatchOver(finalTickRef.current.tankA, finalTickRef.current.tankB);
+    finalTickRef.current = null;
+  }, [isPlaying]);
 
   // ── Deferred auto-play: wait for scene ready ──────────────────────────
   // Fires when MATCH_OVER set pendingAutoPlay AND sceneReady becomes true.
