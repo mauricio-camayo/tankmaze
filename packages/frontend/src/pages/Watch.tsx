@@ -301,14 +301,25 @@ export default function Watch() {
     setPlaying(true);
   }, [sceneReady, pendingAutoPlay]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Rematch (item 37) ─────────────────────────────────────────────────
+  // ── Rematch (item 37) / Export (item 35) ───────────────────────────────
+  // Re-fetches on matchOver too, not just on mount: canRematch/canExport
+  // both key off restMatch.tickLogS3Key (rematch also needs matchType),
+  // neither of which exist yet if the REST record is fetched — as it is on
+  // mount — before match-runner has finished writing the result. That's
+  // the common case for Test vs AI, which navigates straight into a match
+  // that's often still 'active' at connect time: the mount-time fetch here
+  // raced ahead of match-runner, cached a tickLogS3Key-less record, and
+  // never looked again, so the export button stayed permanently hidden
+  // until a manual refresh re-ran this effect against the now-finished
+  // match (2026-08-27). matchOver flips from null to a stable object
+  // reference exactly once per match, so this only adds one extra fetch.
   useEffect(() => {
     if (!matchId || !currentUser) return;
     getMatch(matchId).then(setRestMatch).catch(() => setRestMatch(null));
     listTanks().then((tanks) => setOwnTankIds(new Set(tanks.map((t) => t.tankId)))).catch(() => setOwnTankIds(new Set()));
     setExportGone(false);
     setExportError(null);
-  }, [matchId, currentUser]);
+  }, [matchId, currentUser, matchOver]);
 
   // ── Post-match summary (item 244): author names ────────────────────────
   // Best-effort only — getTank requires auth, so anonymous observers simply
