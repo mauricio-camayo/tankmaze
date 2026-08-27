@@ -15,6 +15,7 @@ packages/backend/matchdebug
 packages/backend/ranking-updater
 packages/backend/tank-api
 packages/backend/tournament-scheduler
+packages/backend/localserver
 
 # Local task list
 TODO.md
