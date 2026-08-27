@@ -536,6 +536,10 @@ export default function TankEditor() {
   const [gameDays, setGameDays] = useState<GameDay[]>([]);
   const [loadingGameDays, setLoadingGameDays] = useState(false);
   const [gameDaysLoaded, setGameDaysLoaded] = useState(false);
+  // Set right after a new tank is created, to move the URL from
+  // /tanks/new/edit to /tanks/{id}/edit on the next render rather than
+  // immediately — see the effect below for why.
+  const [postCreateTankId, setPostCreateTankId] = useState<string | null>(null);
 
   const pollCancelRef = useRef(false);
   const pollingStartRef = useRef<number | null>(null);
@@ -810,16 +814,17 @@ export default function TankEditor() {
       if (!id || id === 'new') {
         const created = await createTank(config.name || 'My Tank');
         id = created.tankId;
-        // Mark as saved before navigating — this navigate() only updates
-        // the URL to reflect the newly-created tank's real ID, it isn't
-        // the user leaving. savedStateRef otherwise wouldn't update until
-        // the compile-status poll below succeeds (still seconds away), so
-        // the navigation guard would treat this own internal route change
-        // as an unsaved-changes departure and pop the "leaving before
-        // saving" modal immediately after a successful Save on a brand
-        // new tank.
+        // Mark as saved, then defer the URL update to the effect below
+        // instead of calling navigate() here directly. `dirty` (and the
+        // useBlocker it feeds) is a plain const recomputed only on
+        // render — mutating savedStateRef.current doesn't itself trigger
+        // one, so a navigate() called synchronously right after, with no
+        // render in between, still sees the stale dirty=true from before
+        // this line ran and gets blocked as if it were the user leaving.
+        // Routing the navigation through state forces the render (and a
+        // fresh dirty=false) to land BEFORE the effect fires navigate().
         savedStateRef.current = { source, config };
-        navigate(`/tanks/${id}/edit`, { replace: true });
+        setPostCreateTankId(id);
       } else if (tank && config.name.trim() !== '' && config.name.trim() !== tank.name) {
         await updateTank(id, { name: config.name.trim() });
         setTank({ ...tank, name: config.name.trim() });
@@ -930,6 +935,17 @@ export default function TankEditor() {
     JSON.stringify(config) !== JSON.stringify(savedStateRef.current.config)
   );
   const blocker = useBlocker(dirty);
+
+  // Fires after the render triggered by setPostCreateTankId above has
+  // already committed — by which point `dirty` (recomputed just above,
+  // fresh every render) reflects the savedStateRef update from handleSave
+  // and useBlocker has seen dirty=false, so this navigate() isn't blocked.
+  useEffect(() => {
+    if (postCreateTankId) {
+      navigate(`/tanks/${postCreateTankId}/edit`, { replace: true });
+      setPostCreateTankId(null);
+    }
+  }, [postCreateTankId, navigate]);
 
   // Derived state
   const sortedVersions = sortedByAge(versions);
