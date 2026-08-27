@@ -21,8 +21,34 @@ import Chat from './pages/Chat';
 import Upgrade from './pages/Upgrade';
 import Legal from './pages/Legal';
 
+// Wraps a lazy-loaded route so a stale chunk reference — a tab left open
+// across a deploy still asking for a content-hashed filename that no
+// longer exists on the CDN once the new build replaces it — reloads once
+// to pick up the current index.html (and therefore the correct hash)
+// instead of falling through to React Router's generic crash screen.
+// Guarded by a sessionStorage flag so a genuine network failure (offline,
+// CDN actually down) doesn't reload forever — it surfaces normally on the
+// second attempt.
+function lazyWithReload<T extends { default: React.ComponentType<any> }>(
+  factory: () => Promise<T>,
+  reloadKey: string,
+) {
+  return lazy(() =>
+    factory().catch((err) => {
+      if (!sessionStorage.getItem(reloadKey)) {
+        sessionStorage.setItem(reloadKey, '1');
+        window.location.reload();
+        // The reload takes over the page; never resolve so React doesn't
+        // also race to render an error state before that happens.
+        return new Promise<T>(() => {});
+      }
+      throw err;
+    }),
+  );
+}
+
 // Watch imports Phaser (~1 MB) — keep it in a separate lazy chunk
-const Watch = lazy(() => import('./pages/Watch'));
+const Watch = lazyWithReload(() => import('./pages/Watch'), 'tm-watch-chunk-reload');
 
 // Global reset — keep out of component to avoid re-injection
 const globalStyle = document.createElement('style');
