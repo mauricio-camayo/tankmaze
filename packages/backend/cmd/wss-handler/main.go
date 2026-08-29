@@ -438,6 +438,13 @@ func (h *handler) handleObserve(ctx context.Context, connID string, raw json.Raw
 		return resp(200), nil
 	}
 
+	// Game Day autofill (item 248) may suffix TankID (e.g. "builtin-scout#2")
+	// to distinguish repeated copies of the same built-in AI in per-event
+	// standings/seeding bookkeeping — never a real Tank/TankVersion record, so
+	// every DB lookup below must use the stripped real ID instead.
+	realTankA := db.RealTankID(match.TankA.TankID)
+	realTankB := db.RealTankID(match.TankB.TankID)
+
 	// For ended matches, load the tick log once — it contains the maze, tank
 	// metadata, all ticks, and the result. Build the snapshot from tick 0.
 	if match.Status == "ended" && match.TickLogS3Key != "" {
@@ -457,8 +464,8 @@ func (h *handler) handleObserve(ctx context.Context, connID string, raw json.Raw
 	// snapshot built from the match record then immediately send MATCH_OVER so
 	// the frontend shows the result instead of a frozen, unresponsive canvas.
 	if match.Status == "ended" {
-		verA, errA := h.store.GetVersion(ctx, match.TankA.TankID, match.TankA.Version)
-		verB, errB := h.store.GetVersion(ctx, match.TankB.TankID, match.TankB.Version)
+		verA, errA := h.store.GetVersion(ctx, realTankA, match.TankA.Version)
+		verB, errB := h.store.GetVersion(ctx, realTankB, match.TankB.Version)
 		if errA != nil || errB != nil {
 			_ = h.sendErr(ctx, connID, "internal_error", "could not load version records")
 			return resp(200), nil
@@ -511,8 +518,8 @@ func (h *handler) handleObserve(ctx context.Context, connID string, raw json.Raw
 	// For active (or scheduled) matches, build a minimal snapshot from the
 	// match record + version configs so the frontend can render the maze.
 	// Tank positions will be corrected by the first incoming TICK_UPDATE.
-	verA, errA := h.store.GetVersion(ctx, match.TankA.TankID, match.TankA.Version)
-	verB, errB := h.store.GetVersion(ctx, match.TankB.TankID, match.TankB.Version)
+	verA, errA := h.store.GetVersion(ctx, realTankA, match.TankA.Version)
+	verB, errB := h.store.GetVersion(ctx, realTankB, match.TankB.Version)
 	if errA != nil || errB != nil {
 		_ = h.sendErr(ctx, connID, "internal_error", "could not load version records")
 		return resp(200), nil
@@ -617,10 +624,12 @@ func (h *handler) streamReplayWithSnapshot(ctx context.Context, connID, s3Key st
 		return fmt.Errorf("decode tick log: %w", err)
 	}
 
-	// Resolve display metadata from the tick log + DB (for avatarUrl).
+	// Resolve display metadata from the tick log + DB (for avatarUrl). tl.Tanks
+	// TankIDs may carry the autofill suffix (item 248, e.g. "builtin-scout#2")
+	// — never a real Tank record, so strip it back off before looking one up.
 	replayInfoA := tankInfoWS{Name: tl.Tanks.A.Name}
 	replayInfoB := tankInfoWS{Name: tl.Tanks.B.Name}
-	if t, err := h.store.GetTank(ctx, tl.Tanks.A.TankID); err == nil {
+	if t, err := h.store.GetTank(ctx, db.RealTankID(tl.Tanks.A.TankID)); err == nil {
 		replayInfoA.AvatarURL = t.AvatarURL
 		if replayInfoA.Name == "" {
 			replayInfoA.Name = t.Name
@@ -629,7 +638,7 @@ func (h *handler) streamReplayWithSnapshot(ctx context.Context, connID, s3Key st
 	if replayInfoA.Name == "" {
 		replayInfoA.Name = tl.Tanks.A.TankID
 	}
-	if t, err := h.store.GetTank(ctx, tl.Tanks.B.TankID); err == nil {
+	if t, err := h.store.GetTank(ctx, db.RealTankID(tl.Tanks.B.TankID)); err == nil {
 		replayInfoB.AvatarURL = t.AvatarURL
 		if replayInfoB.Name == "" {
 			replayInfoB.Name = t.Name
@@ -775,7 +784,10 @@ type tankInfoWS struct {
 // lookupTankInfo returns the display name and avatarUrl for a match tank.
 func (h *handler) lookupTankInfo(ctx context.Context, mt db.MatchTank) tankInfoWS {
 	info := tankInfoWS{Name: mt.TankName}
-	if t, err := h.store.GetTank(ctx, mt.TankID); err == nil {
+	// Game Day autofill (item 248) may suffix mt.TankID (e.g. "builtin-scout#2")
+	// to distinguish repeated copies of the same built-in AI — never a real
+	// Tank record, so strip it back off before looking one up.
+	if t, err := h.store.GetTank(ctx, db.RealTankID(mt.TankID)); err == nil {
 		if info.Name == "" {
 			info.Name = t.Name
 		}

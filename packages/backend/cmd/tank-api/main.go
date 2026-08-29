@@ -1502,11 +1502,14 @@ func (h *handler) startRematch(ctx context.Context, uid string, body startMatchB
 	if orig.MatchType != "ranked" {
 		return errResp(http.StatusBadRequest, "rematch is only available for ranked Game Day matches"), nil
 	}
-	tankA, err := h.store.GetTank(ctx, orig.TankA.TankID)
+	// Game Day autofill (item 248) may suffix TankID (e.g. "builtin-scout#2")
+	// to distinguish repeated copies of the same built-in AI — never a real
+	// Tank record, so strip it back off before looking one up.
+	tankA, err := h.store.GetTank(ctx, db.RealTankID(orig.TankA.TankID))
 	if err != nil {
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
-	tankB, err := h.store.GetTank(ctx, orig.TankB.TankID)
+	tankB, err := h.store.GetTank(ctx, db.RealTankID(orig.TankB.TankID))
 	if err != nil {
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
@@ -1609,11 +1612,14 @@ func (h *handler) getMatchExport(ctx context.Context, req events.APIGatewayV2HTT
 	if err != nil {
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
-	tankA, err := h.store.GetTank(ctx, match.TankA.TankID)
+	// Game Day autofill (item 248) may suffix TankID (e.g. "builtin-scout#2")
+	// to distinguish repeated copies of the same built-in AI — never a real
+	// Tank record, so strip it back off before looking one up.
+	tankA, err := h.store.GetTank(ctx, db.RealTankID(match.TankA.TankID))
 	if err != nil {
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
-	tankB, err := h.store.GetTank(ctx, match.TankB.TankID)
+	tankB, err := h.store.GetTank(ctx, db.RealTankID(match.TankB.TankID))
 	if err != nil {
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}

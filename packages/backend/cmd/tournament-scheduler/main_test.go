@@ -144,6 +144,96 @@ func TestGlobalRerank_ByPoints(t *testing.T) {
 	}
 }
 
+// TestPadWithBots_DuplicatesGetSuffixedTankID verifies item 248's fix: the
+// first copy of each bot keeps its bare TankID (max backward compatibility
+// for the common non-duplicated case); every repeat beyond the first gets a
+// "#N" suffix so it never collides with another instance's TankID.
+func TestPadWithBots_DuplicatesGetSuffixedTankID(t *testing.T) {
+	bots := []db.MatchTank{
+		{TankID: "builtin-scout", TankName: "Scout"},
+		{TankID: "builtin-bruiser", TankName: "Bruiser"},
+	}
+	got := padWithBots(nil, bots, 5)
+
+	want := []string{
+		"builtin-scout", "builtin-bruiser",
+		"builtin-scout#2", "builtin-bruiser#2",
+		"builtin-scout#3",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("len: got %d want %d (%v)", len(got), len(want), got)
+	}
+	for i, w := range want {
+		if got[i].TankID != w {
+			t.Errorf("[%d]: got TankID=%q want %q", i, got[i].TankID, w)
+		}
+	}
+	// TankName must be preserved unsuffixed on every instance — only TankID
+	// carries the disambiguating suffix.
+	if got[2].TankName != "Scout" {
+		t.Errorf("got[2].TankName = %q, want unsuffixed %q", got[2].TankName, "Scout")
+	}
+}
+
+// TestPadWithBots_NoDuplicatesLeavesBareTankIDs verifies the common case
+// (padding needs at most one of each bot) never suffixes anything, so a
+// non-duplicated game day's bracket/standings/rankings are byte-identical to
+// before item 248's fix.
+func TestPadWithBots_NoDuplicatesLeavesBareTankIDs(t *testing.T) {
+	bots := []db.MatchTank{
+		{TankID: "builtin-scout"}, {TankID: "builtin-bruiser"},
+		{TankID: "builtin-ranger"}, {TankID: "builtin-randy"},
+	}
+	got := padWithBots(nil, bots, 4)
+	for i, b := range got {
+		if strings.Contains(b.TankID, "#") {
+			t.Errorf("[%d]: TankID=%q unexpectedly suffixed", i, b.TankID)
+		}
+	}
+}
+
+// TestComputeGroupStandings_DuplicateAutofillTankIDsStayIndependent is the
+// regression test for item 248 ("Scout twins" bug), at the round-robin
+// standings level: two autofill-registered instances of the same built-in AI
+// ("builtin-scout" vs "builtin-scout#2", per padWithBots' suffixing) must
+// keep their own independent win/loss records rather than merging into one
+// shared, misleadingly-average line. Mirrors the user's own illustration: one
+// instance wins every game it plays, the other loses every game it plays —
+// before the fix, both shared the "builtin-scout" map key in sm, so one
+// instance's record silently overwrote the other's.
+func TestComputeGroupStandings_DuplicateAutofillTankIDsStayIndependent(t *testing.T) {
+	p := func(i int) *int { return &i }
+
+	scoutA := db.MatchTank{TankID: "builtin-scout", TankName: "Scout"}
+	scoutB := db.MatchTank{TankID: "builtin-scout#2", TankName: "Scout"}
+	opponent := db.MatchTank{TankID: "opponent"}
+
+	tanks := []db.MatchTank{scoutA, scoutB, opponent}
+	matches := []db.Match{
+		{MatchID: "m1", TankA: scoutA, TankB: opponent,
+			Status: "ended", Result: &db.MatchResult{Winner: p(0)}}, // scoutA beats opponent
+		{MatchID: "m2", TankA: scoutB, TankB: opponent,
+			Status: "ended", Result: &db.MatchResult{Winner: p(1)}}, // opponent beats scoutB
+	}
+
+	standings, _ := computeGroupStandings(tanks, matches)
+
+	byID := make(map[string]db.GroupStanding, len(standings))
+	for _, s := range standings {
+		byID[s.TankID] = s
+	}
+
+	if s := byID["builtin-scout"]; s.Wins != 1 || s.Losses != 0 {
+		t.Errorf("builtin-scout: want 1W-0L, got %dW-%dL", s.Wins, s.Losses)
+	}
+	if s := byID["builtin-scout#2"]; s.Wins != 0 || s.Losses != 1 {
+		t.Errorf("builtin-scout#2: want 0W-1L, got %dW-%dL", s.Wins, s.Losses)
+	}
+	if s := byID["opponent"]; s.Wins != 1 || s.Losses != 1 {
+		t.Errorf("opponent (played both instances): want 1W-1L, got %dW-%dL", s.Wins, s.Losses)
+	}
+}
+
 // TestPotSeed verifies pot seeding distributes tanks across groups.
 func TestPotSeed(t *testing.T) {
 	tanks := make([]db.MatchTank, 6)

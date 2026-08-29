@@ -262,9 +262,7 @@ func (h *handler) handleRegistrationClose(ctx context.Context, gd db.GameDay) er
 			}
 			bots = append(bots, db.MatchTank{TankID: bd.id, Version: bd.ver, TankName: name})
 		}
-		for i := 0; len(tanks) < target; i++ {
-			tanks = append(tanks, bots[i%len(bots)])
-		}
+		tanks = padWithBots(tanks, bots, target)
 		log.Printf("autofill: padded to %d tanks for game day %s", len(tanks), gd.GameDayID)
 	}
 
@@ -283,6 +281,27 @@ func (h *handler) handleRegistrationClose(ctx context.Context, gd db.GameDay) er
 
 	gd.RegisteredTanks = tanks
 	return h.store.PutGameDay(ctx, gd)
+}
+
+// padWithBots appends entries from bots (cycling round-robin) to tanks until
+// it reaches target length. When the same bot definition is appended more
+// than once, every repeat beyond the first has its TankID suffixed
+// ("builtin-scout" → "builtin-scout#2", "#3", …) so it gets its own key
+// throughout this event's standings/seeding/bracket-tier bookkeeping instead
+// of silently merging with the other instance's independent match results
+// (item 248 — "Scout twins" bug). The suffix is stripped back off wherever a
+// real Tank/TankVersion/Ranking record is needed — see db.RealTankID.
+func padWithBots(tanks, bots []db.MatchTank, target int) []db.MatchTank {
+	occurrences := make(map[string]int, len(bots))
+	for i := 0; len(tanks) < target; i++ {
+		bot := bots[i%len(bots)]
+		occurrences[bot.TankID]++
+		if n := occurrences[bot.TankID]; n > 1 {
+			bot.TankID = fmt.Sprintf("%s#%d", bot.TankID, n)
+		}
+		tanks = append(tanks, bot)
+	}
+	return tanks
 }
 
 // ---- Phase: round_robin -----------------------------------------------------

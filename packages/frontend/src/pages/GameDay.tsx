@@ -3,6 +3,8 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import Layout, { cardStyle, ghostButtonStyle, primaryButtonStyle } from '../components/Layout';
 import { getGameDay, getTank, addRosterEntry, removeRosterEntry, listAiTanks, adminListTanks, listMaps } from '../services/api';
 import { useAuthStore } from '../store/authStore';
+import { realTankId } from '../utils/tankId';
+import { competitionRanks } from '../utils/ranking';
 import type { GameDay, BracketSlot, GameDayPhaseStatus, GameDayGroup, GroupMatchResult, Tank, TankVersion, GameMap } from '../types';
 
 const BRACKET_LABELS: Record<string, string> = {
@@ -76,7 +78,7 @@ function SlotCell({ slot }: { slot: BracketSlot }) {
       lineHeight: '16px',
     }}>
       {slot.tankId ? (
-        <Link to={`/tanks/${slot.tankId}`} style={{ color, textDecoration: 'none' }}>
+        <Link to={`/tanks/${realTankId(slot.tankId)}`} style={{ color, textDecoration: 'none' }}>
           {displayName}
           {slot.version && <span style={{ color: '#4a7291', marginLeft: 6 }}>@ {slot.version}</span>}
         </Link>
@@ -228,7 +230,7 @@ function RRStandingsTable({ group, gi }: {
         {groupLabel}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {group.tanks.map(({ tankId }) => (
-            <Link key={tankId} to={`/tanks/${tankId}`} style={{
+            <Link key={tankId} to={`/tanks/${realTankId(tankId)}`} style={{
               color: '#7fa2ba', fontSize: 13, textDecoration: 'none',
               padding: '4px 8px', borderRadius: 0, background: '#0a3550',
             }}>
@@ -242,6 +244,10 @@ function RRStandingsTable({ group, gi }: {
 
   // Tank order: sorted by standing rank (same as final display order).
   const rows = [...group.standings!].sort((a, b) => b.points - a.points || b.wins - a.wins);
+  // Item 249: tied rows (same points and wins — the only two fields the sort
+  // above breaks ties on) share one rank instead of getting arbitrary,
+  // distinct-looking sequential numbers.
+  const ranks = competitionRanks(rows, (a, b) => a.points === b.points && a.wins === b.wins);
 
   // Build a lookup: (rowTankId, colTankId) → GroupMatchResult
   const resultMap = new Map<string, GroupMatchResult>();
@@ -269,7 +275,7 @@ function RRStandingsTable({ group, gi }: {
               <th style={{ ...thStyle, textAlign: 'center', width: 24 }}>#</th>
               <th style={{ ...thStyle, textAlign: 'left', minWidth: 120 }}>Tank</th>
               {rows.map((_, ci) => (
-                <th key={ci} style={{ ...thStyle, width: 32 }}>{ci + 1}</th>
+                <th key={ci} style={{ ...thStyle, width: 32 }}>{ranks[ci]}</th>
               ))}
               <th style={{ ...thStyle, width: 36 }}>W</th>
               <th style={{ ...thStyle, width: 36 }}>L</th>
@@ -282,10 +288,10 @@ function RRStandingsTable({ group, gi }: {
               return (
                 <tr key={s.tankId}>
                   <td style={{ ...tdStyle }}>
-                    <span style={{ color: rankColor(ri + 1), fontWeight: 700 }}>{ri + 1}</span>
+                    <span style={{ color: rankColor(ranks[ri]), fontWeight: 700 }}>{ranks[ri]}</span>
                   </td>
                   <td style={{ ...tdStyle, textAlign: 'left', padding: '5px 8px' }}>
-                    <Link to={`/tanks/${s.tankId}`} style={{ color: '#e7f1f7', textDecoration: 'none' }}>
+                    <Link to={`/tanks/${realTankId(s.tankId)}`} style={{ color: '#e7f1f7', textDecoration: 'none' }}>
                       {wrapName(name)}
                     </Link>
                   </td>
@@ -625,7 +631,7 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
             return (
               <div key={`${tankId}-${idx}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #082e4a' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <Link to={`/tanks/${tankId}`} style={{ color: '#e7f1f7', fontSize: 13, textDecoration: 'none', fontWeight: 500 }}>
+                  <Link to={`/tanks/${realTankId(tankId)}`} style={{ color: '#e7f1f7', fontSize: 13, textDecoration: 'none', fontWeight: 500 }}>
                     {name}
                   </Link>
                   {author && <span style={{ color: '#5b87a3', fontSize: 12 }}>by {author}</span>}
@@ -843,6 +849,10 @@ export default function GameDayPage() {
   });
 
   const standings = Object.entries(gameDay.placementPoints ?? {}).sort(([, a], [, b]) => b - a);
+  // Item 249: tied placements (equal points — placementPoints is already the
+  // server's own tier-derived value, see ranking-updater's bracketTiers/
+  // placementPoints) share one rank instead of arbitrary sequential numbers.
+  const standingRanks = competitionRanks(standings, ([, a], [, b]) => a === b);
   const showGroups = (gameDay.groups ?? []).length > 0;
   const showBracket = bracketRounds.length > 0;
   const showRoster = gameDay.phases.roundRobin.status === 'upcoming';
@@ -1078,8 +1088,8 @@ export default function GameDayPage() {
             {standings.map(([tankId, pts], i) => (
               <div key={tankId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 0' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ color: rankColor(i + 1), fontSize: 13, fontWeight: 700, width: 20 }}>{i + 1}</span>
-                  <Link to={`/tanks/${tankId}`} style={{ color: '#7fa2ba', fontSize: 13, textDecoration: 'none' }}>
+                  <span style={{ color: rankColor(standingRanks[i]), fontSize: 13, fontWeight: 700, width: 20 }}>{standingRanks[i]}</span>
+                  <Link to={`/tanks/${realTankId(tankId)}`} style={{ color: '#7fa2ba', fontSize: 13, textDecoration: 'none' }}>
                     {tankNameMap.get(tankId) ?? tankId}
                   </Link>
                 </div>

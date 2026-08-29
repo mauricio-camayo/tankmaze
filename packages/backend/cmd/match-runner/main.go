@@ -266,25 +266,32 @@ func (h *handler) handle(ctx context.Context, evt matchEvent) error {
 		return nil
 	}
 
-	verA, err := h.store.GetVersion(ctx, match.TankA.TankID, match.TankA.Version)
+	// Game Day autofill (item 248) may suffix TankID (e.g. "builtin-scout#2")
+	// to distinguish repeated copies of the same built-in AI in per-event
+	// standings/seeding/bracket bookkeeping — it is never a real Tank/
+	// TankVersion record, so every DB lookup here must strip it back off.
+	realTankA := db.RealTankID(match.TankA.TankID)
+	realTankB := db.RealTankID(match.TankB.TankID)
+
+	verA, err := h.store.GetVersion(ctx, realTankA, match.TankA.Version)
 	if err != nil {
-		return fmt.Errorf("get version A (%s/%s): %w", match.TankA.TankID, match.TankA.Version, err)
+		return fmt.Errorf("get version A (%s/%s): %w", realTankA, match.TankA.Version, err)
 	}
-	verB, err := h.store.GetVersion(ctx, match.TankB.TankID, match.TankB.Version)
+	verB, err := h.store.GetVersion(ctx, realTankB, match.TankB.Version)
 	if err != nil {
-		return fmt.Errorf("get version B (%s/%s): %w", match.TankB.TankID, match.TankB.Version, err)
+		return fmt.Errorf("get version B (%s/%s): %w", realTankB, match.TankB.Version, err)
 	}
 
 	// Resolve display names for the tick log.
 	nameA := match.TankA.TankName
 	if nameA == "" {
-		if t, err := h.store.GetTank(ctx, match.TankA.TankID); err == nil {
+		if t, err := h.store.GetTank(ctx, realTankA); err == nil {
 			nameA = t.Name
 		}
 	}
 	nameB := match.TankB.TankName
 	if nameB == "" {
-		if t, err := h.store.GetTank(ctx, match.TankB.TankID); err == nil {
+		if t, err := h.store.GetTank(ctx, realTankB); err == nil {
 			nameB = t.Name
 		}
 	}
@@ -458,10 +465,10 @@ func (h *handler) handle(ctx context.Context, evt matchEvent) error {
 	// Item 23: "watch last replay" link on tank detail — any match type, any
 	// version, both participants. Best-effort; a failure here shouldn't fail
 	// the match itself since the result is already durably persisted above.
-	if err := h.store.UpdateTankLastMatch(ctx, match.TankA.TankID, matchID); err != nil {
+	if err := h.store.UpdateTankLastMatch(ctx, realTankA, matchID); err != nil {
 		log.Printf("update last match A: %v", err)
 	}
-	if err := h.store.UpdateTankLastMatch(ctx, match.TankB.TankID, matchID); err != nil {
+	if err := h.store.UpdateTankLastMatch(ctx, realTankB, matchID); err != nil {
 		log.Printf("update last match B: %v", err)
 	}
 
@@ -477,19 +484,19 @@ func (h *handler) handle(ctx context.Context, evt matchEvent) error {
 	}
 
 	if float64(violationsA)/float64(totalTicks) > violationThreshold {
-		if err := h.store.SetVersionDisqualified(ctx, match.TankA.TankID, match.TankA.Version); err != nil {
+		if err := h.store.SetVersionDisqualified(ctx, realTankA, match.TankA.Version); err != nil {
 			log.Printf("set disqualified A: %v", err)
 		}
 	}
 	if float64(violationsB)/float64(totalTicks) > violationThreshold {
-		if err := h.store.SetVersionDisqualified(ctx, match.TankB.TankID, match.TankB.Version); err != nil {
+		if err := h.store.SetVersionDisqualified(ctx, realTankB, match.TankB.Version); err != nil {
 			log.Printf("set disqualified B: %v", err)
 		}
 	}
 
 	switch match.MatchType {
 	case "ranked":
-		h.updateRankedStats(ctx, match, verA, verB, result)
+		h.updateRankedStats(ctx, match, realTankA, realTankB, verA, verB, result)
 		// When the last ranked match in a game day ends, trigger the next phase in
 		// tournament-scheduler. This makes phase transitions event-driven so they
 		// fire even if EventBridge schedules arrived before matches completed.
@@ -497,10 +504,10 @@ func (h *handler) handle(ctx context.Context, evt matchEvent) error {
 			h.maybeAdvanceTournament(ctx, match.GameDayID)
 		}
 	case "test-ai", "test-own":
-		if err := h.store.IncrementTestMatchCount(ctx, match.TankA.TankID, match.TankA.Version); err != nil {
+		if err := h.store.IncrementTestMatchCount(ctx, realTankA, match.TankA.Version); err != nil {
 			log.Printf("increment test match count A: %v", err)
 		}
-		if err := h.store.IncrementTestMatchCount(ctx, match.TankB.TankID, match.TankB.Version); err != nil {
+		if err := h.store.IncrementTestMatchCount(ctx, realTankB, match.TankB.Version); err != nil {
 			log.Printf("increment test match count B: %v", err)
 		}
 	}
@@ -780,7 +787,7 @@ func (h *handler) writeTickLog(ctx context.Context, key string, logFile tickLogF
 
 // updateRankedStats performs a read-modify-write to update the running
 // performance averages on both major versions after a ranked match.
-func (h *handler) updateRankedStats(ctx context.Context, match db.Match, verA, verB db.TankVersion, result *engine.Result) {
+func (h *handler) updateRankedStats(ctx context.Context, match db.Match, realTankA, realTankB string, verA, verB db.TankVersion, result *engine.Result) {
 	updateStats := func(tankID, version string, won bool, damageDealt, ticksSurvived int) {
 		ver, err := h.store.GetVersion(ctx, tankID, version)
 		if err != nil {
@@ -808,8 +815,8 @@ func (h *handler) updateRankedStats(ctx context.Context, match db.Match, verA, v
 
 	wonA := result.Winner == 0
 	wonB := result.Winner == 1
-	updateStats(match.TankA.TankID, match.TankA.Version, wonA, result.DamageA, result.TicksElapsed)
-	updateStats(match.TankB.TankID, match.TankB.Version, wonB, result.DamageB, result.TicksElapsed)
+	updateStats(realTankA, match.TankA.Version, wonA, result.DamageA, result.TicksElapsed)
+	updateStats(realTankB, match.TankB.Version, wonB, result.DamageB, result.TicksElapsed)
 }
 
 // versionToTankConfig converts a db.TankVersion into the engine's TankConfig.

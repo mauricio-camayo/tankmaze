@@ -56,6 +56,16 @@ func (h *handler) handle(ctx context.Context, evt event) error {
 
 	now := time.Now()
 	expiresAt := now.Add(rankingTTL).Unix()
+	// pointsMap stays keyed by the (possibly autofill-suffixed, item 248) tank
+	// identity used within this event's own bookkeeping — it becomes
+	// gd.PlacementPoints below, which the frontend needs per-instance to show
+	// each duplicated built-in AI's own real placement (item 249). The
+	// permanent db.Ranking rows below are different: they must use the real
+	// tank ID (db.RealTankID) since a synthetic "builtin-scout#2" is never a
+	// real Tank record — see db.RealTankID's doc comment for the full
+	// rationale, including why two instances of the same built-in AI still
+	// share one permanent ranking history (last-write-wins, same as before
+	// this fix), same as they always have.
 	pointsMap := make(map[string]int, n)
 
 	// Write ranking records for all bracket participants.
@@ -66,7 +76,7 @@ func (h *handler) handle(ctx context.Context, evt event) error {
 		}
 		pts := placementPoints(n, tier.k)
 		if err := h.store.PutRanking(ctx, db.Ranking{
-			TankID:    tankID,
+			TankID:    db.RealTankID(tankID),
 			GameDayID: evt.GameDayID,
 			Points:    pts,
 			Placement: tier.placement,
@@ -86,7 +96,7 @@ func (h *handler) handle(ctx context.Context, evt event) error {
 			continue
 		}
 		if err := h.store.PutRanking(ctx, db.Ranking{
-			TankID:    mt.TankID,
+			TankID:    db.RealTankID(mt.TankID),
 			GameDayID: evt.GameDayID,
 			Points:    0,
 			Placement: lastPlacement,
@@ -102,7 +112,13 @@ func (h *handler) handle(ctx context.Context, evt event) error {
 		return fmt.Errorf("set placement points: %w", err)
 	}
 
+	// Dedupe to real tank IDs — pointsMap may hold more than one
+	// autofill-suffixed key (item 248) for the same real built-in AI.
+	realIDs := make(map[string]struct{}, len(pointsMap))
 	for tankID := range pointsMap {
+		realIDs[db.RealTankID(tankID)] = struct{}{}
+	}
+	for tankID := range realIDs {
 		if err := h.recomputeTankStats(ctx, tankID, now); err != nil {
 			return fmt.Errorf("recompute stats %s: %w", tankID, err)
 		}

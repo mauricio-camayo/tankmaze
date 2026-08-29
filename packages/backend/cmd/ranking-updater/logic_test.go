@@ -164,6 +164,46 @@ func TestBracketTiers_FinalBothLoseViaFinalKey(t *testing.T) {
 	}
 }
 
+// TestBracketTiers_DuplicateAutofillTankIDsStayIndependent is the regression
+// test for item 248 ("Scout twins" bug): two autofill-registered instances of
+// the same built-in AI, distinguished by tournament-scheduler's padWithBots
+// suffix ("builtin-scout" vs "builtin-scout#2"), must each get their own,
+// correct tier — not silently overwrite each other in the tiers map keyed by
+// TankID. Scenario: "builtin-scout" wins r1 then loses the r2 final
+// (runner-up, k=2); the *other* instance, "builtin-scout#2", loses r1
+// (quarter-final tier, k=3). Before the fix both instances shared the bare
+// "builtin-scout" key and one tier would clobber the other depending on map
+// iteration order.
+func TestBracketTiers_DuplicateAutofillTankIDsStayIndependent(t *testing.T) {
+	bracket := map[string][]db.BracketSlot{
+		"r1": {
+			{TankID: "builtin-scout", Status: "won"},
+			{TankID: "opponentX", Status: "lost"},
+			{TankID: "builtin-scout#2", Status: "lost"},
+			{TankID: "opponentY", Status: "won"},
+		},
+		"r2": {
+			{TankID: "builtin-scout", Status: "lost"},
+			{TankID: "opponentY", Status: "won"},
+		},
+	}
+
+	tiers, championNull := bracketTiers(bracket)
+
+	if championNull {
+		t.Fatal("expected championNull=false but got true")
+	}
+	if got := tiers["builtin-scout"].k; got != 2 {
+		t.Errorf("builtin-scout (lost the r2 final): want k=2 (runner-up), got k=%d", got)
+	}
+	if got := tiers["builtin-scout#2"].k; got != 3 {
+		t.Errorf("builtin-scout#2 (lost r1): want k=3 (quarter-final), got k=%d", got)
+	}
+	if got := tiers["opponentY"].k; got != 1 {
+		t.Errorf("opponentY (champion): want k=1, got k=%d", got)
+	}
+}
+
 // TestBracketTiers_EmptyBracket verifies the empty-bracket fast path.
 func TestBracketTiers_EmptyBracket(t *testing.T) {
 	tiers, championNull := bracketTiers(nil)
