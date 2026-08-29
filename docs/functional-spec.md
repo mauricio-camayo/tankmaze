@@ -145,6 +145,8 @@ Tank code is compiled to WASM and executed by **Wazero** (a pure-Go WASM runtime
 
 Violations (timeout, panic) are logged and result in an `Idle` action for that tick. Repeated timeouts (>20% of ticks in a match) disqualify the tank from ranked Game Days until the Author submits a fixed version.
 
+**Known gap — `math/rand` is not actually random (PRIORITIES.md item 251):** the platform's WASM host currently seeds every match's WASI random-byte source with a fixed, deterministic stream rather than real entropy, so `math/rand` inside every tank binary produces the identical sequence of "random" decisions in every match given the same map and spawn points — not the unpredictable behavior an author would reasonably expect from a random fallback or wander pattern. Confirmed live (2026-08-28) via a byte-for-byte identical tick-by-tick diff of two separate real matches. See `docs/technical-spec.md` §4.3 for the mechanism, evidence trail, and proposed fix. Not yet fixed.
+
 ### 3.6 Stat System
 
 Each tank allocates exactly **15 points** across 5 stats. No stat may be below 1 or above 5. Submissions that don't sum to 15 are rejected.
@@ -181,7 +183,7 @@ Three reference tank implementations are built into the platform. They serve two
 - **Pursuit phase** (opponent detected in sensor range): Randy moves toward the detected opponent's position each tick and fires while doing so. It tracks the opponent as long as sensor contact is maintained.
 - **Lost contact**: if the opponent leaves sensor range, Randy immediately reverts to the wander phase.
 
-Randy requires the `math/rand` standard library. Its purpose is to be a noticeably harder baseline than pure randomness — authors must actively outmanoeuvre a pursuing enemy, not just outlast random fire.
+Randy requires the `math/rand` standard library. Its purpose is to be a noticeably harder baseline than pure randomness — authors must actively outmanoeuvre a pursuing enemy, not just outlast random fire. (Currently undermined by the platform-wide deterministic-randomness gap tracked in §3.5/PRIORITIES.md item 251 — Randy's wander phase is not actually random today.)
 
 Built-in tanks do not appear in ranked leaderboards. They cannot be beaten by the system to claim a rank.
 
@@ -373,6 +375,8 @@ For the standard group of 8 with > 64 total tanks: `⌊8 × 2/3⌋ = 5` tanks ad
 
 All advancing tanks are **globally re-ranked** by their round-robin points (then by the tiebreakers above) before the elimination bracket is seeded.
 
+> **Design note — seeding tiebreaker is sound, distinct from the display bug tracked in PRIORITIES.md item 249:** the global re-rank that produces bracket seed order (points desc → total damage dealt desc → total moves made desc → random draw for any remainder) is confirmed, by reading `tournament-scheduler`'s `qualifyTanks`/`globalRerank` implementation, to already apply this full tiebreaker chain — not just points. A tank's RR standing does affect which opponent it draws in the bracket (better rank → weaker first-round opponent), so an arbitrary tiebreaker here would have real gameplay consequences, not just a cosmetic mislabel — but this seeding logic is independent of, and unaffected by, the round-robin *standings table's* naive tie display covered in item 249. No fix is needed for seeding itself.
+
 **Elimination rounds when ≤ 64 tanks register:**
 
 When all tanks advance, the number of elimination rounds (not counting the Final) is `⌊log₂(N)⌋ − 1`, where N is the number of advancing tanks. The Final always uses the last two surviving tanks. Specifically:
@@ -457,6 +461,8 @@ The table is sorted by points descending, with the group tiebreakers applied in 
 
 > **Planned enhancement:** replace the aggregate table with a per-match cross-table grid (rows = tanks 1–N, columns = opponent numbers, cells show W/L/B/pending from the row-tank's perspective) to expose individual head-to-head results. Tracked as a future improvement.
 
+**Rank display must reflect ties (known gap, tracked as PRIORITIES.md item 249):** the Rank column is required to use standard **competition ranking** ("1224" numbering) — tanks with identical points (and identical tiebreakers) share the same rank number, and the next distinct entry's rank equals the count of tanks ranked strictly above it (e.g. three tanks tied for 4th all show "4"; the next tank shows "7", not "5"). The current implementation instead assigns a plain sequential position number, which understates ties as a false, arbitrary ordering among tanks the rules treat as equal.
+
 #### End of Game Day
 
 When all elimination matches are complete (or the scheduled window closes — whichever comes first), the platform publishes a **Game Day summary** containing full bracket, all match replays, and updated tank stats.
@@ -511,6 +517,8 @@ Each successive placement halves the points of the previous one. Points are floo
 | 17th–32nd (Round-robin eliminated) | 1 |
 
 **Shared placements:** tanks eliminated at the same round share the highest placement available to that group. Both semifinal losers receive 3rd-place points; all quarterfinal losers receive 5th-place points, and so on. Ties within a shared placement tier do not subdivide further — all tanks in the group receive the same points.
+
+> This ordinal placement (1, 2, 3, 5, 9, …) is exactly what the "Final standings" list's rank number should display alongside each tank's points — a tied pair must show the same rank, not two different sequential numbers. This is a known display gap, tracked as PRIORITIES.md item 249: the server already computes the correct tier/placement for every tank (see `docs/technical-spec.md` §5.4), but the "Final standings" UI currently re-derives its own rank from raw points client-side instead of using it, so ties there render as false sequential ranks today.
 
 **Byes:** a tank that received a bye in Round 1 of elimination and then lost in Round 2 is placed alongside the other Round 2 losers (no separate treatment).
 
@@ -1374,6 +1382,10 @@ From a Game Day's page, an admin can manually add or remove individual tanks fro
 - **Eligible**: the tank has at least one promoted major version with `compileStatus == "ready"` — its highest such version is used.
 - **Skipped**: tanks already on the roster, and tanks with no ready major version (shown as a count in a confirmation step before submitting, along with how many tanks will actually be added).
 - Built-in AI tanks (Scout/Bruiser/Ranger/Randy) have their own separate one-click quick-add list and aren't affected by this action.
+
+**Auto-fill bracket (admin option, per Game Day):** when enabled, at registration close the platform pads the registered field with built-in AI tanks — cycling through Scout/Bruiser/Ranger/Randy — up to the next power-of-2 threshold (minimum 8) so the bracket always starts from a clean field size. When the padding required exceeds 4 slots, the same built-in AI is registered more than once for that Game Day.
+
+> **Known limitation (HIGH priority — real correctness bug, not cosmetic; tracked as PRIORITIES.md item 248):** a duplicated built-in AI's two (or more) registrations currently share one underlying tank identity, so every stats computation that groups by tank — round-robin standings, elimination seeding, and final bracket placement — silently merges what should be two independent competitors' separate results into a single combined line. This can hide a genuinely undefeated run and a genuinely winless run behind one misleadingly "average" merged record. See `docs/technical-spec.md` §5.3/§5.4 for the mechanism and required fix.
 
 ### 18.4 Ad Configuration
 

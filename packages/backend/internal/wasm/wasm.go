@@ -47,6 +47,7 @@ package wasm
 
 import (
 	"context"
+	crand "crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -197,6 +198,13 @@ func LoadBytes(ctx context.Context, wasmBytes []byte) (*Module, error) {
 	modCfg := wazero.NewModuleConfig().
 		WithName("tank").
 		WithStartFunctions().
+		// wazero's default RandSource is a fixed deterministic stream (see its
+		// own doc comment on WithRandSource) — without this, every tank's
+		// math/rand seeding via WASI's random_get is identical across every
+		// match, making any AI logic that calls math/rand (e.g. Randy's wander
+		// direction, Rammer's hookSide coin flip) perfectly reproducible given
+		// the same map/spawn/opponent instead of actually random (item 251).
+		WithRandSource(crand.Reader).
 		WithStdout(&stderrCapturer{m}).  // capture fmt.Println / os.Stdout
 		WithStderr(&stderrCapturer{m})   // capture log.Println / os.Stderr
 

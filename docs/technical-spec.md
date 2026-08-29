@@ -358,6 +358,12 @@ Wazero is configured with:
 - **Linear memory cap** — 4 MB per module instance
 - **No host function imports** — only the `tankmaze` SDK host functions are registered (`sensors_get`, `log_write`)
 
+**Known gap — `math/rand` inside every tank is fully deterministic, not actually random (PRIORITIES.md item 251, functional spec §3.5):** the `wazero.NewModuleConfig()` builder in `packages/backend/internal/wasm/wasm.go` (~line 197-201) never calls `.WithRandSource(...)`. wazero's own documented default for that setting is a deterministic byte source (confirmed in the pinned dependency, `github.com/tetratelabs/wazero v1.7.3`, `config.go` ~line 639-640: *"WithRandSource configures a source of random bytes. Defaults to return a deterministic source."*), so every module instantiation — every tank, every match, ranked or unranked — receives the identical fixed byte stream for WASI's `random_get` syscall, which is what seeds Go's `math/rand` global source inside the wasip1 tank binary. Any tank logic that calls `math/rand` (confirmed examples: built-in Randy's `randDir()` wander-direction picker in `packages/testdata/tanks/randy/main.go`, and the player-authored Rammer tank's `hookSide` random fallback) is therefore not random at all — it produces the exact same sequence of "random" decisions on every match, given the same map and spawn points.
+
+**Confirmed live (2026-08-28):** two real matches — a round-robin match and a later elimination-bracket rematch, both Rammer v2 (`e0de1ddd-ff23-41da-8ebd-57f90a436fbc`) vs. built-in Randy, both on the fixed `builtin-open` map, gameday `e5c9846f-9aaa-41f9-a025-c1cd2786e970` — were downloaded and diffed tick-by-tick (65 ticks each, matchIds `ff829f60-891f-40ea-8c1c-4d1b1715b96b` and `aefddc39-0c6d-4316-b5ec-c96943a7ec4b`). Every game-state field was byte-for-byte identical across both matches; only the `durationMs` wall-clock timing field (§7) differed, as expected from Lambda scheduling noise.
+
+**Proposed fix (not yet implemented):** add `.WithRandSource(rand.Reader)` (import `crypto/rand`) to the `wazero.NewModuleConfig()` chain in `wasm.go` — host-side only, no tank WASM recompilation needed, since entropy is supplied by the platform host rather than baked into each tank's compiled binary.
+
 ### 4.4 Collision Damage
 
 Resolved in `packages/backend/internal/engine/physics.go`, `resolveCollision` — called once per tick after both tanks' move actions have been applied. See functional-spec.md §8.1 for the damage table, the `COLLISION_DAMAGE_TABLE` env var format, and the design rationale; this section covers the implementation.
@@ -444,6 +450,20 @@ Triggered by EventBridge Scheduler rules — one rule per Game Day phase. Phase 
 4. If the `"bye"` slot itself is also `"both_lose"` (cascade), walk up the bracket until a live tank or the root is reached; if no live tanks remain in that half, the other bracket half's survivor is champion.
 5. If all remaining slots are `"both_lose"` with no survivors anywhere, set `gameDayId.champion = null` and skip 1st/2nd placement point awards.
 
+**Round-robin standings & elimination seeding tiebreakers:** `computeGroupStandings` produces per-group win/loss/points from the group's matches; `qualifyTanks` re-sorts each group's standings (points desc → total damage dealt desc → total moves made desc → a pre-sort `rand.Shuffle` for genuine remaining ties, then `sort.SliceStable`) to decide who advances; `globalRerank` applies the identical tiebreaker chain across all qualifiers to produce the bracket seed order consumed by `seedBracketOrder`. This chain is confirmed sound and independent of the frontend rank-display gap noted in §9 below — see functional spec §6.3's design note. `GameDay.tsx`'s round-robin table currently sorts client-side using only points and wins (no damage/moves tiebreak, no tie-group awareness) — a display-only comparator, distinct from this server-side seeding logic.
+
+**Known gap — duplicate `tankId` from autofill bracket padding (functional spec §18.3; PRIORITIES.md item 248):** `handleRegistrationClose`'s autofill padding loop —
+
+```go
+for i := 0; len(tanks) < target; i++ {
+    tanks = append(tanks, bots[i%len(bots)])
+}
+```
+
+— cycles through only 4 bot definitions with no per-registration uniqueness. Once padding needs more than 4 extra slots, the same built-in AI (e.g. `builtin-scout`) is appended more than once as literally identical `db.MatchTank{TankID: "builtin-scout", ...}` roster entries. Every tankId-keyed aggregation downstream of this — `computeGroupStandings`'s `sm := make(map[string]*stats, ...)`, `qualifyTanks`'s per-group `aug` slice (built from `computeGroupStandings`'s already-merged output), and `globalRerank`'s `tm := make(map[string]totals, ...)` — silently merges the two physically independent registrations' separate match results into one shared bucket, because nothing distinguishes them once they share a key. This corrupts standings, qualification, *and* bracket seed order for the duplicated instances; `ranking-updater`'s `bracketTiers` inherits the same collision (§5.4 below). **Confirmed live** on gameday `7268728d-0b10-49aa-8237-57a402646410` (2026-08-28): both `builtin-scout` rows show identical merged 13W-1L stats — reachable only by combining both instances' independent games.
+
+**Required fix:** give each autofill-duplicated registration a distinguishable per-registration identity (e.g. `builtin-scout#1`/`builtin-scout#2`, or a slot/registration index carried alongside `tankId`) threaded through roster registration, `computeGroupStandings`, `qualifyTanks`/`globalRerank`, bracket slot assignment, and `ranking-updater`'s `bracketTiers`/`placementPoints` — so each physical instance keeps its own independent win/loss record and bracket path despite sharing a tank name and WASM binary. This is a real correctness bug, not cosmetic: left unfixed, it can silently merge a legitimate 1st-place run and a legitimate last-place run into one misleadingly-average combined line whenever autofill duplicates a built-in AI.
+
 ### 5.4 `ranking-updater`
 
 Invoked async after each Game Day completes. Computes placements, awards points per §6.6 formula, writes to `tankmaze-rankings`, and recalculates `globalScore` on all participating `tankmaze-tanks` records.
@@ -458,6 +478,10 @@ Invoked async after each Game Day completes. Computes placements, awards points 
 4. Delete source `tankmaze-rankings` records after successful copy.
 
 **No-champion edge case:** if `gameDay.champion == null` (all elimination matches produced both-lose with no survivors), skip 1st and 2nd placement point awards. All other placements (3rd onwards) are awarded normally based on the round each tank reached.
+
+**Known gap — `bracketTiers` keyed by `tankID` string (PRIORITIES.md item 248):** `tiers := make(map[string]tankTier)` assigns one tier/placement entry per unique `tankID` seen in the bracket. If the same `tankID` occupies two different bracket slots (the autofill duplicate-registration bug described in §5.3), whichever slot `bracketTiers` processes last for that key wins, silently discarding the other slot's result. On the gameday used as this bug's evidence trail (`7268728d-0b10-49aa-8237-57a402646410`), the champion-determining `"final"` bracket key happens to be processed last in the function (by explicit design, to let a real championship result override a provisional one), which incidentally avoided a visibly wrong champion this time — but this is not a guarantee for other bracket shapes or outcomes where the collision occurs at a non-final round. The eventual fix for the duplicate-`tankId` gap (§5.3) — a distinguishable per-registration identity threaded through the whole pipeline — resolves this collision too, since `bracketTiers` would then see two distinct keys.
+
+**Exposing tier/placement to the frontend (relates to PRIORITIES.md item 249):** `bracketTiers`/`tierPlacement` already compute, per tank, the correct ordinal placement for a tie group (1, 2, 3, 5, 9, … via `tierPlacement(k) = (1 << (k-2)) + 1` for k≥3) and this value is written onto each `db.Ranking` record's `Placement` field by `PutRanking`. The "Final standings" UI in `GameDay.tsx` (§9) does not currently read this field — it re-sorts `gameDay.placementPoints` (a `tankId → points` map) client-side and derives its own rank from array index, which loses the tie information `Placement` already encodes. Exposing `Placement` (or an equivalent tier value) through the Game Day API response is the preferred fix for that display gap, since it avoids re-implementing the tie-tier algorithm a second time on the client.
 
 ### 5.5 `tank-api`
 
@@ -740,6 +764,12 @@ packages/frontend/src/
     └── matchStore.ts            # Zustand: live tick state, replay position
 ```
 
+**Known gap — standings rank display has no tie awareness (PRIORITIES.md item 249):** two places in `pages/GameDay.tsx` compute a displayed rank as a literal sorted-array index (`ri + 1` / `i + 1`) with no tie-group logic:
+- `RRStandingsTable`'s "#" column — rows sorted by `(b.points - a.points || b.wins - a.wins)`, a 2-key comparator with no tie handling once both points and wins match.
+- The "Final standings" section — rows sorted purely by `gameDay.placementPoints` descending, with no tiebreaker or tie handling at all.
+
+Confirmed live on gameday `7268728d-0b10-49aa-8237-57a402646410` (2026-08-28): tied tanks received distinct sequential rank numbers (e.g. three tanks tied 3W-4L shown as 4, 5, 6 instead of 4, 4, 4 with the next entry at 7). Required fix: replace the sorted-index rank with a competition-ranking ("1224") computation — group consecutive equal-sort-key rows, assign the group the lowest rank in it, and set the next group's rank to (previous rank + tie-group size). Applies to both tables. As noted in §5.4, the Final Standings case is better solved by exposing the server's already-correct `Placement`/tier value through the API rather than re-deriving rank client-side from raw points.
+
 ---
 
 ## 10. Infrastructure (CDK Stacks)
@@ -798,7 +828,10 @@ packages/frontend/src/
 | DynamoDB access | IAM roles per Lambda; no wildcard resource permissions |
 | HTTPS | CloudFront enforces; S3 bucket not public; API Gateway TLS only |
 | Input validation | All REST payloads validated with Go struct tags + explicit range checks |
-| Rate limiting | API Gateway throttling: 50 req/s per connection; CodeBuild: 1 concurrent build per user |
+| Rate limiting | **Not currently configured on the HTTP API** — see gap note below. CodeBuild: 1 concurrent build per user |
+| Edge protection | WAFv2 on CloudFront, gated behind an `enableWaf` CDK context flag — **off by default** since the 2026-08-25 cost-optimized redeploy (~$7/mo saving). See gap note below. |
+
+**Known gap — no rate limiting or WAF on the public API by default (PRIORITIES.md item 250, deferred):** investigated 2026-08-28 whether the public, unauthenticated GET routes (`GET /gamedays`, `/gamedays/{id}`, `/rankings`, `/maps`, `/users/{sub}`, `/tanks/ai` — §5.5) pose a risk. No data-confidentiality issue was found — response payloads are already deliberately minimized (e.g. the `publicTankSummary` allow-list; no PII/tokens in gameday JSON). The real gap is availability/cost: `packages/infrastructure/lib/stacks/api-stack.ts` has no API Gateway usage plan or throttle configuration at all — only the reactive `TankApiErrorAlarm`/`TankApiThrottleAlarm` CloudWatch alarms (§10 `ApiStack`), which fire *after* Lambda concurrency is already exhausted rather than preventing it — and `db.ListGameDays` (plus the other public list routes) run full unauthenticated DynamoDB Scans with no rate limit in front of them. (The previous version of the "Rate limiting" table row above claimed "API Gateway throttling: 50 req/s per connection" for the HTTP API; this was found to be aspirational and not actually present in the CDK, and has been corrected here.) Low severity today given the current user base, but worth closing before/when the user base grows, especially once paying users are affected by a cost-abuse or availability incident. Proposed fix: re-enable WAF with a rate-based rule (`cdk deploy --context enableWaf=true` plus a rate-limit rule addition to the `wafv2.CfnWebACL` in `frontend-stack.ts`), or add an API Gateway usage plan with per-IP throttling to `api-stack.ts`. Explicitly deferred by the user until the user base grows.
 
 ---
 
