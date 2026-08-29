@@ -64,6 +64,30 @@ func CollisionDamageTableFromEnv() [5]int {
 	return table
 }
 
+// MoveCooldownTicksFromEnv reads MOVE_COOLDOWN_TICKS (5 comma-separated
+// non-negative ints, ticks between moves indexed by Speed-1) and falls back
+// to DefaultMoveCooldownTicks on any malformation — same convention as
+// CollisionDamageTableFromEnv (item 247) and COLLISION_DAMAGE_TABLE.
+func MoveCooldownTicksFromEnv() [5]int {
+	v := os.Getenv("MOVE_COOLDOWN_TICKS")
+	if v == "" {
+		return DefaultMoveCooldownTicks
+	}
+	parts := strings.Split(v, ",")
+	if len(parts) != 5 {
+		return DefaultMoveCooldownTicks
+	}
+	var table [5]int
+	for i, p := range parts {
+		n, err := strconv.Atoi(strings.TrimSpace(p))
+		if err != nil || n < 0 {
+			return DefaultMoveCooldownTicks
+		}
+		table[i] = n
+	}
+	return table
+}
+
 // TickLimitFromEnv reads TICK_LIMIT and returns the maximum number of ticks
 // before a match ends in a both-lose. Falls back to 300 when unset or invalid.
 func TickLimitFromEnv() int {
@@ -113,9 +137,26 @@ var opposite = [4]tankmaze.Direction{
 
 // ---- Stat formulas --------------------------------------------------------
 
-// moveCooldownFor returns the move cooldown in milliseconds for the given speed.
-// Formula: 1000 / (speed × 2) = 500 / speed ms.
-func moveCooldownFor(speed int) int { return 500 / speed }
+// moveCooldownFor returns the move cooldown in milliseconds for the given
+// speed, looked up from e.moveCooldownTicks (item 252) rather than computed
+// from a formula — see DefaultMoveCooldownTicks for why a formula against a
+// fixed tick size can't hit 5 evenly-spaced values. Always an exact multiple
+// of TickMs, so the tick-by-tick cooldown decrement in applyAction produces
+// precisely that many ticks between moves, with no rounding surprises.
+func (e *Engine) moveCooldownFor(speed int) int {
+	return e.moveCooldownTicks[speedIndex(speed)] * TickMs
+}
+
+// speedIndex clamps speed to the valid 1-5 range and returns a 0-based index.
+func speedIndex(speed int) int {
+	if speed < 1 {
+		return 0
+	}
+	if speed > 5 {
+		return 4
+	}
+	return speed - 1
+}
 
 // fireCooldownFor returns the fire cooldown in milliseconds for the given fireRate.
 // Formula: 1000 / (fireRate × 0.5) = 2000 / fireRate ms.
@@ -166,7 +207,7 @@ func (e *Engine) applyAction(idx int, action tankmaze.Action, crashed bool) []pr
 		if isOpen(e.grid, next) {
 			t.pos = next
 			t.moveCount++
-			t.moveCooldownMs = moveCooldownFor(t.cfg.Speed)
+			t.moveCooldownMs = e.moveCooldownFor(t.cfg.Speed)
 		} else if e.wallHitDamage > 0 {
 			// Tank attempted to move into a wall — deal self-inflicted damage.
 			t.hp = max(0, t.hp-e.wallHitDamage)

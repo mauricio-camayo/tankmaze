@@ -198,7 +198,12 @@ export const patchGameDay = (
     forcedMapIds?: string[];
     randomMaps?: boolean;
   },
-) => request<GameDay>(`/gamedays/${gameDayId}`, { method: 'PATCH', body: JSON.stringify(body) });
+  // rescheduleFailures (item 254): present only when the DB schedule update
+  // succeeded but one or more phases' EventBridge triggers could not be
+  // synced to match — the admin edit still "succeeded" but didn't fully
+  // take effect. Names the affected phases so the caller can warn instead of
+  // showing a plain success.
+) => request<GameDay & { rescheduleFailures?: string[] }>(`/gamedays/${gameDayId}`, { method: 'PATCH', body: JSON.stringify(body) });
 export const overrideGameDayPhase = (
   gameDayId: string,
   phaseOverride: Record<string, 'upcoming' | 'running' | 'complete' | 'cancelled'>,

@@ -416,6 +416,47 @@ func (e *Engine) resolveCollision() {
 
 Collision is still not counted as a `Fire` action — `shotsFired`/`hits` accuracy stats are untouched — and both tanks are still pushed back to their pre-move position exactly as before.
 
+### 4.5 Movement Cooldown (Speed Stat)
+
+Resolved in `packages/backend/internal/engine/physics.go`, following the exact precedent §4.4 already set for `COLLISION_DAMAGE_TABLE`: `moveCooldownFor` is no longer a pure `500/speed` formula. It's now a method that looks up an explicit ticks-between-moves table:
+
+```go
+// engine.go
+type Engine struct {
+    // ...
+    moveCooldownTicks [5]int // ticks between moves, indexed by Speed-1
+}
+
+// New() defaults this to DefaultMoveCooldownTicks = [5]int{5, 4, 3, 2, 1}.
+// Override with the functional option:
+func WithMoveCooldownTicks(table [5]int) Option
+
+// physics.go
+func (e *Engine) moveCooldownFor(speed int) int {
+    return e.moveCooldownTicks[speedIndex(speed)] * TickMs
+}
+
+// speedIndex clamps to the valid 1-5 range, mirroring the existing armorIndex helper.
+func speedIndex(speed int) int { /* ... */ }
+
+// fireCooldownFor is untouched — it never had this problem (see below).
+func fireCooldownFor(fireRate int) int { return 2000 / fireRate }
+```
+
+A tank still sets its cooldown to `moveCooldownFor(speed)` immediately after a successful move, and the engine still decrements every tank's cooldown by a flat `TickMs` (100ms) once per tick, floored at zero. A tank may move again only once its cooldown reads exactly 0. What changed is that the cooldown value itself is now a direct ticks-between-moves lookup rather than a millisecond formula subject to tick-boundary rounding.
+
+`MoveCooldownTicksFromEnv()` reads a `MOVE_COOLDOWN_TICKS` env var — 5 comma-separated non-negative ints — falling back to the default table on any malformation, the same convention as `CollisionDamageTableFromEnv()`. Wired into all three engine call sites that already wire the collision-damage option: `cmd/match-runner/main.go` (a new `moveCooldownTicks [5]int` handler field, set from `engine.MoveCooldownTicksFromEnv()` in `main()`), `cmd/localserver/match.go`, and `cmd/matchdebug/main.go` (both call `engine.WithMoveCooldownTicks(engine.MoveCooldownTicksFromEnv())` inline).
+
+**Why `{5, 4, 3, 2, 1}` specifically.** The old formula, once rounded up to the engine's fixed 100ms tick boundary (`ceil(500/speed/100)`), put both Speed 3 and Speed 4 at 2 ticks between moves — identical, meaning a stat point spent going Speed 3→4 bought literally nothing (§3.6/functional spec has the full tick-by-tick derivation of the old bug). `{5,4,3,2,1}` is the *tightest possible* fix that keeps Speed 5 at its existing 1-tick (every-tick, 100% duty cycle) floor and Speed 1 at its existing 5-tick ceiling unchanged — it's the only set of 5 distinct, strictly-decreasing positive integers that fits inside that same [1,5] range once those two endpoints are held fixed. There is no integer strictly between 2 and 3, so Speed 2 and/or Speed 3 necessarily had to move to make room — this was proven by working through the constraint, not guessed at.
+
+**Balance consequence.** Speed 2 (3→4 ticks between moves) and Speed 3 (2→3 ticks) now move measurably slower than they did under the old, buggy formula; Speed 1, Speed 4, and Speed 5 are unchanged. Any existing tank sitting at Speed 2 or Speed 3 — e.g. the player-authored "Sniper" tank, currently Speed 2 — will feel this.
+
+**Why `fireCooldownFor` was left alone.** It never had this flaw: `2000/fireRate` across FireRate 1–5 resolves to 20, 10, 7, 5, 4 ticks respectively — all five values distinct, no wasted point. This is a coincidence of 2000 dividing more evenly across 1–5 relative to the 100ms tick than 500 does, not something inherent to the tick-cooldown mechanic; nothing here structurally prevents FireRate's own base constant from producing the same collision under a different tick length or stat range in the future.
+
+**Verification.** New regression test `TestMove_SpeedCooldownTable` in `packages/backend/internal/engine/engine_test.go` — table-driven across Speed 1–5, asserts the exact expected move count over a fixed 20-tick window ({4, 5, 7, 10, 20} moves respectively) *and* explicitly asserts `got[3] != got[4]` (the core bug) with a named failure message calling out a regression back to the dead zone. Pre-existing engine tests (`TestMove_CooldownPreventsDuplicateMove`, which uses Speed 1 — unaffected by this change) still pass unmodified. `go build`/`go vet`/`go test ./...` clean across the whole backend.
+
+**Not yet committed to git, and not pushed or deployed** — this fix exists only in this session's working tree; the match engine currently running in any deployed environment still has the Speed 3/4 dead zone described above.
+
 ---
 
 ## 5. Lambda Functions
@@ -535,6 +576,31 @@ Single HTTP API (REST) Lambda serving nearly every route below (ADR-004/ADR-005-
 | `GET` | `/gameday-series` | List recurring series (admin only, §6.8/functional spec) |
 | `POST` | `/gameday-series` | Create a series; materializes its first occurrence immediately (admin only) |
 | `DELETE` | `/gameday-series/{id}` | Cancel a series — stops future materialization only (admin only) |
+
+**Fixed — Game Day display name no longer computes its date suffix in UTC only (PRIORITIES.md item 253):** `gameDayDisplayName` (backend, `~line 2230`) and the stored `db.GameDay.Name` field are **deliberately untouched** — other backend logic (PATCH's base-name-preservation via `gameDayBaseName`, potential search/lookup by exact stored name) depends on that stored value staying stable, and changing backend storage/naming logic was judged out of scope and riskier than necessary for what is a purely cosmetic display bug. The fix is frontend-only.
+
+New file `packages/frontend/src/utils/gameDayName.ts` exports two functions: `gameDayBaseName(displayName)` (strips the `" · <date suffix>"` the backend appends — moved here from a local duplicate that used to live in `GameDayList.tsx`, now the single shared implementation) and `localGameDayName(name, roundRobinISO, finalISO)`, which recomputes the *displayed* date suffix client-side using `toLocaleDateString(undefined, { month: 'short', day: 'numeric' })` — the viewer's local timezone, no explicit `timeZone` override — mirroring the exact locale-formatting convention `GameDay.tsx` already uses for every other schedule timestamp on the page, instead of the backend's UTC-only formatting. Wired into every place a Game Day's name is rendered to a viewer: `packages/frontend/src/pages/GameDay.tsx` (page header), `packages/frontend/src/pages/GameDayList.tsx` (admin list row), and `packages/frontend/src/pages/Dashboard.tsx` (registered-Game-Days card). `GameDayList.tsx`'s own local `gameDayBaseName` duplicate was deleted in favor of the shared one.
+
+This is a distinct fix from item 95's (`gameDayBaseName`/name-recompute-on-patch), which handles `roundRobinAt` and `finalAt` falling on *different* calendar days — 95's logic is unrelated and unchanged. Still cosmetic, as before — every scheduling, match, and bracket computation continues to use the real UTC timestamps throughout; only the human-readable name string was ever affected.
+
+**Verification:** `tsc --noEmit` and `vite build` both clean.
+
+**Not yet committed to git, and not pushed or deployed** — this fix exists only in this session's working tree; the currently deployed frontend still computes the displayed date suffix from the backend's UTC-only name.
+
+**Fixed — `upsertSchedule`'s past-time guard no longer fails silently (PRIORITIES.md item 254):** two parts, both in `packages/backend/cmd/tank-api/main.go`.
+
+1. **Upfront validation (new).** `patchGameDay` now rejects the PATCH outright with `400 Bad Request` when any *newly-set* phase time (`registrationCloseAt`/`roundRobinAt`/`finalAt` — only fields actually present in the request body, not existing untouched ones) isn't at least `minScheduleLeadTime` (a new package constant, 60 seconds) past `time.Now()` at validation time — before any DynamoDB write happens. This catches the exact failure mode confirmed live below: editing a Game Day to start *sooner* is precisely the scenario most likely to land a time that's already at-or-past "now" by the moment the Lambda actually processes the request.
+2. **Failure surfacing (defense in depth)**, for the AWS-API-error paths validation can't catch. `upsertSchedule`'s signature changed from no return value to `error` — it now returns a real error (instead of only `log.Printf`) both for its internal past-time guard (`if !at.After(time.Now())`, kept as a second line of defense) and for genuine `UpdateSchedule`/`CreateSchedule` AWS API failures. `patchGameDay`'s reschedule loop (previously fire-and-forget) now collects any returned errors via a small `trackReschedule` closure into a `rescheduleFailures []string` slice, named by phase (`registration_close`, `round_robin`, `final`, `elimination_r1`..`r5`). When non-empty, the `200 OK` response body is a small anonymous struct embedding `db.GameDay` plus an additional `rescheduleFailures` JSON field — an additive, non-breaking response shape, since existing frontend code reading `gameDay.schedule`/`.name`/etc. is unaffected by the embedded struct flattening those fields identically. The DB write itself still succeeded, so this is a warning alongside a real success, not a different status code.
+
+Frontend: `packages/frontend/src/services/api.ts`'s `patchGameDay` return type widened to `GameDay & { rescheduleFailures?: string[] }`. `packages/frontend/src/pages/GameDayList.tsx`'s edit-save handler checks this field after a successful PATCH and, if present, shows it via the existing form error-message state (listing the affected phases, telling the admin those phases may still run at their old time and to try editing again) and keeps the edit form open rather than treating the save as fully complete.
+
+**Confirmed live** on gameday `1073500c-72c0-4524-9c0f-156380eb0359` ("Nerf or Nothing", 2026-08-29): created with round robin `21:05:00Z`/final `21:10:00Z`, all 4 EventBridge rules (`-reg-close`, `-rr`, `-elim-r1`, `-final`) matching the DB record at creation. The admin then edited the schedule earlier — round robin → `20:20:00Z`, final → `20:25:00Z` — explicitly to start sooner. `GET /gamedays/{id}` confirmed the DB record updated correctly, but `scheduler:GetSchedule` on all 4 rules showed them unchanged at the original times, `LastModificationDate` still identical to `CreationDate` — proving `upsertSchedule` silently skipped every one of them. The gameday later showed as generically "stuck" (`isStuck()` in `GameDayList.tsx`), with nothing connecting the symptom back to the silently-failed reschedule. This live-evidence trail is what the fix above closes; see item 254's PRIORITIES.md entry for the full trail.
+
+This is a residual gap in item 128's original fix (which added `upsertSchedule`/EventBridge sync to `patchGameDay` in the first place) — 128 made the sync happen at all; 254 closes the specific silent-failure mode left inside that sync path.
+
+**Verification:** `go build`/`go vet`/`go test ./...` clean; `tsc --noEmit`/`vite build` clean.
+
+**Not yet committed to git, and not pushed or deployed** — this fix exists only in this session's working tree; the currently deployed `tank-api` still has the silent-failure behavior described in the confirmed-live evidence above.
 
 **Maps**
 

@@ -95,6 +95,15 @@ const (
 	maxTankNameLen    = 64
 	testMatchTTLDays  = 7
 	tickLogPresignTTL = 15 * time.Minute
+	// minScheduleLeadTime is the minimum gap a Game Day phase's scheduled
+	// time must have over "now" at creation/edit-validation time. Below this,
+	// by the time the request finishes processing the target time could
+	// already be at or past "now" — upsertSchedule's own past-time guard
+	// would then silently skip rescheduling EventBridge (item 254). Catching
+	// it here, before any write happens, turns that into an immediate,
+	// actionable 400 instead of a plausible-looking success that silently
+	// doesn't take effect.
+	minScheduleLeadTime = 60 * time.Second
 )
 
 // ---- Request / response body types ------------------------------------------
@@ -2482,13 +2491,22 @@ func (h *handler) cancelGameDaySeries(ctx context.Context, req events.APIGateway
 // upsertSchedule creates or updates an EventBridge Scheduler schedule so that
 // the phase fires at the given time. It is best-effort: errors are logged but
 // do not surface to the caller. Schedules in the past are skipped.
-func (h *handler) upsertSchedule(ctx context.Context, name, phase, gameDayID string, at time.Time) {
+// upsertSchedule creates or updates the named EventBridge schedule. Returns
+// nil when the scheduler integration isn't configured at all (a deliberate
+// deployment-mode branch, e.g. localserver — not a failure the caller needs
+// to know about). Any other early return is a real failure to sync
+// EventBridge with the caller's intent and is now returned as an error
+// (item 254) instead of only being logged — the caller (patchGameDay) surfaces
+// it in the response so an admin edit can never look like it succeeded while
+// silently leaving the real trigger untouched.
+func (h *handler) upsertSchedule(ctx context.Context, name, phase, gameDayID string, at time.Time) error {
 	if h.schedulerSvc == nil || h.schedulerRoleArn == "" || h.tournamentSchedulerArn == "" {
-		return
+		return nil
 	}
 	if !at.After(time.Now()) {
-		log.Printf("upsertSchedule %s: time is in the past — skipping", name)
-		return
+		err := fmt.Errorf("target time %s is not in the future", at.UTC().Format(time.RFC3339))
+		log.Printf("upsertSchedule %s: %v — skipping", name, err)
+		return err
 	}
 	expr := "at(" + at.UTC().Format("2006-01-02T15:04:05") + ")"
 	payload, _ := json.Marshal(map[string]string{"gameDayId": gameDayID, "phase": phase})
@@ -2512,12 +2530,12 @@ func (h *handler) upsertSchedule(ctx context.Context, name, phase, gameDayID str
 		ActionAfterCompletion:      schedulertypes.ActionAfterCompletionDelete,
 	})
 	if err == nil {
-		return
+		return nil
 	}
 	var notFound *schedulertypes.ResourceNotFoundException
 	if !errors.As(err, &notFound) {
 		log.Printf("update schedule %s: %v", name, err)
-		return
+		return fmt.Errorf("update schedule: %w", err)
 	}
 	// Schedule doesn't exist (already fired or was never created) — create it.
 	if _, createErr := h.schedulerSvc.CreateSchedule(ctx, &schedulersvc.CreateScheduleInput{
@@ -2530,7 +2548,9 @@ func (h *handler) upsertSchedule(ctx context.Context, name, phase, gameDayID str
 		ActionAfterCompletion:      schedulertypes.ActionAfterCompletionDelete,
 	}); createErr != nil {
 		log.Printf("create schedule %s (after update 404): %v", name, createErr)
+		return fmt.Errorf("create schedule: %w", createErr)
 	}
+	return nil
 }
 
 func (h *handler) deleteGameDay(ctx context.Context, req events.APIGatewayV2HTTPRequest, gameDayID string) (events.APIGatewayV2HTTPResponse, error) {
@@ -2660,6 +2680,26 @@ func (h *handler) patchGameDay(ctx context.Context, req events.APIGatewayV2HTTPR
 		}
 	}
 
+	// Reject up front (item 254) any newly-set phase time that isn't
+	// comfortably in the future — by request-processing time it could
+	// already be at or past "now", which would make upsertSchedule silently
+	// skip rescheduling EventBridge later while this handler still reports
+	// success. Only fields actually present in this PATCH are checked; an
+	// existing, already-past field left untouched is fine.
+	leadCutoff := time.Now().Add(minScheduleLeadTime)
+	for _, f := range []struct{ label, val string }{
+		{"registrationCloseAt", body.RegistrationCloseAt},
+		{"roundRobinAt", body.RoundRobinAt},
+		{"finalAt", body.FinalAt},
+	} {
+		if f.val == "" {
+			continue
+		}
+		if t, ok := parseAt(f.val); ok && !t.After(leadCutoff) {
+			return errResp(http.StatusBadRequest, fmt.Sprintf("%s must be at least %s in the future", f.label, minScheduleLeadTime)), nil
+		}
+	}
+
 	// Validate ordering on the merged schedule.
 	mergedRegClose := existing.Schedule.RegistrationClose
 	mergedRRAt := existing.Schedule.RoundRobin
@@ -2735,29 +2775,46 @@ func (h *handler) patchGameDay(ctx context.Context, req events.APIGatewayV2HTTPR
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
 
-	// Sync EventBridge schedules for any rescheduled phases. Best-effort:
-	// errors are logged inside upsertSchedule and don't fail the response.
+	// Sync EventBridge schedules for any rescheduled phases. The DB write
+	// above already succeeded, so a sync failure here doesn't fail the
+	// response — but (item 254) it's now collected and returned in
+	// rescheduleFailures rather than only logged, so an admin can never see
+	// a plain success when the real trigger didn't actually move.
+	var rescheduleFailures []string
+	trackReschedule := func(phase string, err error) {
+		if err != nil {
+			log.Printf("patch gameday %s: reschedule %s: %v", gameDayID, phase, err)
+			rescheduleFailures = append(rescheduleFailures, phase)
+		}
+	}
 	if body.RegistrationCloseAt != "" {
 		if rc, ok := parseAt(body.RegistrationCloseAt); ok {
-			h.upsertSchedule(ctx, gameDayID+"-reg-close", "registration_close", gameDayID, rc)
+			trackReschedule("registration_close", h.upsertSchedule(ctx, gameDayID+"-reg-close", "registration_close", gameDayID, rc))
 		}
 	}
 	if body.RoundRobinAt != "" {
 		if rr, ok := parseAt(body.RoundRobinAt); ok {
-			h.upsertSchedule(ctx, gameDayID+"-rr", "round_robin", gameDayID, rr)
+			trackReschedule("round_robin", h.upsertSchedule(ctx, gameDayID+"-rr", "round_robin", gameDayID, rr))
 		}
 	}
 	if body.FinalAt != "" {
 		fn, _ := parseAt(body.FinalAt)
-		h.upsertSchedule(ctx, gameDayID+"-final", "final", gameDayID, fn)
+		trackReschedule("final", h.upsertSchedule(ctx, gameDayID+"-final", "final", gameDayID, fn))
 		for i, t := range patchElimTimes {
-			h.upsertSchedule(ctx, fmt.Sprintf("%s-elim-r%d", gameDayID, i+1), fmt.Sprintf("elimination_r%d", i+1), gameDayID, t)
+			phase := fmt.Sprintf("elimination_r%d", i+1)
+			trackReschedule(phase, h.upsertSchedule(ctx, fmt.Sprintf("%s-elim-r%d", gameDayID, i+1), phase, gameDayID, t))
 		}
 	}
 
 	gd, err := h.store.GetGameDay(ctx, gameDayID)
 	if err != nil {
 		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	if len(rescheduleFailures) > 0 {
+		return jsonResp(http.StatusOK, struct {
+			db.GameDay
+			RescheduleFailures []string `json:"rescheduleFailures"`
+		}{gd, rescheduleFailures}), nil
 	}
 	return jsonResp(http.StatusOK, gd), nil
 }

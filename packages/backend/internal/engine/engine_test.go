@@ -117,6 +117,43 @@ func TestMove_CooldownPreventsDuplicateMove(t *testing.T) {
 
 // ---- Rotation ---------------------------------------------------------------
 
+// TestMove_SpeedCooldownTable is the regression test for item 252: verifies
+// DefaultMoveCooldownTicks ({5,4,3,2,1} ticks between moves for Speed 1-5)
+// gives every speed level a distinct move count over the same window —
+// under the old `500/speed` formula, Speed 3 and Speed 4 both landed on 2
+// ticks between moves (tick-quantization rounded both up to the same
+// boundary), so a tank build spending a stat point going Speed3→4 bought
+// literally nothing. This must never regress back to that collision.
+func TestMove_SpeedCooldownTable(t *testing.T) {
+	const ticks = 20
+	// Expected move count after `ticks` consecutive Move attempts, one per
+	// tick, given DefaultMoveCooldownTicks = {5,4,3,2,1}: a tank moves on
+	// its first attempt, then every `ticksBetween` calls after that.
+	want := map[int]int{1: 4, 2: 5, 3: 7, 4: 10, 5: 20}
+
+	got := make(map[int]int, 5)
+	for speed := 1; speed <= 5; speed++ {
+		g := openGrid()
+		cfg := tankmaze.TankConfig{Name: "t", Speed: speed, SensorRange: 3, Damage: 3, Armor: 3, FireRate: 3}
+		e := New(g, cfg, balancedCfg(), 200, 1, 0)
+		act := tankmaze.Action{Type: tankmaze.Move, Direction: tankmaze.Forward}
+		for i := 0; i < ticks; i++ {
+			e.Step(act, idle(), false, false)
+		}
+		got[speed] = e.tanks[0].moveCount
+	}
+
+	for speed := 1; speed <= 5; speed++ {
+		if got[speed] != want[speed] {
+			t.Errorf("Speed %d: got %d moves in %d ticks, want %d", speed, got[speed], ticks, want[speed])
+		}
+	}
+	// The actual bug: Speed 3 and Speed 4 must no longer be identical.
+	if got[3] == got[4] {
+		t.Errorf("Speed 3 and Speed 4 produced the same move count (%d) — the item 252 dead-zone regressed", got[3])
+	}
+}
+
 func TestRotate_RightClockwise(t *testing.T) {
 	g := openGrid()
 	e := New(g, balancedCfg(), balancedCfg(), 200, 1, 0)

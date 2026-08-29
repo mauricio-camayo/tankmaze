@@ -3,6 +3,7 @@ import { Link, useBlocker, useLocation } from 'react-router-dom';
 import Layout, { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
 import { listGameDays, createGameDay, createGameDaySeries, cancelGameDaySeries, deleteGameDay, patchGameDay, listMaps, overrideGameDayPhase } from '../services/api';
 import { useAuthStore } from '../store/authStore';
+import { gameDayBaseName, localGameDayName } from '../utils/gameDayName';
 import type { GameDay, GameDayPhaseStatus, GameDaySeriesFrequency, GameMap } from '../types';
 
 function phaseOverallStatus(gd: GameDay): 'upcoming' | 'active' | 'complete' | 'past' {
@@ -51,12 +52,6 @@ function isoToLocalDatetime(iso: string): string {
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-/** Strip the " · <date suffix>" appended by the backend. */
-function gameDayBaseName(displayName: string): string {
-  const idx = displayName.lastIndexOf(' · ');
-  return idx >= 0 ? displayName.slice(0, idx) : displayName;
 }
 
 function MapSelector({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
@@ -162,7 +157,7 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
     setSaving(true);
     setErr(null);
     try {
-      await patchGameDay(gd.gameDayId, {
+      const updated = await patchGameDay(gd.gameDayId, {
         ...(fields.name.trim() ? { name: fields.name.trim() } : {}),
         registrationCloseAt: new Date(fields.registrationClose).toISOString(),
         roundRobinAt: new Date(fields.roundRobin).toISOString(),
@@ -171,6 +166,15 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
         randomMaps,
         forcedMapIds,
       });
+      // Item 254: the schedule saved, but one or more phases' real trigger
+      // may not have — surface this instead of a plain silent success.
+      if (updated.rescheduleFailures?.length) {
+        setErr(
+          `Saved, but couldn't reschedule: ${updated.rescheduleFailures.join(', ')}. ` +
+          `Those phase(s) may still run at their old time — try editing again.`,
+        );
+        return false;
+      }
       return true;
     } catch (e2: unknown) {
       setErr(e2 instanceof Error ? e2.message : 'Failed to save');
@@ -350,9 +354,11 @@ function GameDayRow({ gd, onDeleted, onRefresh, autoOpen }: { gd: GameDay; onDel
               </span>
             )}
             <span style={{ color: '#e7f1f7', fontSize: 15, fontWeight: 600 }}>
-              {gd.name || new Date(gd.schedule.roundRobin).toLocaleDateString(undefined, {
-                weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
-              })}
+              {gd.name
+                ? localGameDayName(gd.name, gd.schedule.roundRobin, gd.schedule.final)
+                : new Date(gd.schedule.roundRobin).toLocaleDateString(undefined, {
+                    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+                  })}
             </span>
             {gd.seriesId && (
               <span

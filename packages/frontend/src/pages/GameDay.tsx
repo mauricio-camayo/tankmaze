@@ -5,6 +5,7 @@ import { getGameDay, getTank, addRosterEntry, removeRosterEntry, listAiTanks, ad
 import { useAuthStore } from '../store/authStore';
 import { realTankId } from '../utils/tankId';
 import { competitionRanks } from '../utils/ranking';
+import { localGameDayName } from '../utils/gameDayName';
 import type { GameDay, BracketSlot, GameDayPhaseStatus, GameDayGroup, GroupMatchResult, Tank, TankVersion, GameMap } from '../types';
 
 const BRACKET_LABELS: Record<string, string> = {
@@ -887,7 +888,7 @@ export default function GameDayPage() {
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <h1 style={{ margin: '0 0 4px', color: '#e7f1f7', fontSize: 22, fontWeight: 700 }}>
-            {gameDay.name ? `${gameDay.name}` : 'Game Day'}
+            {gameDay.name ? localGameDayName(gameDay.name, gameDay.schedule.roundRobin, gameDay.schedule.final) : 'Game Day'}
           </h1>
           <div style={{ color: '#5b87a3', fontSize: 13 }}>
             {new Date(schedule.roundRobin).toLocaleDateString(undefined, {

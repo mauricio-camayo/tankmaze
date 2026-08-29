@@ -95,13 +95,14 @@ type Engine struct {
 	projSpeed            int    // cells a projectile travels per tick
 	wallHitDamage        int    // HP lost when a tank attempts to move into a wall
 	collisionDamageTable [5]int // HP taken in a collision, indexed by own Armor-1 (item 247)
+	moveCooldownTicks    [5]int // ticks between moves, indexed by own Speed-1 (item 252)
 }
 
 // Option configures optional Engine behavior not covered by New's required
-// arguments — currently just collision damage. Added as options rather than
-// more required New() parameters so the ~30 existing call sites across
-// production code and tests that don't care about this knob don't all need
-// updating every time a new tunable is added.
+// arguments — currently collision damage and the move-cooldown table. Added
+// as options rather than more required New() parameters so the ~30 existing
+// call sites across production code and tests that don't care about a given
+// knob don't all need updating every time a new tunable is added.
 type Option func(*Engine)
 
 // WithCollisionDamageTable overrides the default collision damage table
@@ -111,6 +112,13 @@ func WithCollisionDamageTable(table [5]int) Option {
 	return func(e *Engine) { e.collisionDamageTable = table }
 }
 
+// WithMoveCooldownTicks overrides the default move-cooldown table
+// (DefaultMoveCooldownTicks). See MoveCooldownTicksFromEnv for the
+// production wiring and functional-spec.md §3.6 for the design rationale.
+func WithMoveCooldownTicks(table [5]int) Option {
+	return func(e *Engine) { e.moveCooldownTicks = table }
+}
+
 // DefaultCollisionDamageTable is the HP a tank takes in a collision at each
 // of its own armor levels 1–5 (item 247) — deliberately non-linear: higher
 // armor gives more-than-proportional protection, and Armor 5 reproduces the
@@ -118,6 +126,22 @@ func WithCollisionDamageTable(table [5]int) Option {
 // COLLISION_DAMAGE_TABLE is unset; see CollisionDamageTableFromEnv to
 // override it per-environment without a code change.
 var DefaultCollisionDamageTable = [5]int{15, 12, 9, 7, 5}
+
+// DefaultMoveCooldownTicks is the number of ticks a tank must wait between
+// moves at each of its own Speed levels 1–5 (item 252). Replaces the old
+// `500 / speed` formula, which — once rounded up to the engine's fixed
+// 100ms tick boundary — put both Speed 3 and Speed 4 at 2 ticks between
+// moves, making a Speed3→4 stat point buy literally nothing. {5,4,3,2,1} is
+// the tightest possible fix that still keeps Speed 5 at its existing 1-tick
+// (every-tick) floor and Speed 1 at its existing 5-tick ceiling — the only
+// set of 5 distinct, strictly-decreasing positive integers that fits inside
+// that unchanged [1,5] range. NOTE: this means Speed 2 (3→4 ticks) and
+// Speed 3 (2→3 ticks) now move measurably slower than they did under the
+// old, buggy formula — any existing tank sitting at Speed 2 or Speed 3 will
+// feel this. Used whenever MOVE_COOLDOWN_TICKS is unset; see
+// MoveCooldownTicksFromEnv to override it per-environment without a code
+// change.
+var DefaultMoveCooldownTicks = [5]int{5, 4, 3, 2, 1}
 
 // New initialises a match. Tank A spawns at SpawnA facing South; tank B spawns
 // at SpawnB facing North.
@@ -132,6 +156,7 @@ func New(grid maze.MazeGrid, cfgA, cfgB tankmaze.TankConfig, tickLimit, projSpee
 		projSpeed:            projSpeed,
 		wallHitDamage:        wallHitDamage,
 		collisionDamageTable: DefaultCollisionDamageTable,
+		moveCooldownTicks:    DefaultMoveCooldownTicks,
 	}
 	for _, opt := range opts {
 		opt(e)
