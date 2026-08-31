@@ -3,6 +3,8 @@ package db
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
@@ -265,4 +267,46 @@ func (s *Store) UpdateVersionStats(ctx context.Context, tankID, version string, 
 		ExpressionAttributeValues: expr.Values(),
 	})
 	return err
+}
+
+// LatestMajorVersion returns the version string of the highest major version
+// among versions (VersionType == "major", e.g. "v1", "v2" — never a minor
+// sub-version like "v2.1", since registration always requires a major
+// version — see cmd/tank-api's addRosterEntry), or ok=false if versions has
+// no major version at all. Used by cmd/series-materializer (item 256) to
+// auto-register a tank's CURRENT version into a newly materialized recurring
+// Game Day occurrence, rather than freezing on whatever version was
+// registered for a prior occurrence.
+func LatestMajorVersion(versions []TankVersion) (latest string, ok bool) {
+	highest := -1
+	for _, v := range versions {
+		if v.VersionType != "major" {
+			continue
+		}
+		maj, valid := parseMajorVersion(v.Version)
+		if !valid {
+			continue
+		}
+		if maj > highest {
+			highest = maj
+			latest = v.Version
+		}
+	}
+	return latest, highest >= 0
+}
+
+// parseMajorVersion parses a major-only version string like "v1" or "v12"
+// (no "." — a minor sub-version like "v1.2" is rejected). Mirrors
+// cmd/tank-api's parseVersion for the major-version case; kept separate
+// since the two live in different packages.
+func parseMajorVersion(v string) (major int, ok bool) {
+	s := strings.TrimPrefix(v, "v")
+	if strings.Contains(s, ".") {
+		return 0, false
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }
