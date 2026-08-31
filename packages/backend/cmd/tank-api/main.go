@@ -2580,13 +2580,29 @@ func (h *handler) deleteGameDay(ctx context.Context, req events.APIGatewayV2HTTP
 		gameDayID + "-elim-r5",
 		gameDayID + "-final",
 	}
+	// cleanupFailures (item 255) collects anything below that didn't fully
+	// clean up so the caller can be warned instead of a plain silent
+	// success — same pattern item 254 added for patchGameDay's
+	// rescheduleFailures.
+	var cleanupFailures []string
 	for _, name := range scheduleNames {
 		if _, delErr := h.schedulerSvc.DeleteSchedule(ctx, &schedulersvc.DeleteScheduleInput{
 			Name:      aws.String(name),
 			GroupName: aws.String("tankmaze-gamedays"),
 		}); delErr != nil {
-			// 404 is fine — schedule may have already fired and self-deleted.
-			log.Printf("delete schedule %s: %v (ignored)", name, delErr)
+			// ResourceNotFoundException is fine — the schedule already fired
+			// and self-deleted (ActionAfterCompletion: DELETE), or was never
+			// created. Anything else (throttling, a transient AWS error, a
+			// permissions failure) previously got silently swallowed the
+			// same way, leaving a stale EventBridge schedule alive after the
+			// admin was told the delete succeeded — mirrors upsertSchedule's
+			// error-typing (item 254).
+			var notFound *schedulertypes.ResourceNotFoundException
+			if errors.As(delErr, &notFound) {
+				continue
+			}
+			log.Printf("delete schedule %s: %v", name, delErr)
+			cleanupFailures = append(cleanupFailures, "schedule:"+name)
 		}
 	}
 
@@ -2594,14 +2610,16 @@ func (h *handler) deleteGameDay(ctx context.Context, req events.APIGatewayV2HTTP
 		log.Printf("delete gameday %s: %v", gameDayID, err)
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
-	var cleanupFailed []string
 	for _, t := range gd.RegisteredTanks {
 		if err := h.store.RemoveVersionRegistration(ctx, t.TankID, t.Version, gameDayID); err != nil {
-			cleanupFailed = append(cleanupFailed, t.TankID+"@"+t.Version)
+			cleanupFailures = append(cleanupFailures, "registration:"+t.TankID+"@"+t.Version)
 		}
 	}
-	if len(cleanupFailed) > 0 {
-		log.Printf("delete gameday %s: failed to clean up registrations for %v (stale entries remain)", gameDayID, cleanupFailed)
+	if len(cleanupFailures) > 0 {
+		log.Printf("delete gameday %s: cleanup failures %v (stale entries remain)", gameDayID, cleanupFailures)
+		return jsonResp(http.StatusOK, struct {
+			CleanupFailures []string `json:"cleanupFailures"`
+		}{cleanupFailures}), nil
 	}
 	return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusNoContent}, nil
 }

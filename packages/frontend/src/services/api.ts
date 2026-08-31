@@ -163,8 +163,15 @@ export const createGameDay = (body: {
   forcedMapIds?: string[];
   randomMaps?: boolean;
 }) => request<GameDay>('/gamedays', { method: 'POST', body: JSON.stringify(body) });
-export const deleteGameDay = (gameDayId: string, force?: boolean) =>
-  request<void>(`/gamedays/${gameDayId}${force ? '?force=true' : ''}`, { method: 'DELETE' });
+export const deleteGameDay = (
+  gameDayId: string,
+  force?: boolean,
+  // cleanupFailures (item 255): present only when the game day record itself
+  // was deleted successfully but one or more of its EventBridge schedules or
+  // tank version registrations could not be cleaned up (e.g. a transient AWS
+  // error, distinct from the benign "already fired and self-deleted" case).
+  // Absent (204 No Content) on a fully clean delete.
+) => request<{ cleanupFailures?: string[] } | undefined>(`/gamedays/${gameDayId}${force ? '?force=true' : ''}`, { method: 'DELETE' });
 
 // Recurring Game Day series (item 238)
 export const listGameDaySeries = () => request<GameDaySeries[]>('/gameday-series');

@@ -283,7 +283,7 @@ function isStuck(gd: GameDay): boolean {
   return past && neverStarted;
 }
 
-function GameDayRow({ gd, onDeleted, onRefresh, autoOpen }: { gd: GameDay; onDeleted: () => void; onRefresh: () => void; autoOpen?: boolean }) {
+function GameDayRow({ gd, onDeleted, onRefresh, autoOpen }: { gd: GameDay; onDeleted: (cleanupFailures?: string[]) => void; onRefresh: () => void; autoOpen?: boolean }) {
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [overriding, setOverriding] = useState(false);
@@ -317,8 +317,13 @@ function GameDayRow({ gd, onDeleted, onRefresh, autoOpen }: { gd: GameDay; onDel
     if (!confirmDelete) { setConfirmDelete(true); return; }
     setDeleting(true);
     try {
-      await deleteGameDay(gd.gameDayId, !isUpcoming);
-      onDeleted();
+      const result = await deleteGameDay(gd.gameDayId, !isUpcoming);
+      // Item 255: the game day record itself is gone either way, but one or
+      // more of its EventBridge schedules or tank registrations may not have
+      // cleaned up. This row is about to unmount once the list reloads, so
+      // the warning has to travel up to the parent rather than live in local
+      // state here.
+      onDeleted(result?.cleanupFailures?.length ? result.cleanupFailures : undefined);
     } catch {
       setDeleting(false);
       setConfirmDelete(false);
@@ -745,12 +750,27 @@ export default function GameDayList() {
   const [gameDays, setGameDays] = useState<GameDay[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deleteWarning, setDeleteWarning] = useState<string | null>(null);
 
   function load() {
     listGameDays()
       .then((data) => setGameDays(data ?? []))
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
+  }
+
+  // Item 255: a game day delete can succeed while leaving stale EventBridge
+  // schedules or tank registrations behind — surface that instead of a
+  // plain silent success, since the deleted row's own state doesn't survive
+  // the list reload that follows.
+  function handleGameDayDeleted(cleanupFailures?: string[]) {
+    setDeleteWarning(
+      cleanupFailures?.length
+        ? `Deleted, but cleanup didn't fully finish: ${cleanupFailures.join(', ')}. ` +
+          `Stale entries may remain — safe to ignore for a test game day.`
+        : null,
+    );
+    load();
   }
 
   useEffect(() => { load(); }, []);
@@ -771,6 +791,18 @@ export default function GameDayList() {
         </div>
       )}
 
+      {deleteWarning && (
+        <div style={{ ...cardStyle, borderColor: '#5a3a18', color: '#ffcf9b', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <span>{deleteWarning}</span>
+          <button
+            onClick={() => setDeleteWarning(null)}
+            style={{ ...ghostButtonStyle, borderColor: '#5a3a18', color: '#ffcf9b', cursor: 'pointer', flexShrink: 0 }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {!loading && !error && gameDays.length === 0 && (
         <div style={{ ...cardStyle, textAlign: 'center', padding: '48px 24px', color: '#5b87a3' }}>
           No game days scheduled yet.
@@ -784,7 +816,7 @@ export default function GameDayList() {
             return order[phaseOverallStatus(a)] - order[phaseOverallStatus(b)];
           })
           .map((gd) => (
-            <GameDayRow key={gd.gameDayId} gd={gd} onDeleted={load} onRefresh={load} autoOpen={editId === gd.gameDayId} />
+            <GameDayRow key={gd.gameDayId} gd={gd} onDeleted={handleGameDayDeleted} onRefresh={load} autoOpen={editId === gd.gameDayId} />
           ))}
       </div>
     </Layout>
