@@ -19,22 +19,28 @@ export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const [clock, setClock] = useState(() => formatNavClock(new Date()));
   const [menuOpen, setMenuOpen] = useState(false);
-  const [hasUnreadChat, setHasUnreadChat] = useState(false);
+  const [hasNotification, setHasNotification] = useState(false);
 
   useEffect(() => {
     const id = setInterval(() => setClock(formatNavClock(new Date())), 60_000);
     return () => clearInterval(id);
   }, []);
 
-  // Chat unread badge (item 223 Part 2) — low-frequency poll, mirrors the
-  // clock's interval pattern above. No server-side read receipts, so this
-  // just re-derives isUnread() per friend on every tick.
+  // Friends-nav notification badge (item 223 Part 2, broadened by item 258)
+  // — low-frequency poll, mirrors the clock's interval pattern above. No
+  // server-side read receipts, so this just re-derives isUnread() per
+  // friend on every tick. Originally chat-only (hasUnreadChat); item 258
+  // found that data.incoming (pending friend requests) was fetched here
+  // the whole time but never inspected, so an unanswered friend request
+  // showed no nav cue while an unread chat message did — now covers both.
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
     function check() {
       listFriends()
-        .then((data) => { if (!cancelled) setHasUnreadChat(data.friends.some(isUnread)); })
+        .then((data) => {
+          if (!cancelled) setHasNotification(data.friends.some(isUnread) || data.incoming.length > 0);
+        })
         .catch(() => { /* leave as-is — non-critical */ });
     }
     check();
@@ -102,7 +108,7 @@ export default function Layout({ children }: LayoutProps) {
           {user && (
             <Link to="/friends" className="tm-navlink" style={{ ...navLinkStyle, position: 'relative' }}>
               Friends
-              {hasUnreadChat && (
+              {hasNotification && (
                 <span style={{
                   position: 'absolute', top: -2, right: -8, width: 6, height: 6,
                   borderRadius: '50%', background: 'var(--bp-hazard)',

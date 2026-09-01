@@ -849,11 +849,33 @@ export default function GameDayPage() {
     slots.forEach(({ tankId, tankName }) => { if (tankId && tankName) tankNameMap.set(tankId, tankName); });
   });
 
-  const standings = Object.entries(gameDay.placementPoints ?? {}).sort(([, a], [, b]) => b - a);
-  // Item 249: tied placements (equal points — placementPoints is already the
-  // server's own tier-derived value, see ranking-updater's bracketTiers/
-  // placementPoints) share one rank instead of arbitrary sequential numbers.
-  const standingRanks = competitionRanks(standings, ([, a], [, b]) => a === b);
+  // placementPoints is a coarse per-round tier (winner/runner-up/semifinal-
+  // losers/quarterfinal-losers all share one value each — see ranking-
+  // updater's bracketTiers), so every round-1 exit ties on it regardless of
+  // how that tank actually performed beforehand — e.g. a 6-1 group-stage
+  // leader landing in the same "5th" bucket as a 2-5 also-ran just because
+  // both lost their first bracket match. Break those ties with the tank's
+  // round-robin group record (points, then wins — same fields the group
+  // standings table itself sorts by, item 249) before falling back to a
+  // shared rank, so a real performance gap still shows up in Final Standings.
+  const groupStatsByTank = new Map<string, { points: number; wins: number }>();
+  (gameDay.groups ?? []).forEach((g) => {
+    g.standings?.forEach(({ tankId, points, wins }) => groupStatsByTank.set(tankId, { points, wins }));
+  });
+  const groupStatsFor = (tankId: string) => groupStatsByTank.get(tankId) ?? { points: 0, wins: 0 };
+
+  const standings = Object.entries(gameDay.placementPoints ?? {}).sort(([tankA, a], [tankB, b]) => {
+    if (b !== a) return b - a;
+    const gsA = groupStatsFor(tankA);
+    const gsB = groupStatsFor(tankB);
+    return gsB.points - gsA.points || gsB.wins - gsA.wins;
+  });
+  const standingRanks = competitionRanks(standings, ([tankA, a], [tankB, b]) => {
+    if (a !== b) return false;
+    const gsA = groupStatsFor(tankA);
+    const gsB = groupStatsFor(tankB);
+    return gsA.points === gsB.points && gsA.wins === gsB.wins;
+  });
   const showGroups = (gameDay.groups ?? []).length > 0;
   const showBracket = bracketRounds.length > 0;
   const showRoster = gameDay.phases.roundRobin.status === 'upcoming';
