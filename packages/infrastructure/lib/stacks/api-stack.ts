@@ -403,6 +403,17 @@ export class ApiStack extends Stack {
     }, 60);
     tables.gamedaySeries.grantReadWriteData(seriesMaterializer);
     tables.gamedays.grantReadWriteData(seriesMaterializer);
+    // item 259: carryForwardUserTanks reads each tank's current name
+    // (GetTank) and its version list (ListVersionsByTank), then writes a
+    // new registration (AddVersionRegistration) — table env vars were
+    // already wired via tableEnvVars(tables) above, but the IAM grants
+    // for these two tables were missed entirely, so every carry-forward
+    // attempt failed with AccessDeniedException on dynamodb:Query and was
+    // silently swallowed by the existing per-tank error handling. Same
+    // grant shape as matchRunner below, which touches these tables the
+    // same way (read-only tanks, read-write tankVersions).
+    tables.tanks.grantReadData(seriesMaterializer);
+    tables.tankVersions.grantReadWriteData(seriesMaterializer);
     seriesMaterializer.addToRolePolicy(new iam.PolicyStatement({
       actions: [
         'scheduler:CreateSchedule',
