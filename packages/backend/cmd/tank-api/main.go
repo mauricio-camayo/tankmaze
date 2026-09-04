@@ -782,6 +782,21 @@ func (h *handler) submitVersion(ctx context.Context, req events.APIGatewayV2HTTP
 		return errResp(http.StatusBadRequest, "source too large (max 1 MiB)"), nil
 	}
 
+	// Enforce compilation quota BEFORE creating any version record or S3
+	// object (item 260): a quota-exceeded submission must return 429 without
+	// side effects, so it never leaves behind a version permanently stuck at
+	// compileStatus "pending" with no build ever started for it.
+	cus, err := h.store.GetUserSettings(ctx, uid)
+	if err != nil {
+		log.Printf("get user settings for compile: %v", err)
+		return errResp(http.StatusInternalServerError, "internal error"), nil
+	}
+	cus, _ = db.ResetWindowIfExpired(cus)
+	_, compileLimit := db.TierLimits(cus.Tier)
+	if cus.CompilationsThisWindow >= compileLimit {
+		return errResp(http.StatusTooManyRequests, fmt.Sprintf("compilation limit reached (%d/%d for %s tier)", cus.CompilationsThisWindow, compileLimit, cus.Tier)), nil
+	}
+
 	versions, err := h.store.ListVersionsByTank(ctx, tankID)
 	if err != nil {
 		return errResp(http.StatusInternalServerError, "internal error"), nil
@@ -817,17 +832,7 @@ func (h *handler) submitVersion(ctx context.Context, req events.APIGatewayV2HTTP
 		return errResp(http.StatusInternalServerError, "internal error"), nil
 	}
 
-	// Enforce compilation quota; increment counter after version is committed.
-	cus, err := h.store.GetUserSettings(ctx, uid)
-	if err != nil {
-		log.Printf("get user settings for compile: %v", err)
-		return errResp(http.StatusInternalServerError, "internal error"), nil
-	}
-	cus, _ = db.ResetWindowIfExpired(cus)
-	_, compileLimit := db.TierLimits(cus.Tier)
-	if cus.CompilationsThisWindow >= compileLimit {
-		return errResp(http.StatusTooManyRequests, fmt.Sprintf("compilation limit reached (%d/%d for %s tier)", cus.CompilationsThisWindow, compileLimit, cus.Tier)), nil
-	}
+	// Increment counter after version is committed.
 	if incErr := h.store.IncrementCompilations(ctx, uid, cus.WindowStart); incErr != nil {
 		log.Printf("increment compilations: %v", incErr)
 	}
