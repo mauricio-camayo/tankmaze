@@ -36,7 +36,7 @@ function isAiTankId(id: string): boolean {
 // Draft cache keys are scoped by userId as well as tankId (item 222) — keyed
 // only by tankId, an edited-but-unsaved draft from one account leaked to any
 // other account that later opened the same tank on the same browser.
-function draftKey(kind: 'src' | 'cfg' | 'imports', userId: string, tankId: string): string {
+function draftKey(kind: 'src' | 'cfg' | 'imports' | 'compileLimit', userId: string, tankId: string): string {
   return `tankmaze-${kind}-${userId}-${tankId}`;
 }
 
@@ -610,6 +610,14 @@ export default function TankEditor() {
         }
         setSource(srcToSet);
 
+        // Compile-limit banner (item 260): persisted per-tank so it survives a
+        // reload or a later session instead of only lasting for the one live
+        // submit attempt that hit the 429 — cleared again on the next
+        // successful submit.
+        if (localStorage.getItem(draftKey('compileLimit', currentUser?.userId ?? '', tankId))) {
+          setCompileLimitReached(true);
+        }
+
         // Extra imports: prefer localStorage, then parse from S3 preamble.
         // Forks of AI tanks have their own converted source that has stdlib imports
         // stripped during the AI-to-tank conversion — fall back to parsing from the
@@ -832,10 +840,15 @@ export default function TankEditor() {
       const v = await submitVersion(id, buildSource(source, config, extraImports), config);
       setPendingVersion(v.version);
       setSaveStatus('polling');
+      if (compileLimitReached) {
+        setCompileLimitReached(false);
+        if (tankId && tankId !== 'new') localStorage.removeItem(draftKey('compileLimit', currentUser?.userId ?? '', tankId));
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Submit failed';
       if (msg.startsWith('429')) {
         setCompileLimitReached(true);
+        if (tankId && tankId !== 'new') localStorage.setItem(draftKey('compileLimit', currentUser?.userId ?? '', tankId), '1');
         setSaveStatus('idle');
       } else {
         setSaveStatus('failed');
@@ -1034,7 +1047,7 @@ export default function TankEditor() {
                 if (!gd || gd.phases.roundRobin.status !== 'upcoming') return null;
                 return (
                   <button key={gdId} onClick={() => handleWithdraw(gdId)} disabled={registering} style={ghostButtonStyle}>
-                    {registering ? '…' : `Withdraw ·${gdId.slice(-6)}`}
+                    {registering ? '…' : `Withdraw · ${gd.name ?? gdId.slice(-6)}`}
                   </button>
                 );
               })}
