@@ -94,6 +94,35 @@ func (h *handler) handle(ctx context.Context, _ map[string]interface{}) error {
 	return nil
 }
 
+// seriesMaterializationState scans existing (all GameDays, as returned by
+// ListGameDays) for this series' status relative to its NextOccurrenceAt slot
+// (item 262). It returns:
+//   - gd, alreadyMaterialized=true if a GameDay already exists for exactly
+//     series.NextOccurrenceAt (the "self-healing" dedup case: a prior tick
+//     materialized it but failed to advance the series).
+//   - pendingOther=true if a *different* GameDay for this series has a
+//     RoundRobin time still in the future relative to now — only one
+//     occurrence should ever sit ahead of "now" at a time, regardless of how
+//     far NextOccurrenceAt is inside the LEAD_TIME_DAYS cutoff, so this
+//     blocks materializing the next slot until that one fires.
+//
+// Pure and DB-free so it can be unit tested without a live DynamoDB.
+func seriesMaterializationState(series db.GameDaySeries, existing []db.GameDay, now time.Time) (gd db.GameDay, alreadyMaterialized, pendingOther bool) {
+	for _, g := range existing {
+		if g.SeriesID != series.SeriesID {
+			continue
+		}
+		if g.Schedule.RoundRobin == series.NextOccurrenceAt {
+			gd, alreadyMaterialized = g, true
+			continue
+		}
+		if t, err := time.Parse(time.RFC3339, g.Schedule.RoundRobin); err == nil && t.After(now) {
+			pendingOther = true
+		}
+	}
+	return gd, alreadyMaterialized, pendingOther
+}
+
 func (h *handler) materializeNext(ctx context.Context, series db.GameDaySeries) {
 	rrAt, err := time.Parse(time.RFC3339, series.NextOccurrenceAt)
 	if err != nil {
@@ -101,25 +130,19 @@ func (h *handler) materializeNext(ctx context.Context, series db.GameDaySeries) 
 		return
 	}
 
-	// Self-healing check: if a prior tick already materialized this exact
-	// occurrence but then failed to advance the series (e.g. a transient
-	// DynamoDB error right after Materialize succeeded), NextOccurrenceAt
-	// would still equal this occurrence's time on the next tick. Without
-	// this check that would materialize a second, duplicate GameDay for the
-	// same slot every tick until it happened to succeed.
+	// Fetches this series' status against the rest of the GameDay table —
+	// see seriesMaterializationState for what alreadyMaterialized (the
+	// original self-healing dedup check) and pendingOther (item 262) mean.
 	existing, err := h.store.ListGameDays(ctx)
 	if err != nil {
 		log.Printf("series %s: list gamedays for dedup check: %v", series.SeriesID, err)
 		return
 	}
-	var gd db.GameDay
-	alreadyMaterialized := false
-	for _, g := range existing {
-		if g.SeriesID == series.SeriesID && g.Schedule.RoundRobin == series.NextOccurrenceAt {
-			gd = g
-			alreadyMaterialized = true
-			break
-		}
+	gd, alreadyMaterialized, pendingOther := seriesMaterializationState(series, existing, time.Now())
+
+	if !alreadyMaterialized && pendingOther {
+		log.Printf("series %s: an earlier occurrence is still pending — waiting for it to fire before materializing %s", series.SeriesID, series.NextOccurrenceAt)
+		return
 	}
 
 	if !alreadyMaterialized {
