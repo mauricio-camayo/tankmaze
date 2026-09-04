@@ -1047,7 +1047,7 @@ export default function TankEditor() {
                 if (!gd || gd.phases.roundRobin.status !== 'upcoming') return null;
                 return (
                   <button key={gdId} onClick={() => handleWithdraw(gdId)} disabled={registering} style={ghostButtonStyle}>
-                    {registering ? '…' : `Withdraw ·${gdId.slice(-6)}`}
+                    {registering ? '…' : `Withdraw · ${gd.name ?? gdId.slice(-6)}`}
                   </button>
                 );
               })}
