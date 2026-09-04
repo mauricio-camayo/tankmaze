@@ -94,20 +94,41 @@ func (h *handler) handle(ctx context.Context, _ map[string]interface{}) error {
 	return nil
 }
 
+// gameDayIsDone reports whether a GameDay occurrence has actually finished —
+// its Final phase reached a terminal status — rather than merely having
+// reached its scheduled round-robin start time. "complete" is the normal
+// end of a tournament; "cancelled" is the other terminal state (e.g.
+// handleRegistrationClose cancels a Game Day with zero registered tanks, per
+// cmd/tournament-scheduler/main.go), and must count as done too or a series
+// with an occasionally-empty occurrence would stall forever. Every other
+// status ("upcoming", "running") means the occurrence is still in progress.
+func gameDayIsDone(g db.GameDay) bool {
+	return g.Phases.Final.Status == "complete" || g.Phases.Final.Status == "cancelled"
+}
+
 // seriesMaterializationState scans existing (all GameDays, as returned by
 // ListGameDays) for this series' status relative to its NextOccurrenceAt slot
 // (item 262). It returns:
 //   - gd, alreadyMaterialized=true if a GameDay already exists for exactly
 //     series.NextOccurrenceAt (the "self-healing" dedup case: a prior tick
 //     materialized it but failed to advance the series).
-//   - pendingOther=true if a *different* GameDay for this series has a
-//     RoundRobin time still in the future relative to now — only one
-//     occurrence should ever sit ahead of "now" at a time, regardless of how
-//     far NextOccurrenceAt is inside the LEAD_TIME_DAYS cutoff, so this
-//     blocks materializing the next slot until that one fires.
+//   - pendingOther=true if a *different* GameDay for this series hasn't
+//     finished yet (see gameDayIsDone) — only one occurrence should ever be
+//     outstanding at a time, regardless of how far NextOccurrenceAt is inside
+//     the LEAD_TIME_DAYS cutoff, so this blocks materializing the next slot
+//     until that one is actually done.
+//
+// Gating on gameDayIsDone rather than "has its round-robin start time
+// passed" matters because round-robin starting is not the same as the
+// occurrence finishing — elimination rounds and the final still run after
+// round-robin starts, so an occurrence can very much still be open (and its
+// own EventBridge phase schedules still firing) after its scheduled
+// round-robin timestamp is in the past. Gating on the timestamp instead of
+// the actual phase status would let the *next* occurrence materialize while
+// this one is still running.
 //
 // Pure and DB-free so it can be unit tested without a live DynamoDB.
-func seriesMaterializationState(series db.GameDaySeries, existing []db.GameDay, now time.Time) (gd db.GameDay, alreadyMaterialized, pendingOther bool) {
+func seriesMaterializationState(series db.GameDaySeries, existing []db.GameDay) (gd db.GameDay, alreadyMaterialized, pendingOther bool) {
 	for _, g := range existing {
 		if g.SeriesID != series.SeriesID {
 			continue
@@ -116,7 +137,7 @@ func seriesMaterializationState(series db.GameDaySeries, existing []db.GameDay, 
 			gd, alreadyMaterialized = g, true
 			continue
 		}
-		if t, err := time.Parse(time.RFC3339, g.Schedule.RoundRobin); err == nil && t.After(now) {
+		if !gameDayIsDone(g) {
 			pendingOther = true
 		}
 	}
@@ -138,7 +159,7 @@ func (h *handler) materializeNext(ctx context.Context, series db.GameDaySeries) 
 		log.Printf("series %s: list gamedays for dedup check: %v", series.SeriesID, err)
 		return
 	}
-	gd, alreadyMaterialized, pendingOther := seriesMaterializationState(series, existing, time.Now())
+	gd, alreadyMaterialized, pendingOther := seriesMaterializationState(series, existing)
 
 	if !alreadyMaterialized && pendingOther {
 		log.Printf("series %s: an earlier occurrence is still pending — waiting for it to fire before materializing %s", series.SeriesID, series.NextOccurrenceAt)
