@@ -74,8 +74,16 @@ func TestBracketTiers_ChampionByBye_PlayingStatus_RealBug(t *testing.T) {
 		t.Errorf("tankA (bye champion): want k=1 placement=1, got k=%d placement=%d",
 			tiers["tankA"].k, tiers["tankA"].placement)
 	}
-	if tiers["tankB"].k != 3 {
-		t.Errorf("tankB (r1 loser): want k=3, got k=%d", tiers["tankB"].k)
+	// Item 265: with bracket depth correctly derived from round-1's real
+	// entrant count (bracketDepth(2)=1 total round here — tankA/tankB are
+	// the only two real bracket entrants; r2's single "playing" slot is
+	// just the bye-continuation placeholder, not a second real round), the
+	// tournament's only actual match doubles as the Final, so tankB — its
+	// loser — is correctly the runner-up (k=2), not a tier-3 "semi-final"
+	// loser as the old key-counting logic (which miscounted r2 as a real
+	// extra round) previously computed.
+	if tiers["tankB"].k != 2 {
+		t.Errorf("tankB (r1 loser, sole match doubles as the Final): want k=2 (runner-up), got k=%d", tiers["tankB"].k)
 	}
 }
 
@@ -201,6 +209,60 @@ func TestBracketTiers_DuplicateAutofillTankIDsStayIndependent(t *testing.T) {
 	}
 	if got := tiers["opponentY"].k; got != 1 {
 		t.Errorf("opponentY (champion): want k=1, got k=%d", got)
+	}
+}
+
+// TestBracketTiers_RoundBeforeFinalDoesNotCollideWithFinalists is the
+// regression test for item 265, modeled directly on gameday
+// 059dcbb7-6dca-4c0d-850d-32190b31998a's real 8-tank bracket: r1 (8 slots,
+// quarter-final tier), r2 (4 real slots + 1 bye, semi-final tier — scoutID
+// loses here), and a separate "final" key (both-lose, no champion). Before
+// the fix, totalRounds was miscounted as 2 (only the numbered r1/r2 keys),
+// so scoutID's r2 loss computed to the exact same tier (k=2) as the true
+// both-lose finalists and got wrongly caught by the championNull skip in
+// handle() — zero ranking credit despite outperforming every r1 loser.
+func TestBracketTiers_RoundBeforeFinalDoesNotCollideWithFinalists(t *testing.T) {
+	bracket := map[string][]db.BracketSlot{
+		"r1": {
+			{TankID: "finalistA", Status: "won"},
+			{TankID: "r1LoserA", Status: "lost"},
+			{TankID: "scoutID", Status: "won"},
+			{TankID: "r1LoserB", Status: "lost"},
+			{TankID: "finalistB", Status: "won"},
+			{TankID: "r1LoserC", Status: "lost"},
+			{TankID: "r1BothLoseA", Status: "both_lose"},
+			{TankID: "r1BothLoseB", Status: "both_lose"},
+		},
+		"r2": {
+			{TankID: "scoutID", Status: "lost"},
+			{TankID: "finalistA", Status: "won"},
+			{TankID: "finalistB", Status: "won"},
+			{Status: "bye"},
+		},
+		"final": {
+			{TankID: "finalistA", Status: "both_lose"},
+			{TankID: "finalistB", Status: "both_lose"},
+		},
+	}
+
+	tiers, championNull := bracketTiers(bracket)
+
+	if !championNull {
+		t.Fatal("both-lose Final: expected championNull=true")
+	}
+	if got := tiers["finalistA"].k; got != 2 {
+		t.Errorf("finalistA (true Final participant): want k=2, got k=%d", got)
+	}
+	if got := tiers["finalistB"].k; got != 2 {
+		t.Errorf("finalistB (true Final participant): want k=2, got k=%d", got)
+	}
+	if got := tiers["scoutID"].k; got != 3 {
+		t.Errorf("scoutID (lost the round before the Final): want k=3 — must NOT collide with the true finalists' k=2, got k=%d", got)
+	}
+	for _, id := range []string{"r1LoserA", "r1LoserB", "r1LoserC", "r1BothLoseA", "r1BothLoseB"} {
+		if got := tiers[id].k; got != 4 {
+			t.Errorf("%s (r1 loser): want k=4, got k=%d", id, got)
+		}
 	}
 }
 

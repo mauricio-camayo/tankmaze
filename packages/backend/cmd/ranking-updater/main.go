@@ -145,11 +145,28 @@ func bracketTiers(bracket map[string][]db.BracketSlot) (map[string]tankTier, boo
 
 	rounds := make([]int, 0, len(bracket))
 	for key := range bracket {
-		r, _ := strconv.Atoi(strings.TrimPrefix(key, "r"))
+		r, err := strconv.Atoi(strings.TrimPrefix(key, "r"))
+		if err != nil {
+			continue // "final" (or any other non-numbered key) isn't a numbered round
+		}
 		rounds = append(rounds, r)
 	}
 	sort.Ints(rounds)
-	totalRounds := rounds[len(rounds)-1]
+
+	// totalRounds is the bracket's true single-elimination depth (item 265) —
+	// derived from how many tanks entered round 1, NOT from how many numbered
+	// "rN" keys happen to be present. Counting keys conflated two different
+	// shapes: a bracket where the Final is tracked separately under its own
+	// "final" key (the normal production shape — tournament-scheduler's
+	// handleFinal always writes there) versus one with no separate "final"
+	// key at all, where the last numbered round genuinely is the
+	// championship. The former left the round-before-the-Final loser one
+	// tier "too good" — literally colliding with the true Final
+	// participants' tier — because the separate Final round was never
+	// counted. bracketDepth(slots) = ceil(log2(slots)) sidesteps the
+	// ambiguity entirely by computing depth from round 1's real entrant
+	// count, which both shapes share.
+	totalRounds := bracketDepth(len(bracket["r1"]))
 
 	tiers := make(map[string]tankTier)
 	championNull := true
@@ -204,6 +221,23 @@ func bracketTiers(bracket map[string][]db.BracketSlot) (map[string]tankTier, boo
 	}
 
 	return tiers, championNull
+}
+
+// bracketDepth returns the number of single-elimination rounds — including
+// the Final — needed to reduce slots round-1 entrants down to one champion:
+// ceil(log2(slots)). Returns 0 for a degenerate bracket with fewer than 2
+// round-1 entrants (no elimination stage at all, e.g. a two-tank series
+// decided directly).
+func bracketDepth(slots int) int {
+	if slots < 2 {
+		return 0
+	}
+	rounds, n := 0, 1
+	for n < slots {
+		n *= 2
+		rounds++
+	}
+	return rounds
 }
 
 // finalRoundK maps the round in which a tank was eliminated to its tier k.
