@@ -70,11 +70,20 @@ func (h *handler) handle(ctx context.Context, evt event) error {
 
 	// Write ranking records for all bracket participants.
 	for tankID, tier := range tiers {
+		pts := placementPoints(n, tier.k)
+		// pointsMap always gets an entry, regardless of championNull below —
+		// it becomes gd.PlacementPoints, the sole source GameDay.tsx's Final
+		// Standings table reads (item 249). A both-lose final's two
+		// finalists must still show there, tied at 2nd with their nominal
+		// tier points, even though nobody actually earned a real 2nd place.
+		pointsMap[tankID] = pts
 		if championNull && tier.k <= 2 {
-			// Both finalists in a both-lose final get no ranking entry.
+			// Both finalists in a both-lose final get no *permanent* ranking
+			// entry — no champion means neither should be credited with a
+			// real 2nd-place finish on their lifetime global score/history.
+			// That's a different concern from the per-gameday display above.
 			continue
 		}
-		pts := placementPoints(n, tier.k)
 		if err := h.store.PutRanking(ctx, db.Ranking{
 			TankID:    db.RealTankID(tankID),
 			GameDayID: evt.GameDayID,
@@ -85,7 +94,6 @@ func (h *handler) handle(ctx context.Context, evt event) error {
 		}); err != nil {
 			return fmt.Errorf("put ranking %s: %w", tankID, err)
 		}
-		pointsMap[tankID] = pts
 	}
 
 	// Tanks that participated in round-robin but did not qualify to the bracket
@@ -137,11 +145,28 @@ func bracketTiers(bracket map[string][]db.BracketSlot) (map[string]tankTier, boo
 
 	rounds := make([]int, 0, len(bracket))
 	for key := range bracket {
-		r, _ := strconv.Atoi(strings.TrimPrefix(key, "r"))
+		r, err := strconv.Atoi(strings.TrimPrefix(key, "r"))
+		if err != nil {
+			continue // "final" (or any other non-numbered key) isn't a numbered round
+		}
 		rounds = append(rounds, r)
 	}
 	sort.Ints(rounds)
-	totalRounds := rounds[len(rounds)-1]
+
+	// totalRounds is the bracket's true single-elimination depth (item 265) —
+	// derived from how many tanks entered round 1, NOT from how many numbered
+	// "rN" keys happen to be present. Counting keys conflated two different
+	// shapes: a bracket where the Final is tracked separately under its own
+	// "final" key (the normal production shape — tournament-scheduler's
+	// handleFinal always writes there) versus one with no separate "final"
+	// key at all, where the last numbered round genuinely is the
+	// championship. The former left the round-before-the-Final loser one
+	// tier "too good" — literally colliding with the true Final
+	// participants' tier — because the separate Final round was never
+	// counted. bracketDepth(slots) = ceil(log2(slots)) sidesteps the
+	// ambiguity entirely by computing depth from round 1's real entrant
+	// count, which both shapes share.
+	totalRounds := bracketDepth(len(bracket["r1"]))
 
 	tiers := make(map[string]tankTier)
 	championNull := true
@@ -196,6 +221,23 @@ func bracketTiers(bracket map[string][]db.BracketSlot) (map[string]tankTier, boo
 	}
 
 	return tiers, championNull
+}
+
+// bracketDepth returns the number of single-elimination rounds — including
+// the Final — needed to reduce slots round-1 entrants down to one champion:
+// ceil(log2(slots)). Returns 0 for a degenerate bracket with fewer than 2
+// round-1 entrants (no elimination stage at all, e.g. a two-tank series
+// decided directly).
+func bracketDepth(slots int) int {
+	if slots < 2 {
+		return 0
+	}
+	rounds, n := 0, 1
+	for n < slots {
+		n *= 2
+		rounds++
+	}
+	return rounds
 }
 
 // finalRoundK maps the round in which a tank was eliminated to its tier k.
