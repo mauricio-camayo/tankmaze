@@ -70,11 +70,20 @@ func (h *handler) handle(ctx context.Context, evt event) error {
 
 	// Write ranking records for all bracket participants.
 	for tankID, tier := range tiers {
+		pts := placementPoints(n, tier.k)
+		// pointsMap always gets an entry, regardless of championNull below —
+		// it becomes gd.PlacementPoints, the sole source GameDay.tsx's Final
+		// Standings table reads (item 249). A both-lose final's two
+		// finalists must still show there, tied at 2nd with their nominal
+		// tier points, even though nobody actually earned a real 2nd place.
+		pointsMap[tankID] = pts
 		if championNull && tier.k <= 2 {
-			// Both finalists in a both-lose final get no ranking entry.
+			// Both finalists in a both-lose final get no *permanent* ranking
+			// entry — no champion means neither should be credited with a
+			// real 2nd-place finish on their lifetime global score/history.
+			// That's a different concern from the per-gameday display above.
 			continue
 		}
-		pts := placementPoints(n, tier.k)
 		if err := h.store.PutRanking(ctx, db.Ranking{
 			TankID:    db.RealTankID(tankID),
 			GameDayID: evt.GameDayID,
@@ -85,7 +94,6 @@ func (h *handler) handle(ctx context.Context, evt event) error {
 		}); err != nil {
 			return fmt.Errorf("put ranking %s: %w", tankID, err)
 		}
-		pointsMap[tankID] = pts
 	}
 
 	// Tanks that participated in round-robin but did not qualify to the bracket
