@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import Layout, { cardStyle, ghostButtonStyle, primaryButtonStyle } from '../components/Layout';
 import { listFriends, acceptFriendRequest, rejectFriendRequest, removeFriend } from '../services/api';
 import { isUnread } from '../utils/chatUnread';
+import HelpDrawer, { HelpSection } from '../components/HelpDrawer';
+import DismissibleIntro from '../components/DismissibleIntro';
 import type { FriendEntry, FriendsResponse } from '../types';
 
 function FriendAvatar({ name, picture }: { name: string; picture?: string }) {
@@ -69,7 +71,42 @@ export default function Friends() {
 
   return (
     <Layout>
-      <h1 style={{ margin: '0 0 24px', color: '#e7f1f7', fontSize: 22, fontWeight: 700 }}>Friends</h1>
+      {/* Item 266: real explanatory content above the interactive list —
+          Google AdSense rejected this page as "low value content". Kept
+          visible by default so it counts as page content on review. */}
+      <DismissibleIntro page="friends" marginBottom={24}>
+        <h1 style={{ margin: '0 0 8px', fontSize: 22, fontWeight: 700, color: '#e7f1f7' }}>
+          Friends
+        </h1>
+        <p style={{ margin: 0, color: '#7fa2ba', fontSize: 14, lineHeight: 1.65 }}>
+          Friends is TankMaze's lightweight social layer, separate from Game Day competition. Add
+          another Tank Author as a friend from their profile page — once they accept, you can send
+          each other direct messages. It's built for coordinating test matches, swapping strategy,
+          or just talking trash before your tanks meet in a bracket.
+        </p>
+      </DismissibleIntro>
+
+      <HelpDrawer title="Friends" moreHref="/help#friends">
+        <HelpSection heading="Overview">
+          Friends is TankMaze's lightweight social layer, separate from Game Day competition. Add
+          another Tank Author as a friend from their profile page — once they accept, you can send
+          each other direct messages. It's built for coordinating test matches, swapping strategy,
+          or just talking trash before your tanks meet in a bracket.
+        </HelpSection>
+        <HelpSection heading="Adding a friend">
+          Friend requests are sent from a Tank Author's profile page. Once you send one it shows up
+          as pending until the other person accepts or declines it.
+        </HelpSection>
+        <HelpSection heading="Requests">
+          <strong>Friend requests</strong> are incoming requests waiting on your answer.
+          <strong> Sent requests</strong> are ones you sent that are still pending — you can cancel
+          those any time before they're answered.
+        </HelpSection>
+        <HelpSection heading="Messaging">
+          Direct messages only work between accepted friends — it keeps the inbox to people you've
+          actually chosen to connect with.
+        </HelpSection>
+      </HelpDrawer>
 
       {loading && <div style={{ color: '#5b87a3' }}>Loading…</div>}
       {error && <div style={{ color: '#ff8a75', marginBottom: 16 }}>{error}</div>}

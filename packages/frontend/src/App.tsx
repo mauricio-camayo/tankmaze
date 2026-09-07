@@ -20,6 +20,7 @@ import Friends from './pages/Friends';
 import Chat from './pages/Chat';
 import Upgrade from './pages/Upgrade';
 import Legal from './pages/Legal';
+import Help from './pages/Help';
 
 // Wraps a lazy-loaded route so a stale chunk reference — a tab left open
 // across a deploy still asking for a content-hashed filename that no
@@ -87,6 +88,7 @@ const router = createBrowserRouter([
   { path: '/login', element: <LandingRoute /> },
   { path: '/privacy', element: <Navigate to="/legal" replace /> },
   { path: '/legal', element: <Legal /> },
+  { path: '/help', element: <Help /> },
   { path: '/watch', element: <Suspense fallback={null}><Watch /></Suspense> },
   { path: '/leaderboard', element: <Leaderboard /> },
   { path: '/users/:sub', element: <UserProfile /> },

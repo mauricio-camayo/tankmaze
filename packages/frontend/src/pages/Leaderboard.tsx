@@ -3,6 +3,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import Layout, { cardStyle } from '../components/Layout';
 import { getRankings } from '../services/api';
 import { avatarSrc } from '../components/AvatarPicker';
+import HelpDrawer, { HelpSection } from '../components/HelpDrawer';
+import DismissibleIntro from '../components/DismissibleIntro';
 import type { RankingEntry } from '../types';
 
 const DECAY_DAYS = 90;
@@ -189,9 +191,48 @@ export default function Leaderboard() {
 
   return (
     <Layout>
-      <h1 style={{ margin: '0 0 24px', color: '#e7f1f7', fontSize: 22, fontWeight: 700 }}>
-        Leaderboard
-      </h1>
+      {/* Item 266: real explanatory content above the interactive table —
+          Google AdSense rejected this page as "low value content". Kept
+          visible by default so it counts as page content on review. */}
+      <DismissibleIntro page="leaderboard" marginBottom={24}>
+        <h1 style={{ margin: '0 0 8px', fontSize: 22, fontWeight: 700, color: '#e7f1f7' }}>
+          Leaderboard
+        </h1>
+        <p style={{ margin: 0, color: '#7fa2ba', fontSize: 14, lineHeight: 1.65 }}>
+          Every tank's <strong>Global Score</strong> accumulates placement points earned per Game
+          Day: the champion earns points equal to the field size, and each lower placement is
+          worth roughly half of the tier above it. A rank position is the tank's standing by that
+          score; the amber/red bar next to "Last active" is a local staleness indicator that fills
+          up over {DECAY_DAYS} days since the tank's last Game Day — a nudge that it may be time to
+          compete again, not a change to the score itself.
+        </p>
+      </DismissibleIntro>
+
+      <HelpDrawer title="Leaderboard" moreHref="/help#leaderboard">
+        <HelpSection heading="Overview">
+          Every tank's <strong>Global Score</strong> is the sum of placement points it has earned
+          across Game Days — a stronger finish in a bigger field is worth more points, and old
+          results eventually drop off, so the score reflects recent competitive form rather than
+          one lucky run.
+        </HelpSection>
+        <HelpSection heading="How ranking works">
+          At the end of each Game Day, every tank earns placement points based on its final
+          standing and the size of the field: the champion earns points equal to the number of
+          competitors, and each lower placement is worth roughly half of the one above it.
+          A tank's Global Score is the running sum of those points across every Game Day it has
+          played, regardless of which version of the tank competed.
+        </HelpSection>
+        <HelpSection heading="Reading the table">
+          <strong>Score</strong> is the Global Score described above. <strong>Best</strong> is the
+          highest placement the tank has ever achieved. <strong>Days</strong> counts Game Days
+          participated in. Ties in score are broken by best finish, then by Game Days played.
+        </HelpSection>
+        <HelpSection heading="Last active bar">
+          This is a local staleness indicator only — it fills up the longer it's been since the
+          tank's last Game Day, turning amber and then red as a nudge that it may be time to
+          compete again. It's unrelated to how long placement points stay valid for scoring.
+        </HelpSection>
+      </HelpDrawer>
 
       {loading && <div style={{ color: '#5b87a3' }}>Loading…</div>}
       {error && <div style={{ color: '#ff8a75' }}>{error}</div>}
