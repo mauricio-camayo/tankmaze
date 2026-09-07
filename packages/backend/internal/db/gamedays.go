@@ -190,14 +190,15 @@ func (s *Store) SetGameDayPlacementPoints(ctx context.Context, gameDayID string,
 // GameDayUpdate carries the mutable fields that PATCH /gamedays/{id} may change.
 // Only non-zero fields are applied; zero values leave the existing value unchanged.
 type GameDayUpdate struct {
-	Name                string    // empty = no change
-	RegistrationCloseAt string    // ISO 8601; empty = no change
+	Name                string // empty = no change
+	RegistrationCloseAt string // ISO 8601; empty = no change
 	RoundRobinAt        string
-	EliminationAt       []string  // nil = no change; non-nil replaces the whole slice
+	EliminationAt       []string // nil = no change; non-nil replaces the whole slice
 	FinalAt             string
 	Autofill            *bool     // nil = no change
 	ForcedMapIDs        *[]string // nil = no change; non-nil (even empty) replaces
 	RandomMaps          *bool     // nil = no change
+	PointsMultiplier    *float64  // nil = no change (item 268)
 }
 
 // ErrGameDayStarted is returned by UpdateGameDay when any phase has already
@@ -237,6 +238,9 @@ func (s *Store) UpdateGameDay(ctx context.Context, gameDayID string, u GameDayUp
 	}
 	if u.RandomMaps != nil {
 		gd.RandomMaps = *u.RandomMaps
+	}
+	if u.PointsMultiplier != nil {
+		gd.PointsMultiplier = *u.PointsMultiplier
 	}
 	return s.PutGameDay(ctx, gd)
 }

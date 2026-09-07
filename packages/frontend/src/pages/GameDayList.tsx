@@ -4,6 +4,8 @@ import Layout, { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../comp
 import { listGameDays, createGameDay, createGameDaySeries, cancelGameDaySeries, deleteGameDay, patchGameDay, listMaps, overrideGameDayPhase } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { gameDayBaseName, localGameDayName } from '../utils/gameDayName';
+import HelpDrawer, { HelpSection } from '../components/HelpDrawer';
+import DismissibleIntro from '../components/DismissibleIntro';
 import type { GameDay, GameDayPhaseStatus, GameDaySeriesFrequency, GameMap } from '../types';
 
 function phaseOverallStatus(gd: GameDay): 'upcoming' | 'active' | 'complete' | 'past' {
@@ -117,6 +119,7 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
   const [autofill, setAutofill] = useState(gd.autofill ?? false);
   const [randomMaps, setRandomMaps] = useState(gd.randomMaps ?? false);
   const [forcedMapIds, setForcedMapIds] = useState<string[]>(gd.forcedMapIds ?? []);
+  const [pointsMultiplier, setPointsMultiplier] = useState(gd.pointsMultiplier ?? 1);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -128,6 +131,7 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
     autofill: gd.autofill ?? false,
     randomMaps: gd.randomMaps ?? false,
     forcedMapIds: [...(gd.forcedMapIds ?? [])],
+    pointsMultiplier: gd.pointsMultiplier ?? 1,
   });
 
   const dirty =
@@ -137,7 +141,8 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
     fields.final !== initialRef.current.final ||
     autofill !== initialRef.current.autofill ||
     randomMaps !== initialRef.current.randomMaps ||
-    JSON.stringify(forcedMapIds) !== JSON.stringify(initialRef.current.forcedMapIds);
+    JSON.stringify(forcedMapIds) !== JSON.stringify(initialRef.current.forcedMapIds) ||
+    pointsMultiplier !== initialRef.current.pointsMultiplier;
 
   const blocker = useBlocker(dirty);
 
@@ -154,6 +159,10 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
       setErr('Round robin must start before the final');
       return false;
     }
+    if (pointsMultiplier <= 0) {
+      setErr('Points multiplier must be greater than 0');
+      return false;
+    }
     setSaving(true);
     setErr(null);
     try {
@@ -165,6 +174,7 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
         autofill,
         randomMaps,
         forcedMapIds,
+        pointsMultiplier,
       });
       // Item 254: the schedule saved, but one or more phases' real trigger
       // may not have — surface this instead of a plain silent success.
@@ -247,6 +257,15 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
             <input type="checkbox" checked={randomMaps} onChange={(e) => setRandomMaps(e.target.checked)} style={{ accentColor: '#ffab6b' }} />
             Random maze per match (ignore map selection below)
           </label>
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Points multiplier (Global Score = placement points × this)</label>
+          <input
+            type="number" min={0.1} step={0.1}
+            value={pointsMultiplier}
+            onChange={(e) => setPointsMultiplier(Number(e.target.value))}
+            style={{ ...inputStyle, width: 100 }}
+          />
         </div>
         {!randomMaps && (
           <div style={{ marginBottom: 14 }}>
@@ -360,7 +379,7 @@ function GameDayRow({ gd, onDeleted, onRefresh, autoOpen }: { gd: GameDay; onDel
             )}
             <span style={{ color: '#e7f1f7', fontSize: 15, fontWeight: 600 }}>
               {gd.name
-                ? localGameDayName(gd.name, gd.schedule.roundRobin, gd.schedule.final)
+                ? localGameDayName(gd.name, gd.schedule.roundRobin, gd.schedule.final, gd.pointsMultiplier)
                 : new Date(gd.schedule.roundRobin).toLocaleDateString(undefined, {
                     weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
                   })}
@@ -478,6 +497,7 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
   const [autofill, setAutofill] = useState(false);
   const [randomMaps, setRandomMaps] = useState(false);
   const [forcedMapIds, setForcedMapIds] = useState<string[]>([]);
+  const [pointsMultiplier, setPointsMultiplier] = useState(1);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -491,7 +511,7 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
 
   // Baseline captured at mount; updated after a successful create so that a
   // re-open of the reset form starts clean again.
-  const initialRef = useRef({ name: '', fields: defaultSchedule(), autofill: false, randomMaps: false, forcedMapIds: [] as string[] });
+  const initialRef = useRef({ name: '', fields: defaultSchedule(), autofill: false, randomMaps: false, forcedMapIds: [] as string[], pointsMultiplier: 1 });
 
   const dirty = open && (
     name !== initialRef.current.name ||
@@ -501,6 +521,7 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
     autofill !== initialRef.current.autofill ||
     randomMaps !== initialRef.current.randomMaps ||
     JSON.stringify(forcedMapIds) !== JSON.stringify(initialRef.current.forcedMapIds) ||
+    pointsMultiplier !== initialRef.current.pointsMultiplier ||
     recurring
   );
 
@@ -527,6 +548,10 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
       setErr('Number of occurrences must be at least 1');
       return false;
     }
+    if (pointsMultiplier <= 0) {
+      setErr('Points multiplier must be greater than 0');
+      return false;
+    }
     setSaving(true);
     setErr(null);
     try {
@@ -538,6 +563,7 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
         autofill,
         randomMaps,
         forcedMapIds,
+        pointsMultiplier,
       };
       if (recurring) {
         await createGameDaySeries({
@@ -557,10 +583,11 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
       setAutofill(false);
       setRandomMaps(false);
       setForcedMapIds([]);
+      setPointsMultiplier(1);
       setRecurring(false);
       setFrequency('weekly');
       setEndless(true);
-      initialRef.current = { name: '', fields: newDefaults, autofill: false, randomMaps: false, forcedMapIds: [] };
+      initialRef.current = { name: '', fields: newDefaults, autofill: false, randomMaps: false, forcedMapIds: [], pointsMultiplier: 1 };
       onCreated();
       return true;
     } catch (e2: unknown) {
@@ -701,8 +728,8 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
               </div>
               <p style={{ color: '#4a7291', fontSize: 12, margin: 0 }}>
                 Only the next occurrence is ever pre-created; each following one is created automatically as its
-                turn approaches. Cancelling the series later stops future occurrences without touching ones
-                already created.
+                turn approaches, carrying forward this series&apos; auto-fill, maps, and points multiplier settings.
+                Cancelling the series later stops future occurrences without touching ones already created.
               </p>
             </div>
           )}
@@ -716,6 +743,15 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
             <input type="checkbox" checked={randomMaps} onChange={(e) => setRandomMaps(e.target.checked)} style={{ accentColor: '#ffab6b' }} />
             Random maze per match
           </label>
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={labelStyle}>Points multiplier (Global Score = placement points × this)</label>
+          <input
+            type="number" min={0.1} step={0.1}
+            value={pointsMultiplier}
+            onChange={(e) => setPointsMultiplier(Number(e.target.value))}
+            style={{ ...inputStyle, width: 100 }}
+          />
         </div>
         {!randomMaps && (
           <div style={{ marginBottom: 16 }}>
@@ -777,8 +813,58 @@ export default function GameDayList() {
 
   return (
     <Layout>
+      {/* Item 266: real explanatory content above the interactive list —
+          Google AdSense rejected this page as "low value content". Kept
+          visible by default so it counts as page content on review. */}
+      <DismissibleIntro page="gamedaylist">
+        <h1 style={{ margin: '0 0 8px', fontSize: 22, fontWeight: 700, color: '#e7f1f7' }}>
+          Game Days
+        </h1>
+        <p style={{ margin: 0, color: '#7fa2ba', fontSize: 14, lineHeight: 1.65 }}>
+          TankMaze matches only run during a scheduled <strong>Game Day</strong>: a two-phase
+          tournament. Every registered tank first plays a round-robin group of roughly 8 tanks,
+          then the top finishers move into a single-elimination bracket down to a champion.
+          Register a tank ahead of time from its own page to enter the next one — results feed
+          straight into the tank's spot on the global Leaderboard. This page lists every scheduled,
+          running, and completed Game Day; click one to see its bracket, standings, and live status.
+        </p>
+      </DismissibleIntro>
+
+      <HelpDrawer title="Game Days" moreHref="/help#gamedays">
+        <HelpSection heading="Overview">
+          TankMaze matches only run during a scheduled <strong>Game Day</strong>: a two-phase
+          tournament. Every registered tank first plays a round-robin group of roughly 8 tanks,
+          then the top finishers move into a single-elimination bracket down to a champion.
+          Register a tank ahead of time from its own page to enter the next one — results feed
+          straight into the tank's spot on the global Leaderboard. This page lists every scheduled,
+          running, and completed Game Day; click one to see its bracket, standings, and live status.
+        </HelpSection>
+        <HelpSection heading="Round robin">
+          Registered tanks are ranked by Global Score and split into groups of about 8, seeded so
+          each group gets an even spread of stronger and weaker tanks. Every tank in a group plays
+          every other tank once; a win is worth 1 point, a flawless win (no damage taken) 2 points.
+        </HelpSection>
+        <HelpSection heading="Elimination bracket">
+          The top finishers from each group (everyone, in smaller fields) advance into a
+          single-elimination bracket seeded best-vs-worst. Lose once and you're out — the last
+          tank standing is the Game Day Champion.
+        </HelpSection>
+        <HelpSection heading="Registering a tank">
+          Registration is explicit and per-version: open your tank's page and register its current
+          major version before the window closes. Promoting a new major version later means
+          re-registering it — the old registration doesn't carry over automatically.
+        </HelpSection>
+        <HelpSection heading="Status &amp; badges">
+          <strong>Upcoming</strong> / <strong>active</strong> / <strong>complete</strong> reflect
+          where a Game Day is in its schedule. A <strong>↻ Recurring</strong> badge marks an
+          occurrence that belongs to a repeating series (weekly, monthly, or every N days) — each
+          occurrence still runs and scores independently. <strong>STUCK</strong> means a scheduled
+          phase never actually fired; it's a platform hiccup, not something on your end.
+        </HelpSection>
+      </HelpDrawer>
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
-        <h2 style={{ margin: 0, fontSize: 22, color: '#e7f1f7' }}>Game Days</h2>
+        <h2 style={{ margin: 0, fontSize: 22, color: '#e7f1f7' }}>All Game Days</h2>
       </div>
 
       {user?.isAdmin && <CreateGameDayForm onCreated={load} />}

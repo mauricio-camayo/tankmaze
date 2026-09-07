@@ -7,6 +7,8 @@ import type { Tank, TankVersion, GameDay, UserSettings } from '../types';
 import { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
 import { avatarSrc } from '../components/AvatarPicker';
 import { localGameDayName } from '../utils/gameDayName';
+import HelpDrawer, { HelpSection } from '../components/HelpDrawer';
+import DismissibleIntro from '../components/DismissibleIntro';
 
 function relativeTime(ts: number | null): string {
   if (!ts) return '—';
@@ -143,7 +145,7 @@ function GameDayCard({ gd }: { gd: GameDay }) {
               {isFinal ? 'complete' : isActive ? 'active' : 'upcoming'}
             </span>
             <span style={{ color: '#e7f1f7', fontSize: 15, fontWeight: 600 }}>
-              {gd.name ? localGameDayName(gd.name, gd.schedule.roundRobin, gd.schedule.final) : 'Game Day'} — {new Date(gd.schedule.roundRobin).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+              {gd.name ? localGameDayName(gd.name, gd.schedule.roundRobin, gd.schedule.final, gd.pointsMultiplier) : 'Game Day'} — {new Date(gd.schedule.roundRobin).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
             </span>
           </div>
           {!isFinal && (
@@ -385,6 +387,54 @@ export default function Dashboard() {
 
   return (
     <Layout>
+      {/* Item 266: real explanatory content above the interactive UI — Google
+          AdSense rejected this page as "low value content" for reading as
+          bare tables/cards with no surrounding prose. Kept visible by
+          default (not collapsed) so it counts as page content on review. */}
+      <DismissibleIntro page="dashboard" marginBottom={28}>
+        <h1 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 700, color: '#e7f1f7' }}>
+          Dashboard
+        </h1>
+        <p style={{ margin: 0, color: '#7fa2ba', fontSize: 14, lineHeight: 1.65 }}>
+          TankMaze is a code-battle platform: you write a tank's AI as a Go program, compile it to
+          WebAssembly, and submit it here. Test it freely against the built-in bots or your own
+          other tanks, then register it for a Game Day — a scheduled tournament where tanks compete
+          head-to-head and results feed a global ranking. This page lists every tank you own, its
+          ranked stats, and any Game Day you're registered for or that's running right now.
+        </p>
+      </DismissibleIntro>
+
+      <HelpDrawer title="Dashboard" moreHref="/help#tanks">
+        <HelpSection heading="Overview">
+          TankMaze is a code-battle platform: you write a tank's AI as a Go program, compile it to
+          WebAssembly, and submit it here. Test it freely against the built-in bots or your own
+          other tanks, then register it for a Game Day — a scheduled tournament where tanks compete
+          head-to-head and results feed a global ranking. This page lists every tank you own, its
+          ranked stats, and any Game Day you're registered for or that's running right now.
+        </HelpSection>
+        <HelpSection heading="Writing a tank">
+          A tank is a Go package compiled to WebAssembly. You allocate stat points in a{' '}
+          <code>Config</code> value and implement a <code>Tick(sensors) Action</code> function
+          that the server calls once per game tick — that function is the entire AI. There's no
+          real-time control once a match starts; the code decides everything.
+        </HelpSection>
+        <HelpSection heading="Testing">
+          Use "Test vs. AI" against a built-in bot, or pit a tank against one of your own other
+          tanks. Test matches never affect ranked stats, so it's safe to experiment freely before
+          registering.
+        </HelpSection>
+        <HelpSection heading="Templates">
+          The "Start from a template" row lets you fork one of the built-in AI tanks (Scout,
+          Bruiser, Ranger, Randy) as a starting point instead of writing from a blank file — click
+          the ⓘ icon on any of them to see its stats before forking.
+        </HelpSection>
+        <HelpSection heading="Game Day & ranking">
+          Registering a tank enters it into the next Game Day: a round-robin group stage followed
+          by a single-elimination bracket. Placement points earned there accumulate into your
+          tank's Global Score on the Leaderboard.
+        </HelpSection>
+      </HelpDrawer>
+
       {runningGameDay && <GameDayCard gd={runningGameDay} />}
       {upcomingGameDay && <GameDayCard gd={upcomingGameDay} />}
       {aiTanks.length > 0 && (

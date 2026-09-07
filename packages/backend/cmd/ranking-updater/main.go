@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -53,6 +54,7 @@ func (h *handler) handle(ctx context.Context, evt event) error {
 	}
 
 	tiers, championNull := bracketTiers(gd.Bracket)
+	multiplier := db.EffectivePointsMultiplier(gd)
 
 	now := time.Now()
 	expiresAt := now.Add(rankingTTL).Unix()
@@ -87,7 +89,12 @@ func (h *handler) handle(ctx context.Context, evt event) error {
 		if err := h.store.PutRanking(ctx, db.Ranking{
 			TankID:    db.RealTankID(tankID),
 			GameDayID: evt.GameDayID,
-			Points:    pts,
+			// Points (item 268) scales the nominal tier points by this Game
+			// Day's pointsMultiplier — this is the only place the multiplier
+			// takes effect; pointsMap/gd.PlacementPoints above stays nominal
+			// since it's what GameDay.tsx's Final Standings table displays
+			// (item 249), and the multiplier is deliberately invisible there.
+			Points:    scalePoints(pts, multiplier),
 			Placement: tier.placement,
 			ExpiresAt: expiresAt,
 			TTL:       expiresAt,
@@ -263,6 +270,13 @@ func placementPoints(n, k int) int {
 		return n
 	}
 	return n / (1 << (k - 1))
+}
+
+// scalePoints applies a Game Day's pointsMultiplier (item 268) to a nominal
+// tier point value, rounding to the nearest int (e.g. a 1.5x multiplier on 3
+// points rounds to 5, not 4).
+func scalePoints(pts int, multiplier float64) int {
+	return int(math.Round(float64(pts) * multiplier))
 }
 
 // recomputeTankStats fetches all ranking records for tankID and writes the

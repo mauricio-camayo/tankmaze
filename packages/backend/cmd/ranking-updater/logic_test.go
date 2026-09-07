@@ -280,10 +280,10 @@ func TestBracketTiers_EmptyBracket(t *testing.T) {
 // TestPlacementPoints verifies the floor(n/2^(k-1)) formula.
 func TestPlacementPoints(t *testing.T) {
 	cases := []struct{ n, k, want int }{
-		{8, 1, 8},  // champion: n
-		{8, 2, 4},  // runner-up: n/2
-		{8, 3, 2},  // semi-final: n/4
-		{8, 4, 1},  // quarter-final: n/8
+		{8, 1, 8}, // champion: n
+		{8, 2, 4}, // runner-up: n/2
+		{8, 3, 2}, // semi-final: n/4
+		{8, 4, 1}, // quarter-final: n/8
 		{32, 1, 32},
 		{32, 2, 16},
 		{32, 3, 8},
@@ -294,6 +294,51 @@ func TestPlacementPoints(t *testing.T) {
 		got := placementPoints(c.n, c.k)
 		if got != c.want {
 			t.Errorf("placementPoints(%d,%d): want %d, got %d", c.n, c.k, c.want, got)
+		}
+	}
+}
+
+// TestScalePoints verifies item 268's Global Score multiplier rounds to the
+// nearest int rather than truncating.
+func TestScalePoints(t *testing.T) {
+	cases := []struct {
+		pts        int
+		multiplier float64
+		want       int
+	}{
+		{4, 1, 4},   // 1x is a no-op
+		{4, 4, 16},  // whole multiplier
+		{3, 1.5, 5}, // 4.5 rounds up
+		{1, 1.5, 2}, // 1.5 rounds up (round-half-away-from-zero via math.Round)
+		{4, 0.5, 2}, // fractional multiplier
+		{0, 4, 0},   // zero points stays zero regardless of multiplier
+	}
+	for _, c := range cases {
+		got := scalePoints(c.pts, c.multiplier)
+		if got != c.want {
+			t.Errorf("scalePoints(%d, %v): want %d, got %d", c.pts, c.multiplier, c.want, got)
+		}
+	}
+}
+
+// TestEffectivePointsMultiplier verifies the 1x default for both historical
+// Game Days (field never set) and one explicitly left at its 0 zero-value.
+func TestEffectivePointsMultiplier(t *testing.T) {
+	cases := []struct {
+		name       string
+		multiplier float64
+		want       float64
+	}{
+		{"unset (historical record)", 0, 1},
+		{"negative (defensive, shouldn't happen past validation)", -2, 1},
+		{"explicit 1x", 1, 1},
+		{"explicit 4x", 4, 4},
+		{"fractional 1.5x", 1.5, 1.5},
+	}
+	for _, c := range cases {
+		gd := db.GameDay{PointsMultiplier: c.multiplier}
+		if got := db.EffectivePointsMultiplier(gd); got != c.want {
+			t.Errorf("%s: want %v, got %v", c.name, c.want, got)
 		}
 	}
 }

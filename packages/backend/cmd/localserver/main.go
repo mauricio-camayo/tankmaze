@@ -1412,6 +1412,7 @@ func (srv *server) createGameDay(w http.ResponseWriter, r *http.Request) {
 		Autofill            bool     `json:"autofill"`
 		ForcedMapIDs        []string `json:"forcedMapIds"`
 		RandomMaps          bool     `json:"randomMaps"`
+		PointsMultiplier    float64  `json:"pointsMultiplier"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		jsonErr(w, http.StatusBadRequest, "invalid request body")
@@ -1419,6 +1420,10 @@ func (srv *server) createGameDay(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.RegistrationCloseAt == "" || body.RoundRobinAt == "" || body.FinalAt == "" {
 		jsonErr(w, http.StatusBadRequest, "registrationCloseAt, roundRobinAt, finalAt are required")
+		return
+	}
+	if body.PointsMultiplier < 0 {
+		jsonErr(w, http.StatusBadRequest, "pointsMultiplier must not be negative")
 		return
 	}
 
@@ -1441,7 +1446,7 @@ func (srv *server) createGameDay(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadRequest, "round robin must start before final")
 		return
 	}
-	gd := srv.materializeGameDay(strings.TrimSpace(body.Name), regClose, rrAt, finalAt, body.Autofill, body.ForcedMapIDs, body.RandomMaps, "")
+	gd := srv.materializeGameDay(strings.TrimSpace(body.Name), regClose, rrAt, finalAt, body.Autofill, body.ForcedMapIDs, body.RandomMaps, body.PointsMultiplier, "")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(gd)
@@ -1452,7 +1457,7 @@ func (srv *server) createGameDay(w http.ResponseWriter, r *http.Request) {
 // Scheduler, so unlike cmd/tank-api's equivalent (internal/scheduling), this
 // never creates any real schedules — phase transitions are driven manually
 // via the admin PATCH ?force= override, same as any other local Game Day.
-func (srv *server) materializeGameDay(name string, regClose, rrAt, finalAt time.Time, autofill bool, forcedMapIDs []string, randomMaps bool, seriesID string) db.GameDay {
+func (srv *server) materializeGameDay(name string, regClose, rrAt, finalAt time.Time, autofill bool, forcedMapIDs []string, randomMaps bool, pointsMultiplier float64, seriesID string) db.GameDay {
 	const maxElimRounds = 5
 	elimination := make([]string, maxElimRounds)
 	for i := 0; i < maxElimRounds; i++ {
@@ -1476,11 +1481,12 @@ func (srv *server) materializeGameDay(name string, regClose, rrAt, finalAt time.
 			RoundRobin: db.PhaseStatus{Status: "upcoming"},
 			Final:      db.PhaseStatus{Status: "upcoming"},
 		},
-		CreatedAt:    time.Now().Unix(),
-		Autofill:     autofill,
-		ForcedMapIDs: forcedMapIDs,
-		RandomMaps:   randomMaps,
-		SeriesID:     seriesID,
+		CreatedAt:        time.Now().Unix(),
+		Autofill:         autofill,
+		ForcedMapIDs:     forcedMapIDs,
+		RandomMaps:       randomMaps,
+		PointsMultiplier: pointsMultiplier,
+		SeriesID:         seriesID,
 	}
 	srv.store.putGameDay(gd)
 	return gd
@@ -1498,6 +1504,7 @@ func (srv *server) createGameDaySeries(w http.ResponseWriter, r *http.Request) {
 		Autofill            bool     `json:"autofill"`
 		ForcedMapIDs        []string `json:"forcedMapIds"`
 		RandomMaps          bool     `json:"randomMaps"`
+		PointsMultiplier    float64  `json:"pointsMultiplier"`
 		MaxOccurrences      int      `json:"maxOccurrences"`
 	}
 	if err := readJSON(r, &body); err != nil {
@@ -1522,6 +1529,10 @@ func (srv *server) createGameDaySeries(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.MaxOccurrences < 0 {
 		jsonErr(w, http.StatusBadRequest, "maxOccurrences must be 0 (indefinite) or positive")
+		return
+	}
+	if body.PointsMultiplier < 0 {
+		jsonErr(w, http.StatusBadRequest, "pointsMultiplier must not be negative")
 		return
 	}
 	parseISO := func(s string) (time.Time, bool) {
@@ -1556,12 +1567,13 @@ func (srv *server) createGameDaySeries(w http.ResponseWriter, r *http.Request) {
 		Autofill:                body.Autofill,
 		ForcedMapIDs:            body.ForcedMapIDs,
 		RandomMaps:              body.RandomMaps,
+		PointsMultiplier:        body.PointsMultiplier,
 		MaxOccurrences:          body.MaxOccurrences,
 		NextOccurrenceAt:        rrAt.Format(time.RFC3339),
 		Status:                  db.SeriesStatusActive,
 		CreatedAt:               time.Now().Unix(),
 	}
-	gd := srv.materializeGameDay(series.Name, regClose, rrAt, finalAt, body.Autofill, body.ForcedMapIDs, body.RandomMaps, seriesID)
+	gd := srv.materializeGameDay(series.Name, regClose, rrAt, finalAt, body.Autofill, body.ForcedMapIDs, body.RandomMaps, body.PointsMultiplier, seriesID)
 
 	// No rolling job in local dev (no EventBridge here) — mark the series as
 	// already advanced/finished past its first occurrence so nothing tries
@@ -1635,6 +1647,7 @@ func (srv *server) patchGameDay(w http.ResponseWriter, r *http.Request, gameDayI
 		Autofill            *bool             `json:"autofill"`
 		ForcedMapIDs        *[]string         `json:"forcedMapIds"`
 		RandomMaps          *bool             `json:"randomMaps"`
+		PointsMultiplier    *float64          `json:"pointsMultiplier"`
 		PhaseOverride       map[string]string `json:"phaseOverride,omitempty"`
 	}
 	if err := readJSON(r, &body); err != nil {
@@ -1708,6 +1721,10 @@ func (srv *server) patchGameDay(w http.ResponseWriter, r *http.Request, gameDayI
 			return
 		}
 	}
+	if body.PointsMultiplier != nil && *body.PointsMultiplier < 0 {
+		jsonErr(w, http.StatusBadRequest, "pointsMultiplier must not be negative")
+		return
+	}
 
 	if body.RegistrationCloseAt != "" {
 		gd.Schedule.RegistrationClose = body.RegistrationCloseAt
@@ -1738,6 +1755,9 @@ func (srv *server) patchGameDay(w http.ResponseWriter, r *http.Request, gameDayI
 	}
 	if body.RandomMaps != nil {
 		gd.RandomMaps = *body.RandomMaps
+	}
+	if body.PointsMultiplier != nil {
+		gd.PointsMultiplier = *body.PointsMultiplier
 	}
 	// Recompute full display name using base name and merged schedule.
 	patchBaseName := strings.TrimSpace(body.Name)

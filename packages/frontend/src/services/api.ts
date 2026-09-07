@@ -162,6 +162,7 @@ export const createGameDay = (body: {
   autofill?: boolean;
   forcedMapIds?: string[];
   randomMaps?: boolean;
+  pointsMultiplier?: number;
 }) => request<GameDay>('/gamedays', { method: 'POST', body: JSON.stringify(body) });
 export const deleteGameDay = (
   gameDayId: string,
@@ -186,6 +187,7 @@ export const createGameDaySeries = (body: {
   autofill?: boolean;
   forcedMapIds?: string[];
   randomMaps?: boolean;
+  pointsMultiplier?: number;
   maxOccurrences?: number;
 }) =>
   request<{ series: GameDaySeries; firstOccurrence: GameDay }>('/gameday-series', {
@@ -204,6 +206,7 @@ export const patchGameDay = (
     autofill?: boolean;
     forcedMapIds?: string[];
     randomMaps?: boolean;
+    pointsMultiplier?: number;
   },
   // rescheduleFailures (item 254): present only when the DB schedule update
   // succeeded but one or more phases' EventBridge triggers could not be
