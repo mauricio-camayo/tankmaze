@@ -6,6 +6,8 @@ import { useAuthStore } from '../store/authStore';
 import { realTankId } from '../utils/tankId';
 import { competitionRanks } from '../utils/ranking';
 import { localGameDayName } from '../utils/gameDayName';
+import HelpDrawer, { HelpSection } from '../components/HelpDrawer';
+import DismissibleIntro from '../components/DismissibleIntro';
 import type { GameDay, BracketSlot, GameDayPhaseStatus, GameDayGroup, GroupMatchResult, Tank, TankVersion, GameMap } from '../types';
 
 const BRACKET_LABELS: Record<string, string> = {
@@ -927,6 +929,59 @@ export default function GameDayPage() {
           </button>
         )}
       </div>
+
+      {/* Item 266: real explanatory content above the interactive schedule/
+          bracket UI — Google AdSense rejected the Game Day pages as "low
+          value content". Kept visible by default so it counts as page
+          content on review. */}
+      <DismissibleIntro page="gameday" marginBottom={20}>
+        <p style={{ margin: 0, color: '#7fa2ba', fontSize: 14, lineHeight: 1.65 }}>
+          TankMaze matches only run during a scheduled <strong>Game Day</strong>: a two-phase
+          tournament. Every registered tank first plays a round-robin group of roughly 8 tanks,
+          then the top finishers move into a single-elimination bracket down to a champion.
+          Round-robin standings appear below once matches start; the bracket fills in afterward as
+          qualifying tanks get seeded best-vs-worst. Click any match to watch it live or replay it
+          once it's finished.
+        </p>
+      </DismissibleIntro>
+
+      <HelpDrawer title="This Game Day" moreHref="/help#gamedays">
+        <HelpSection heading="Overview">
+          TankMaze matches only run during a scheduled <strong>Game Day</strong>: a two-phase
+          tournament. Every registered tank first plays a round-robin group of roughly 8 tanks,
+          then the top finishers move into a single-elimination bracket down to a champion.
+          Round-robin standings appear below once matches start; the bracket fills in afterward as
+          qualifying tanks get seeded best-vs-worst. Click any match to watch it live or replay it
+          once it's finished.
+        </HelpSection>
+        <HelpSection heading="Round robin">
+          Registered tanks are ranked by Global Score and split into groups of about 8, seeded so
+          each group gets an even spread of stronger and weaker tanks. Every tank in a group plays
+          every other tank once; a win is worth 1 point, a flawless win (no damage taken) 2 points.
+        </HelpSection>
+        <HelpSection heading="Elimination bracket">
+          The top finishers from each group (everyone, in smaller fields) advance into a
+          single-elimination bracket seeded best-vs-worst. Lose once and you're out — the last
+          tank standing is the Game Day Champion.
+        </HelpSection>
+        <HelpSection heading="Registering a tank">
+          Registration is explicit and per-version: open your tank's page and register its current
+          major version before the window closes. Promoting a new major version later means
+          re-registering it — the old registration doesn't carry over automatically.
+        </HelpSection>
+        <HelpSection heading="Status &amp; badges">
+          <strong>Upcoming</strong> / <strong>active</strong> / <strong>complete</strong> reflect
+          where a Game Day is in its schedule. A <strong>↻ Recurring</strong> badge marks an
+          occurrence that belongs to a repeating series — each occurrence still runs and scores
+          independently. <strong>STUCK</strong> means a scheduled phase never actually fired; it's
+          a platform hiccup, not something on your end.
+        </HelpSection>
+        <HelpSection heading="Reading the bracket">
+          Slot colors mark each match's outcome: green for a win, gray for a loss, amber while a
+          match is in progress, and a dim slot for a bye (an automatic advance with no match
+          played).
+        </HelpSection>
+      </HelpDrawer>
 
       {/* Admin-only config panel */}
       {isAdmin && (

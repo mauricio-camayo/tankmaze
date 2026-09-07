@@ -23,6 +23,7 @@ import type { Tank, TankVersion, TankConfig, GameDay, GameMap } from '../types';
 import { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../components/Layout';
 import { AvatarPicker, avatarSrc } from '../components/AvatarPicker';
 import { useAuthStore } from '../store/authStore';
+import HelpDrawer, { HelpSection } from '../components/HelpDrawer';
 
 // Built-in AI tanks (Scout/Bruiser/Ranger/Randy) are never reachable via the
 // editor's normal entry points (forking one creates a new tank owned by the
@@ -984,6 +985,31 @@ export default function TankEditor() {
 
   return (
     <Layout>
+      <HelpDrawer title="Tank Editor" moreHref="/help#tanks">
+        <HelpSection heading="Writing a tank">
+          Implement <code>Tick(sensors Sensors) Action</code> — the server calls it once per game
+          tick, and it must return a single action. Package-level variables persist across ticks,
+          so they're your tank's memory; there's no real-time control once a match starts, and no
+          other state to manage.
+        </HelpSection>
+        <HelpSection heading="Stats">
+          The Config panel allocates exactly 15 points across five stats (1–5 each): Speed, Sensor
+          Range, Damage, Armor, and Fire Rate. Save &amp; Validate rejects anything that doesn't sum
+          to 15 before it even tries to compile.
+        </HelpSection>
+        <HelpSection heading="Testing">
+          <strong>Test vs. AI</strong> and <strong>Test vs. My Tank</strong> run unranked matches on
+          any version, any time — neither affects your ranked stats, so it's the safe way to
+          iterate before promoting.
+        </HelpSection>
+        <HelpSection heading="Saving &amp; versions">
+          Every Save &amp; Validate bumps a minor version (v0.1, v0.2, …) — safe to do as often as
+          you like, since minors are test-only. <strong>Promote to Major</strong> turns the current
+          minor into the next major version (v1, v2, …); only major versions can be registered for
+          a Game Day and count toward ranked stats.
+        </HelpSection>
+      </HelpDrawer>
+
       {/* Mobile read-only notice (hidden on tablet/desktop via responsive.css) */}
       <div className="tm-mobile-readonly" style={{
         background: '#082e4a', border: '1px solid #23577a', borderRadius: 0,

@@ -4,6 +4,8 @@ import Layout, { cardStyle, primaryButtonStyle, ghostButtonStyle } from '../comp
 import { listGameDays, createGameDay, createGameDaySeries, cancelGameDaySeries, deleteGameDay, patchGameDay, listMaps, overrideGameDayPhase } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { gameDayBaseName, localGameDayName } from '../utils/gameDayName';
+import HelpDrawer, { HelpSection } from '../components/HelpDrawer';
+import DismissibleIntro from '../components/DismissibleIntro';
 import type { GameDay, GameDayPhaseStatus, GameDaySeriesFrequency, GameMap } from '../types';
 
 function phaseOverallStatus(gd: GameDay): 'upcoming' | 'active' | 'complete' | 'past' {
@@ -777,8 +779,58 @@ export default function GameDayList() {
 
   return (
     <Layout>
+      {/* Item 266: real explanatory content above the interactive list —
+          Google AdSense rejected this page as "low value content". Kept
+          visible by default so it counts as page content on review. */}
+      <DismissibleIntro page="gamedaylist">
+        <h1 style={{ margin: '0 0 8px', fontSize: 22, fontWeight: 700, color: '#e7f1f7' }}>
+          Game Days
+        </h1>
+        <p style={{ margin: 0, color: '#7fa2ba', fontSize: 14, lineHeight: 1.65 }}>
+          TankMaze matches only run during a scheduled <strong>Game Day</strong>: a two-phase
+          tournament. Every registered tank first plays a round-robin group of roughly 8 tanks,
+          then the top finishers move into a single-elimination bracket down to a champion.
+          Register a tank ahead of time from its own page to enter the next one — results feed
+          straight into the tank's spot on the global Leaderboard. This page lists every scheduled,
+          running, and completed Game Day; click one to see its bracket, standings, and live status.
+        </p>
+      </DismissibleIntro>
+
+      <HelpDrawer title="Game Days" moreHref="/help#gamedays">
+        <HelpSection heading="Overview">
+          TankMaze matches only run during a scheduled <strong>Game Day</strong>: a two-phase
+          tournament. Every registered tank first plays a round-robin group of roughly 8 tanks,
+          then the top finishers move into a single-elimination bracket down to a champion.
+          Register a tank ahead of time from its own page to enter the next one — results feed
+          straight into the tank's spot on the global Leaderboard. This page lists every scheduled,
+          running, and completed Game Day; click one to see its bracket, standings, and live status.
+        </HelpSection>
+        <HelpSection heading="Round robin">
+          Registered tanks are ranked by Global Score and split into groups of about 8, seeded so
+          each group gets an even spread of stronger and weaker tanks. Every tank in a group plays
+          every other tank once; a win is worth 1 point, a flawless win (no damage taken) 2 points.
+        </HelpSection>
+        <HelpSection heading="Elimination bracket">
+          The top finishers from each group (everyone, in smaller fields) advance into a
+          single-elimination bracket seeded best-vs-worst. Lose once and you're out — the last
+          tank standing is the Game Day Champion.
+        </HelpSection>
+        <HelpSection heading="Registering a tank">
+          Registration is explicit and per-version: open your tank's page and register its current
+          major version before the window closes. Promoting a new major version later means
+          re-registering it — the old registration doesn't carry over automatically.
+        </HelpSection>
+        <HelpSection heading="Status &amp; badges">
+          <strong>Upcoming</strong> / <strong>active</strong> / <strong>complete</strong> reflect
+          where a Game Day is in its schedule. A <strong>↻ Recurring</strong> badge marks an
+          occurrence that belongs to a repeating series (weekly, monthly, or every N days) — each
+          occurrence still runs and scores independently. <strong>STUCK</strong> means a scheduled
+          phase never actually fired; it's a platform hiccup, not something on your end.
+        </HelpSection>
+      </HelpDrawer>
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
-        <h2 style={{ margin: 0, fontSize: 22, color: '#e7f1f7' }}>Game Days</h2>
+        <h2 style={{ margin: 0, fontSize: 22, color: '#e7f1f7' }}>All Game Days</h2>
       </div>
 
       {user?.isAdmin && <CreateGameDayForm onCreated={load} />}

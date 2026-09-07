@@ -116,6 +116,7 @@ export default function Layout({ children }: LayoutProps) {
               )}
             </Link>
           )}
+          <Link to="/help" className="tm-navlink" style={navLinkStyle}>Help</Link>
           {user?.isAdmin && (
             <Link to="/admin" className="tm-navlink" style={{ ...navLinkStyle, color: 'var(--bp-hazard)' }}>Admin</Link>
           )}
