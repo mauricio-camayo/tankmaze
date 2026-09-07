@@ -60,9 +60,9 @@ export default function Help() {
       <Section id="tanks" title="Tanks &amp; Programming">
         <HelpSection heading="Overview">
           TankMaze is a code-battle platform: you write a tank's AI as a Go program, compile it to
-          WebAssembly, and submit it here. Test it freely against the built-in bots or your own
-          other tanks, then register it for a Game Day — a scheduled tournament where tanks compete
-          head-to-head and results feed a global ranking.
+          WebAssembly, and submit it here. Test it freely against the built-in bots, or challenge
+          another player's tank, then register it for a Game Day — a scheduled tournament where
+          tanks compete head-to-head and results feed a global ranking.
         </HelpSection>
         <HelpSection heading="Writing a tank">
           Implement <code>Tick(sensors Sensors) Action</code> — the server calls it once per game
@@ -76,9 +76,12 @@ export default function Help() {
           to 15 before it even tries to compile.
         </HelpSection>
         <HelpSection heading="Testing">
-          <strong>Test vs. AI</strong> and <strong>Test vs. My Tank</strong> run unranked matches on
-          any version, any time — neither affects your ranked stats, so it's the safe way to
-          iterate before promoting.
+          <strong>Test vs. AI</strong> and <strong>Challenge</strong> run unranked matches on any
+          version, any time — neither affects your ranked stats, so it's the safe way to iterate
+          before promoting. Test vs. AI runs against a built-in bot (Scout, Bruiser, Ranger, or
+          Randy); Challenge runs against another player's tank — it only appears on tanks you
+          don't own, not your own, so open the tank's page from the Leaderboard, a Game Day, or a
+          friend's profile and challenge it from there.
         </HelpSection>
         <HelpSection heading="Templates">
           The "Start from a template" row on your Dashboard lets you fork one of the built-in AI

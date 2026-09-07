@@ -252,11 +252,11 @@ Only one tank per Author can hold a given score lineage. The platform enforces t
 5. Author can then:
    - Continue editing (next save → `v0.4`).
    - Click **Test vs. AI** to run an unranked match against a built-in AI tank.
-   - Click **Test vs. My Tank** to select any of their own other tanks (any version) as the opponent.
    - Click **Promote to Major** to create the next major version and make it eligible for Game Day.
    - Click **Register for Game Day** to enter the current major version in the next scheduled competition window.
+   - From another Author's tank page (reached via Leaderboard, a Game Day, or a friend's profile — never from the editor), click **Challenge** to run an unranked match against that tank. Only available on tanks the Author does not own.
 
-   When starting a test match (either vs. AI or vs. own tank), a **map picker** is shown before the match launches. The Author can select a static map (§7.2) or leave the default (random generation). The selection persists as the user's last-used preference until they change it.
+   When starting a test match (either vs. AI or a Challenge), a **map picker** is shown before the match launches. The Author can select a static map (§7.2) or leave the default (random generation). The selection persists as the user's last-used preference until they change it.
 
 ### 5.4 Tank Dashboard (per tank)
 
@@ -485,15 +485,14 @@ When all elimination matches are complete (or the scheduled window closes — wh
 |---|---|---|
 | **Ranked** | Game Day execution, two registered user tanks | Yes |
 | **Test vs. AI** | Author clicks "Test vs. AI" against a built-in tank | No |
-| **Test vs. Own Tank** | Author selects one of their other tanks as opponent | No |
-| **Informal** | Author invites another author to an unranked match | No |
-| **Rematch** | Both authors agree to re-run a previous Game Day matchup | No |
+| **Informal (Challenge)** | Author clicks "Challenge" on another author's tank — only available on tanks the author does not own, launched from that tank's own page (Leaderboard, a Game Day, or a friend's profile) | No |
+| **Rematch** | Either participating author re-runs a previous ranked Game Day matchup | No |
 
-**Map selection for test matches:** when starting a Test vs. AI or Test vs. Own Tank match, the Author can choose between:
+**Map selection:** when starting a Test vs. AI or Informal (Challenge) match, the Author can choose between:
 - **Random map** (default) — a new maze generated per match from a random seed, using the Recursive Backtracking algorithm.
 - **Static map** — one of the platform's built-in static maps (§7.2), or any other map made available by the administrator. Selected by slug (e.g., `donut`, `x`).
 
-Ranked and Informal matches always use randomly generated mazes. Map selection is not available for those match types.
+Ranked and Rematch always use a freshly generated random maze; map selection is not available for those match types.
 
 ### 6.5 Match Notification
 

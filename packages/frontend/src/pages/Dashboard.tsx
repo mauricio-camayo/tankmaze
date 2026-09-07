@@ -397,20 +397,22 @@ export default function Dashboard() {
         </h1>
         <p style={{ margin: 0, color: '#7fa2ba', fontSize: 14, lineHeight: 1.65 }}>
           TankMaze is a code-battle platform: you write a tank's AI as a Go program, compile it to
-          WebAssembly, and submit it here. Test it freely against the built-in bots or your own
-          other tanks, then register it for a Game Day — a scheduled tournament where tanks compete
-          head-to-head and results feed a global ranking. This page lists every tank you own, its
-          ranked stats, and any Game Day you're registered for or that's running right now.
+          WebAssembly, and submit it here. Test it freely against the built-in bots, or challenge
+          another player's tank, then register it for a Game Day — a scheduled tournament where
+          tanks compete head-to-head and results feed a global ranking. This page lists every tank
+          you own, its ranked stats, and any Game Day you're registered for or that's running right
+          now.
         </p>
       </DismissibleIntro>
 
       <HelpDrawer title="Dashboard" moreHref="/help#tanks">
         <HelpSection heading="Overview">
           TankMaze is a code-battle platform: you write a tank's AI as a Go program, compile it to
-          WebAssembly, and submit it here. Test it freely against the built-in bots or your own
-          other tanks, then register it for a Game Day — a scheduled tournament where tanks compete
-          head-to-head and results feed a global ranking. This page lists every tank you own, its
-          ranked stats, and any Game Day you're registered for or that's running right now.
+          WebAssembly, and submit it here. Test it freely against the built-in bots, or challenge
+          another player's tank, then register it for a Game Day — a scheduled tournament where
+          tanks compete head-to-head and results feed a global ranking. This page lists every tank
+          you own, its ranked stats, and any Game Day you're registered for or that's running right
+          now.
         </HelpSection>
         <HelpSection heading="Writing a tank">
           A tank is a Go package compiled to WebAssembly. You allocate stat points in a{' '}
@@ -419,9 +421,10 @@ export default function Dashboard() {
           real-time control once a match starts; the code decides everything.
         </HelpSection>
         <HelpSection heading="Testing">
-          Use "Test vs. AI" against a built-in bot, or pit a tank against one of your own other
-          tanks. Test matches never affect ranked stats, so it's safe to experiment freely before
-          registering.
+          Use "Test vs. AI" against a built-in bot (Scout, Bruiser, Ranger, or Randy). To test
+          against another player's tank instead, open that tank's page and use "Challenge" there —
+          it isn't available on your own tanks. Test matches never affect ranked stats, so it's
+          safe to experiment freely before registering.
         </HelpSection>
         <HelpSection heading="Templates">
           The "Start from a template" row lets you fork one of the built-in AI tanks (Scout,

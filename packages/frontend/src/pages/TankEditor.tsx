@@ -998,9 +998,11 @@ export default function TankEditor() {
           to 15 before it even tries to compile.
         </HelpSection>
         <HelpSection heading="Testing">
-          <strong>Test vs. AI</strong> and <strong>Test vs. My Tank</strong> run unranked matches on
-          any version, any time — neither affects your ranked stats, so it's the safe way to
-          iterate before promoting.
+          <strong>Test vs. AI</strong> runs an unranked match against a built-in bot (Scout,
+          Bruiser, Ranger, or Randy) on any version, any time — it doesn't affect your ranked
+          stats, so it's the safe way to iterate before promoting. To test against another
+          player's tank instead, open that tank's page and use <strong>Challenge</strong> there —
+          it isn't available on your own tanks.
         </HelpSection>
         <HelpSection heading="Saving &amp; versions">
           Every Save &amp; Validate bumps a minor version (v0.1, v0.2, …) — safe to do as often as
