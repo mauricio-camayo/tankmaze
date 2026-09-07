@@ -910,7 +910,7 @@ export default function GameDayPage() {
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <h1 style={{ margin: '0 0 4px', color: '#e7f1f7', fontSize: 22, fontWeight: 700 }}>
-            {gameDay.name ? localGameDayName(gameDay.name, gameDay.schedule.roundRobin, gameDay.schedule.final) : 'Game Day'}
+            {gameDay.name ? localGameDayName(gameDay.name, gameDay.schedule.roundRobin, gameDay.schedule.final, gameDay.pointsMultiplier) : 'Game Day'}
           </h1>
           <div style={{ color: '#5b87a3', fontSize: 13 }}>
             {new Date(schedule.roundRobin).toLocaleDateString(undefined, {

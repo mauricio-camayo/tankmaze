@@ -48,6 +48,9 @@ type Params struct {
 	Autofill            bool
 	ForcedMapIDs        []string
 	RandomMaps          bool
+	// PointsMultiplier (item 268) is 0 for the 1x default; see
+	// db.EffectivePointsMultiplier.
+	PointsMultiplier float64
 	// SeriesID is empty for a standalone (non-recurring) Game Day.
 	SeriesID string
 }
@@ -85,11 +88,12 @@ func (m *Materializer) Materialize(ctx context.Context, p Params) (db.GameDay, e
 			RoundRobin: db.PhaseStatus{Status: "upcoming"},
 			Final:      db.PhaseStatus{Status: "upcoming"},
 		},
-		CreatedAt:    time.Now().Unix(),
-		Autofill:     p.Autofill,
-		ForcedMapIDs: p.ForcedMapIDs,
-		RandomMaps:   p.RandomMaps,
-		SeriesID:     p.SeriesID,
+		CreatedAt:        time.Now().Unix(),
+		Autofill:         p.Autofill,
+		ForcedMapIDs:     p.ForcedMapIDs,
+		RandomMaps:       p.RandomMaps,
+		PointsMultiplier: p.PointsMultiplier,
+		SeriesID:         p.SeriesID,
 	}
 
 	if err := m.Store.PutGameDay(ctx, gd); err != nil {

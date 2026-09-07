@@ -203,6 +203,11 @@ export interface GameDay {
   autofill?: boolean;
   forcedMapIds?: string[];
   randomMaps?: boolean;
+  // pointsMultiplier (item 268) scales this Game Day's placement points into
+  // Global Score. Missing or 1 means the 1x default — see localGameDayName,
+  // which is the only place this is shown (a non-default multiplier is
+  // emphasized in the displayed name, e.g. "My Own Gameday · 4X · Sept 10").
+  pointsMultiplier?: number;
   seriesId?: string;
 }
 
@@ -219,6 +224,9 @@ export interface GameDaySeries {
   autofill?: boolean;
   forcedMapIds?: string[];
   randomMaps?: boolean;
+  // pointsMultiplier (item 268) is carried onto every occurrence this series
+  // materializes.
+  pointsMultiplier?: number;
   maxOccurrences?: number;
   occurrencesCreated: number;
   nextOccurrenceAt: string;

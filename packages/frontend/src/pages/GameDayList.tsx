@@ -117,6 +117,7 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
   const [autofill, setAutofill] = useState(gd.autofill ?? false);
   const [randomMaps, setRandomMaps] = useState(gd.randomMaps ?? false);
   const [forcedMapIds, setForcedMapIds] = useState<string[]>(gd.forcedMapIds ?? []);
+  const [pointsMultiplier, setPointsMultiplier] = useState(gd.pointsMultiplier ?? 1);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -128,6 +129,7 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
     autofill: gd.autofill ?? false,
     randomMaps: gd.randomMaps ?? false,
     forcedMapIds: [...(gd.forcedMapIds ?? [])],
+    pointsMultiplier: gd.pointsMultiplier ?? 1,
   });
 
   const dirty =
@@ -137,7 +139,8 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
     fields.final !== initialRef.current.final ||
     autofill !== initialRef.current.autofill ||
     randomMaps !== initialRef.current.randomMaps ||
-    JSON.stringify(forcedMapIds) !== JSON.stringify(initialRef.current.forcedMapIds);
+    JSON.stringify(forcedMapIds) !== JSON.stringify(initialRef.current.forcedMapIds) ||
+    pointsMultiplier !== initialRef.current.pointsMultiplier;
 
   const blocker = useBlocker(dirty);
 
@@ -154,6 +157,10 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
       setErr('Round robin must start before the final');
       return false;
     }
+    if (pointsMultiplier <= 0) {
+      setErr('Points multiplier must be greater than 0');
+      return false;
+    }
     setSaving(true);
     setErr(null);
     try {
@@ -165,6 +172,7 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
         autofill,
         randomMaps,
         forcedMapIds,
+        pointsMultiplier,
       });
       // Item 254: the schedule saved, but one or more phases' real trigger
       // may not have — surface this instead of a plain silent success.
@@ -247,6 +255,15 @@ function EditGameDayForm({ gd, onSaved, onCancel }: { gd: GameDay; onSaved: () =
             <input type="checkbox" checked={randomMaps} onChange={(e) => setRandomMaps(e.target.checked)} style={{ accentColor: '#ffab6b' }} />
             Random maze per match (ignore map selection below)
           </label>
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Points multiplier (Global Score = placement points × this)</label>
+          <input
+            type="number" min={0.1} step={0.1}
+            value={pointsMultiplier}
+            onChange={(e) => setPointsMultiplier(Number(e.target.value))}
+            style={{ ...inputStyle, width: 100 }}
+          />
         </div>
         {!randomMaps && (
           <div style={{ marginBottom: 14 }}>
@@ -360,7 +377,7 @@ function GameDayRow({ gd, onDeleted, onRefresh, autoOpen }: { gd: GameDay; onDel
             )}
             <span style={{ color: '#e7f1f7', fontSize: 15, fontWeight: 600 }}>
               {gd.name
-                ? localGameDayName(gd.name, gd.schedule.roundRobin, gd.schedule.final)
+                ? localGameDayName(gd.name, gd.schedule.roundRobin, gd.schedule.final, gd.pointsMultiplier)
                 : new Date(gd.schedule.roundRobin).toLocaleDateString(undefined, {
                     weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
                   })}
@@ -478,6 +495,7 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
   const [autofill, setAutofill] = useState(false);
   const [randomMaps, setRandomMaps] = useState(false);
   const [forcedMapIds, setForcedMapIds] = useState<string[]>([]);
+  const [pointsMultiplier, setPointsMultiplier] = useState(1);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -491,7 +509,7 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
 
   // Baseline captured at mount; updated after a successful create so that a
   // re-open of the reset form starts clean again.
-  const initialRef = useRef({ name: '', fields: defaultSchedule(), autofill: false, randomMaps: false, forcedMapIds: [] as string[] });
+  const initialRef = useRef({ name: '', fields: defaultSchedule(), autofill: false, randomMaps: false, forcedMapIds: [] as string[], pointsMultiplier: 1 });
 
   const dirty = open && (
     name !== initialRef.current.name ||
@@ -501,6 +519,7 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
     autofill !== initialRef.current.autofill ||
     randomMaps !== initialRef.current.randomMaps ||
     JSON.stringify(forcedMapIds) !== JSON.stringify(initialRef.current.forcedMapIds) ||
+    pointsMultiplier !== initialRef.current.pointsMultiplier ||
     recurring
   );
 
@@ -527,6 +546,10 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
       setErr('Number of occurrences must be at least 1');
       return false;
     }
+    if (pointsMultiplier <= 0) {
+      setErr('Points multiplier must be greater than 0');
+      return false;
+    }
     setSaving(true);
     setErr(null);
     try {
@@ -538,6 +561,7 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
         autofill,
         randomMaps,
         forcedMapIds,
+        pointsMultiplier,
       };
       if (recurring) {
         await createGameDaySeries({
@@ -557,10 +581,11 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
       setAutofill(false);
       setRandomMaps(false);
       setForcedMapIds([]);
+      setPointsMultiplier(1);
       setRecurring(false);
       setFrequency('weekly');
       setEndless(true);
-      initialRef.current = { name: '', fields: newDefaults, autofill: false, randomMaps: false, forcedMapIds: [] };
+      initialRef.current = { name: '', fields: newDefaults, autofill: false, randomMaps: false, forcedMapIds: [], pointsMultiplier: 1 };
       onCreated();
       return true;
     } catch (e2: unknown) {
@@ -701,8 +726,8 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
               </div>
               <p style={{ color: '#4a7291', fontSize: 12, margin: 0 }}>
                 Only the next occurrence is ever pre-created; each following one is created automatically as its
-                turn approaches. Cancelling the series later stops future occurrences without touching ones
-                already created.
+                turn approaches, carrying forward this series&apos; auto-fill, maps, and points multiplier settings.
+                Cancelling the series later stops future occurrences without touching ones already created.
               </p>
             </div>
           )}
@@ -716,6 +741,15 @@ function CreateGameDayForm({ onCreated }: { onCreated: () => void }) {
             <input type="checkbox" checked={randomMaps} onChange={(e) => setRandomMaps(e.target.checked)} style={{ accentColor: '#ffab6b' }} />
             Random maze per match
           </label>
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={labelStyle}>Points multiplier (Global Score = placement points × this)</label>
+          <input
+            type="number" min={0.1} step={0.1}
+            value={pointsMultiplier}
+            onChange={(e) => setPointsMultiplier(Number(e.target.value))}
+            style={{ ...inputStyle, width: 100 }}
+          />
         </div>
         {!randomMaps && (
           <div style={{ marginBottom: 16 }}>

@@ -212,6 +212,24 @@ type GameDay struct {
 	// Game Day. Deleting/cancelling one occurrence never touches the
 	// series record or future materialization; see cmd/series-materializer.
 	SeriesID string `dynamodbav:"seriesId,omitempty" json:"seriesId,omitempty"`
+	// PointsMultiplier scales this Game Day's placement points into Global
+	// Score (item 268) — Global Score = Σ placementPoints × pointsMultiplier.
+	// A missing/zero value (every historical record predating this field,
+	// and any new one left at the form's default) is treated as 1x at read
+	// time — see EffectivePointsMultiplier. Editable only while the Game Day
+	// is still "upcoming", same as the rest of the schedule (UpdateGameDay).
+	PointsMultiplier float64 `dynamodbav:"pointsMultiplier,omitempty" json:"pointsMultiplier,omitempty"`
+}
+
+// EffectivePointsMultiplier returns gd.PointsMultiplier, treating a
+// missing/zero-or-negative value as the 1x default (item 268) — covers both
+// historical Game Days that predate this field and a new one left at its
+// default.
+func EffectivePointsMultiplier(gd GameDay) float64 {
+	if gd.PointsMultiplier <= 0 {
+		return 1
+	}
+	return gd.PointsMultiplier
 }
 
 // Ranking is the item stored in tankmaze-rankings.

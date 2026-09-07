@@ -177,6 +177,7 @@ func (h *handler) materializeNext(ctx context.Context, series db.GameDaySeries) 
 			Autofill:            series.Autofill,
 			ForcedMapIDs:        series.ForcedMapIDs,
 			RandomMaps:          series.RandomMaps,
+			PointsMultiplier:    series.PointsMultiplier,
 			SeriesID:            series.SeriesID,
 		})
 		if err != nil {

@@ -161,6 +161,8 @@ type createGameDayBody struct {
 	Autofill            bool     `json:"autofill"`
 	ForcedMapIDs        []string `json:"forcedMapIds"`
 	RandomMaps          bool     `json:"randomMaps"`
+	// PointsMultiplier (item 268) is 0/omitted for the 1x default.
+	PointsMultiplier float64 `json:"pointsMultiplier"`
 }
 
 type patchGameDayBody struct {
@@ -171,6 +173,10 @@ type patchGameDayBody struct {
 	Autofill            *bool     `json:"autofill"`
 	ForcedMapIDs        *[]string `json:"forcedMapIds"`
 	RandomMaps          *bool     `json:"randomMaps"`
+	// PointsMultiplier (item 268): nil = no change. Locked once the Game Day
+	// is no longer "upcoming", same as the rest of the schedule — enforced by
+	// db.UpdateGameDay's existing ErrGameDayStarted guard.
+	PointsMultiplier *float64 `json:"pointsMultiplier"`
 	// PhaseOverride is only accepted when the request includes ?force=true.
 	// Keys: "roundRobin", "final", or an elimination round key (e.g. "r1").
 	// Value: "upcoming" | "running" | "complete" | "cancelled"
@@ -2298,6 +2304,9 @@ func (h *handler) createGameDay(ctx context.Context, req events.APIGatewayV2HTTP
 	if !rrAt.Before(finalAt) {
 		return errResp(http.StatusBadRequest, "round robin must start before final"), nil
 	}
+	if body.PointsMultiplier < 0 {
+		return errResp(http.StatusBadRequest, "pointsMultiplier must not be negative"), nil
+	}
 
 	gd, err := h.materializer().Materialize(ctx, scheduling.Params{
 		Name:                strings.TrimSpace(body.Name),
@@ -2307,6 +2316,7 @@ func (h *handler) createGameDay(ctx context.Context, req events.APIGatewayV2HTTP
 		Autofill:            body.Autofill,
 		ForcedMapIDs:        body.ForcedMapIDs,
 		RandomMaps:          body.RandomMaps,
+		PointsMultiplier:    body.PointsMultiplier,
 	})
 	if err != nil {
 		log.Printf("materialize gameday: %v", err)
@@ -2345,6 +2355,10 @@ type createGameDaySeriesBody struct {
 	Autofill            bool     `json:"autofill"`
 	ForcedMapIDs        []string `json:"forcedMapIds"`
 	RandomMaps          bool     `json:"randomMaps"`
+	// PointsMultiplier (item 268) is 0/omitted for the 1x default. Applied to
+	// the first occurrence below and stored on the series so every later
+	// occurrence cmd/series-materializer creates carries it forward too.
+	PointsMultiplier float64 `json:"pointsMultiplier"`
 	// MaxOccurrences is 0 for indefinite repetition, or a fixed repeat count.
 	MaxOccurrences int `json:"maxOccurrences"`
 }
@@ -2405,6 +2419,9 @@ func (h *handler) createGameDaySeries(ctx context.Context, req events.APIGateway
 	if !rrAt.Before(finalAt) {
 		return errResp(http.StatusBadRequest, "round robin must start before final"), nil
 	}
+	if body.PointsMultiplier < 0 {
+		return errResp(http.StatusBadRequest, "pointsMultiplier must not be negative"), nil
+	}
 
 	seriesID := newUUID()
 	series := db.GameDaySeries{
@@ -2418,6 +2435,7 @@ func (h *handler) createGameDaySeries(ctx context.Context, req events.APIGateway
 		Autofill:                body.Autofill,
 		ForcedMapIDs:            body.ForcedMapIDs,
 		RandomMaps:              body.RandomMaps,
+		PointsMultiplier:        body.PointsMultiplier,
 		MaxOccurrences:          body.MaxOccurrences,
 		OccurrencesCreated:      0,
 		NextOccurrenceAt:        rrAt.Format(time.RFC3339),
@@ -2437,6 +2455,7 @@ func (h *handler) createGameDaySeries(ctx context.Context, req events.APIGateway
 		Autofill:            body.Autofill,
 		ForcedMapIDs:        body.ForcedMapIDs,
 		RandomMaps:          body.RandomMaps,
+		PointsMultiplier:    body.PointsMultiplier,
 		SeriesID:            seriesID,
 	})
 	if err != nil {
@@ -2746,6 +2765,9 @@ func (h *handler) patchGameDay(ctx context.Context, req events.APIGatewayV2HTTPR
 			return errResp(http.StatusBadRequest, "round robin must start before final"), nil
 		}
 	}
+	if body.PointsMultiplier != nil && *body.PointsMultiplier < 0 {
+		return errResp(http.StatusBadRequest, "pointsMultiplier must not be negative"), nil
+	}
 
 	// Determine base name: admin-supplied overrides existing; otherwise strip date suffix.
 	patchBaseName := strings.TrimSpace(body.Name)
@@ -2780,6 +2802,7 @@ func (h *handler) patchGameDay(ctx context.Context, req events.APIGatewayV2HTTPR
 		Autofill:            body.Autofill,
 		ForcedMapIDs:        body.ForcedMapIDs,
 		RandomMaps:          body.RandomMaps,
+		PointsMultiplier:    body.PointsMultiplier,
 	}
 	if body.FinalAt != "" {
 		elim := make([]string, 5)

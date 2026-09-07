@@ -48,6 +48,14 @@ type GameDaySeries struct {
 	ForcedMapIDs []string `dynamodbav:"forcedMapIds,omitempty" json:"forcedMapIds,omitempty"`
 	RandomMaps   bool     `dynamodbav:"randomMaps,omitempty"   json:"randomMaps,omitempty"`
 
+	// PointsMultiplier (item 268) is carried onto every occurrence this
+	// series materializes — cmd/series-materializer passes it straight
+	// through on each new occurrence, same as Autofill/ForcedMapIDs/RandomMaps
+	// above, so a recurring series keeps scoring every future occurrence the
+	// same way its first one was set up. 0 means 1x (see
+	// db.EffectivePointsMultiplier).
+	PointsMultiplier float64 `dynamodbav:"pointsMultiplier,omitempty" json:"pointsMultiplier,omitempty"`
+
 	// MaxOccurrences is 0 for indefinite repetition, or a fixed repeat count.
 	MaxOccurrences     int `dynamodbav:"maxOccurrences,omitempty"     json:"maxOccurrences,omitempty"`
 	OccurrencesCreated int `dynamodbav:"occurrencesCreated"           json:"occurrencesCreated"`

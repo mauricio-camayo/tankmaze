@@ -536,6 +536,8 @@ Each successive placement halves the points of the previous one. Points are floo
 
 **Both-lose in elimination:** both tanks are eliminated and receive the loser's placement for that round. The next opponent in their bracket path receives a Bye (see §6.3 Phase 2, rule 5).
 
+**Points multiplier:** an admin can set a per-Game-Day **points multiplier** (a free-form positive number, default **1x**) that scales this Game Day's contribution to Global Score (§6.7) — so a rare/high-stakes Game Day can be worth more than a routine, high-frequency one for the same placement and field size. It is *not* derived from whether the Game Day belongs to a recurring series or how often that series repeats; it's a plain field the admin sets directly, same as autofill/random-maps/forced-maps. It only scales Global Score — the placement points shown on a Game Day's own Final Standings (this section) are always the unscaled, nominal tier values. Editable only while the Game Day is still upcoming (§6.1); once it starts, the multiplier is locked along with the rest of the schedule. A Game Day left at the 1x default, or any Game Day created before this field existed, scores exactly as described above with no change. A non-default multiplier is called out automatically in the Game Day's own displayed name (e.g. "My Own Gameday · 4X · Sept 10") — there is no separate badge or column for it anywhere else.
+
 ---
 
 ### 6.7 Global Ranking
@@ -545,9 +547,11 @@ Each tank's **Global Ranking score** is the sum of all valid placement points it
 **Points validity:** placement points from a Game Day are valid for a configurable period (default: **1 year**) from the date of that Game Day. Once expired, those points are dropped from the score and the global ranking is recalculated automatically.
 
 ```
-Global Score = Σ placement_points(game_day)
+Global Score = Σ placement_points(game_day) × game_day.points_multiplier
                for all game_days where (today − game_day.date) < validity_period
 ```
+
+`points_multiplier` is 1x for any Game Day left at its default, or predating the field (§6.6) — so this formula is a strict superset of the un-multiplied one above.
 
 **Global Ranking display** (public, visible to all users):
 
@@ -572,7 +576,7 @@ Global Score = Σ placement_points(game_day)
 
 Rather than only creating one-off dated Game Days, an admin can define a **recurring series** — a template that automatically produces a new Game Day occurrence on a schedule, without an admin manually creating each one.
 
-**Recurrence rule** — chosen when the series is created, alongside the same fields as a one-off Game Day (round robin time, registration-close lead time, final lead time, autofill/forced-maps/random-maps settings — these become the template reapplied to every occurrence):
+**Recurrence rule** — chosen when the series is created, alongside the same fields as a one-off Game Day (round robin time, registration-close lead time, final lead time, autofill/forced-maps/random-maps settings, and points multiplier (§6.6) — these become the template reapplied to every occurrence):
 
 | Frequency | Meaning |
 |---|---|
@@ -582,7 +586,7 @@ Rather than only creating one-off dated Game Days, an admin can define a **recur
 
 **Ending a series:** either indefinite (repeats until an admin cancels it) or a fixed occurrence count set at creation time.
 
-**Materialization:** only the *next* occurrence is ever pre-created as a real Game Day — not the whole future series at once. The first occurrence is created immediately when the series is set up, so admins see it right away; each following occurrence is created automatically as its turn approaches, following the same registration/round-robin/elimination scheduling as any other Game Day (§6.1). Roster, registration, and results are entirely independent per occurrence — nothing carries over from one occurrence of a series to the next.
+**Materialization:** only the *next* occurrence is ever pre-created as a real Game Day — not the whole future series at once. The first occurrence is created immediately when the series is set up, so admins see it right away; each following occurrence is created automatically as its turn approaches, following the same registration/round-robin/elimination scheduling as any other Game Day (§6.1), and carrying forward the series' own autofill/forced-maps/random-maps/points-multiplier template settings from the recurrence rule above. Roster, registration, and results are entirely independent per occurrence — nothing carries over from one occurrence of a series to the next.
 
 **Cancelling a series** stops future occurrences from being created. It does **not** retroactively affect any occurrence already created — those continue on their own schedule and results independently, exactly as if they'd been created one-off. Cancelling one specific occurrence (rather than the whole series) uses the same cancellation as any other Game Day and likewise has no effect on the series' future occurrences.
 
