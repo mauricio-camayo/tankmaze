@@ -15,7 +15,7 @@ You don't drive a tank — you program it, submit it, and watch it fight.
 - **Write a tank in Go**: implement a `Tick(sensors Sensors) Action` function. It runs every 100 ms and returns one action (move, rotate, fire, scan, or idle). Package-level variables persist across ticks — that's your tank's memory.
 - **Allocate stats**: distribute exactly 15 points across speed, sensor range, damage, armor, and fire rate. Fast tanks see less; hard-hitting tanks move slowly.
 - **Develop with versions**: saves create minor versions (`v0.1`, `v0.2`, …). Promote to a major version (`v1`, `v2`, …) when the tank is competition-ready.
-- **Test freely**: pit your tank against built-in AI opponents (Scout, Ranger, Bruiser, Randy) or any of your own other tanks — no match limits, no ranking impact.
+- **Test freely**: pit your tank against built-in AI opponents (Scout, Ranger, Bruiser, Randy), or Challenge another Author's tank from its own tank page — no match limits, no ranking impact.
 - **Register for Game Day**: a configurable scheduled tournament (cron-based) where registered tanks compete in round-robin groups of 8, followed by a single-elimination bracket seeded best-vs-worst.
 - **Earn global ranking points**: Game Day placement awards points based on field size and finish position. Points remain valid for a configurable period (default: 1 year), forming a rolling global leaderboard.
 - **Replay and debug**: every match is recorded tick-by-tick. Replay at any speed (0.25× to 8×, or step-by-step), inspect sensor readings, memory state, and `fmt` output per tick. Export the full match as JSON for offline analysis.
