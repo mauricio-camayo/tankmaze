@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-TankMaze is a **code-battle platform** built on AWS. Users write autonomous tank programs in **Go**, compile them to WebAssembly, and submit them to the platform. They test freely against built-in AI opponents or their own other tanks, and — when ready — register them for **Game Day**: a scheduled, multi-phase tournament (configured via cron-like parameters) where registered tanks compete in round-robin groups followed by a single-elimination bracket.
+TankMaze is a **code-battle platform** built on AWS. Users write autonomous tank programs in **Go**, compile them to WebAssembly, and submit them to the platform. They test freely against built-in AI opponents or Challenge another Author's tank, and — when ready — register them for **Game Day**: a scheduled, multi-phase tournament (configured via cron-like parameters) where registered tanks compete in round-robin groups followed by a single-elimination bracket.
 
 The tank's code decides everything — when to scan, when to move, when to fire — without any real-time input from the user once a match begins. Users compete through the quality of their code, not their reflexes.
 
@@ -223,7 +223,7 @@ TankMaze uses a two-tier version scheme:
 - Subsequent promotions follow the same pattern: `v1.x → v2`, `v2.x → v3`, etc.
 - Authors can branch from any previous minor or major version and continue editing — the branch starts a new minor chain off that version.
 - Only major versions (`v1`, `v2`, …) are eligible for Game Day registration and ranked statistics.
-- `v0.x` and all minor versions can be used for unlimited test matches against AI, against built-in tanks, or against the Author's own other tanks in informal (unranked) matches.
+- `v0.x` and all minor versions can be used for unlimited Test vs. AI matches, or Challenge matches against another Author's tank (informal, unranked).
 
 **Forking into a new tank:**
 An Author can create a new tank by loading any version of an existing tank as a starting point (forking). The new tank is an independent identity — it always starts at Global Score = 0 and has no ranking history, regardless of the source tank's score.

@@ -55,7 +55,8 @@ tankmaze/
 ├── docs/
 │   ├── functional-spec.md   # Game rules, mechanics, tournament format
 │   ├── technical-spec.md    # AWS architecture, APIs, data models
-│   └── architecture.md      # ADRs and sequence diagrams
+│   ├── architecture.md      # ADRs and sequence diagrams
+│   └── deploy.md            # One-time CI/CD setup (CDK bootstrap, GitHub OIDC role)
 └── .github/workflows/       # CI/CD pipeline
 ```
 
@@ -64,6 +65,7 @@ tankmaze/
 - [Functional Specification](docs/functional-spec.md) — game rules, tank API, versioning, tournament format, global ranking
 - [Technical Specification](docs/technical-spec.md) — AWS architecture, APIs, data models
 - [Architecture Decisions](docs/architecture.md) — ADRs and sequence diagrams
+- [Deploy Guide](docs/deploy.md) — one-time setup to get CI/CD running end-to-end
 
 ## Development Setup
 
@@ -74,7 +76,7 @@ tankmaze/
 The local dev server replaces DynamoDB, S3, CodeBuild, Lambda, and Cognito with in-memory equivalents. It compiles tank WASM locally and streams match ticks over a plain WebSocket.
 
 ```bash
-# Terminal 1 — backend (compiles scout + bruiser AI at startup, ~2 s)
+# Terminal 1 — backend (compiles scout + bruiser + ranger + randy AI at startup, ~2 s)
 cd packages/backend
 GOTOOLCHAIN=local go run ./cmd/localserver/
 
