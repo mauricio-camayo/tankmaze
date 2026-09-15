@@ -5,6 +5,7 @@ import { getGameDay, getTank, addRosterEntry, removeRosterEntry, listAiTanks, ad
 import { useAuthStore } from '../store/authStore';
 import { realTankId } from '../utils/tankId';
 import { competitionRanks } from '../utils/ranking';
+import { sortMajorVersions } from '../utils/version';
 import { localGameDayName } from '../utils/gameDayName';
 import HelpDrawer, { HelpSection } from '../components/HelpDrawer';
 import DismissibleIntro from '../components/DismissibleIntro';
@@ -356,8 +357,9 @@ function latestMajorVersion(versions: TankVersion[]): string {
     const anyUsable = versions.find(isUsable);
     return anyUsable?.version ?? versions[0]?.version ?? 'v1';
   }
-  // Versions are returned newest-first from the API; pick the first usable major.
-  return majors[0].version;
+  // API order isn't numeric (item 274) — sort ascending and take the highest.
+  const sorted = sortMajorVersions(majors.map((v) => v.version));
+  return sorted[sorted.length - 1];
 }
 
 function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
@@ -433,15 +435,15 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
     setErr(null);
     try {
       const full = await getTank(tankId);
-      const majors = full.versions
-        .filter((v) => v.versionType === 'major' && isUsable(v))
-        .map((v) => v.version);
+      const majors = sortMajorVersions(
+        full.versions.filter((v) => v.versionType === 'major' && isUsable(v)).map((v) => v.version),
+      );
       if (majors.length === 0) {
         const label = displayName ?? tankId;
         setErr(`No promoted version found for ${label} — promote a version before adding to roster.`);
       } else {
         setMajorVersions(majors);
-        setManualVer(majors[majors.length - 1]); // last entry is the highest major version
+        setManualVer(majors[majors.length - 1]); // numerically sorted ascending — last entry is the highest major version
       }
     } catch (e) {
       setErr(`Could not fetch versions: ${e instanceof Error ? e.message : 'unknown error'}`);
@@ -521,7 +523,9 @@ function RosterSection({ gameDayId, roster, isAdmin, onChanged }: {
         if (t.tankId.startsWith('builtin-') || /^__\w+__$/.test(t.tankId)) continue; // AI tanks have their own list
         if (roster.some((r) => r.tankId === t.tankId)) { duplicate++; continue; }
         const full = await getTank(t.tankId);
-        const majors = full.versions.filter((v) => v.versionType === 'major' && isUsable(v)).map((v) => v.version);
+        const majors = sortMajorVersions(
+          full.versions.filter((v) => v.versionType === 'major' && isUsable(v)).map((v) => v.version),
+        );
         if (majors.length === 0) { invalid++; continue; }
         eligible.push({ tankId: t.tankId, version: majors[majors.length - 1], name: t.name });
       }
