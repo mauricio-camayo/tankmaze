@@ -85,6 +85,23 @@ const overlay: React.CSSProperties = {
   display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
 };
 
+// Item 273: pagination + filters for the Gamedays list.
+const PAGE_SIZE = 10;
+const RANDOM_MAZE_FILTER = '__random__';
+
+const filterSelectStyle: React.CSSProperties = {
+  background: '#0a3550', border: '1px solid #23577a', borderRadius: 0,
+  color: '#e7f1f7', padding: '6px 10px', fontSize: 13, cursor: 'pointer',
+  colorScheme: 'dark',
+};
+
+/** A Game Day matches "Random maze" when it's explicitly flagged randomMaps,
+ *  or when forcedMapIds is empty/missing — the default/legacy case where no
+ *  static map was ever forced. */
+function isRandomMazeGameDay(gd: GameDay): boolean {
+  return gd.randomMaps === true || !gd.forcedMapIds || gd.forcedMapIds.length === 0;
+}
+
 function UnsavedChangesDialog({ onSaveAndLeave, onDiscard, onStay }: {
   onSaveAndLeave: () => void;
   onDiscard: () => void;
@@ -787,10 +804,14 @@ export default function GameDayList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleteWarning, setDeleteWarning] = useState<string | null>(null);
+  const [maps, setMaps] = useState<GameMap[]>([]);
+  const [typeFilter, setTypeFilter] = useState('');
+  const [mapFilter, setMapFilter] = useState('');
+  const [page, setPage] = useState(0);
 
   function load() {
     listGameDays()
-      .then((data) => setGameDays(data ?? []))
+      .then((data) => { setGameDays(data ?? []); setPage(0); })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
   }
@@ -810,6 +831,31 @@ export default function GameDayList() {
   }
 
   useEffect(() => { load(); }, []);
+  useEffect(() => { listMaps().then(setMaps).catch(() => {}); }, []);
+  useEffect(() => { setPage(0); }, [typeFilter, mapFilter]);
+
+  const sortedGameDays = [...gameDays].sort((a, b) => {
+    const order = { active: 0, upcoming: 1, past: 2, complete: 3 };
+    return order[phaseOverallStatus(a)] - order[phaseOverallStatus(b)];
+  });
+
+  const typeOptions = Array.from(
+    new Set(gameDays.map((gd) => gameDayBaseName(gd.name ?? '')).filter(Boolean)),
+  ).sort((a, b) => a.localeCompare(b));
+
+  const filteredGameDays = sortedGameDays.filter((gd) => {
+    if (typeFilter && gameDayBaseName(gd.name ?? '') !== typeFilter) return false;
+    if (mapFilter === RANDOM_MAZE_FILTER) {
+      if (!isRandomMazeGameDay(gd)) return false;
+    } else if (mapFilter) {
+      if (!(gd.forcedMapIds ?? []).includes(mapFilter)) return false;
+    }
+    return true;
+  });
+
+  const pageCount = Math.max(1, Math.ceil(filteredGameDays.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageItems = filteredGameDays.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
 
   return (
     <Layout>
@@ -895,16 +941,55 @@ export default function GameDayList() {
         </div>
       )}
 
+      {!loading && !error && gameDays.length > 0 && (
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} style={filterSelectStyle}>
+            <option value="">All types</option>
+            {typeOptions.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+          <select value={mapFilter} onChange={(e) => setMapFilter(e.target.value)} style={filterSelectStyle}>
+            <option value="">All maps</option>
+            <option value={RANDOM_MAZE_FILTER}>Random maze</option>
+            {maps.map((m) => (
+              <option key={m.mapId} value={m.mapId}>{m.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {!loading && !error && gameDays.length > 0 && filteredGameDays.length === 0 && (
+        <div style={{ ...cardStyle, textAlign: 'center', padding: '48px 24px', color: '#5b87a3' }}>
+          No game days match the selected filters.
+        </div>
+      )}
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {[...gameDays]
-          .sort((a, b) => {
-            const order = { active: 0, upcoming: 1, past: 2, complete: 3 };
-            return order[phaseOverallStatus(a)] - order[phaseOverallStatus(b)];
-          })
-          .map((gd) => (
-            <GameDayRow key={gd.gameDayId} gd={gd} onDeleted={handleGameDayDeleted} onRefresh={load} autoOpen={editId === gd.gameDayId} />
-          ))}
+        {pageItems.map((gd) => (
+          <GameDayRow key={gd.gameDayId} gd={gd} onDeleted={handleGameDayDeleted} onRefresh={load} autoOpen={editId === gd.gameDayId} />
+        ))}
       </div>
+
+      {filteredGameDays.length > 0 && pageCount > 1 && (
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 16 }}>
+          <button
+            onClick={() => setPage((p) => p - 1)}
+            disabled={safePage === 0}
+            style={{ ...ghostButtonStyle, padding: '3px 10px', fontSize: 12, opacity: safePage === 0 ? 0.4 : 1 }}
+          >
+            Prev
+          </button>
+          <span style={{ color: '#5b87a3', fontSize: 12, alignSelf: 'center' }}>{safePage + 1} / {pageCount}</span>
+          <button
+            onClick={() => setPage((p) => p + 1)}
+            disabled={safePage >= pageCount - 1}
+            style={{ ...ghostButtonStyle, padding: '3px 10px', fontSize: 12, opacity: safePage >= pageCount - 1 ? 0.4 : 1 }}
+          >
+            Next
+          </button>
+        </div>
+      )}
     </Layout>
   );
 }
