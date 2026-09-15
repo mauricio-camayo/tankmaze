@@ -64,6 +64,22 @@ type userSettingsState struct {
 	WindowStart            string `json:"windowStart"`
 }
 
+// resetWindowIfExpired mirrors db.ResetWindowIfExpired for the local, in-memory
+// userSettingsState so a stale (>30-day) window doesn't display an inflated
+// compilation count in getMySettings/adminListUsers — matching tank-api's
+// behavior. Read-only: the caller decides whether to persist the reset.
+func resetWindowIfExpired(us userSettingsState) userSettingsState {
+	reset, _ := db.ResetWindowIfExpired(db.UserSettings{
+		Tier:                   us.Tier,
+		CompilationsThisWindow: us.CompilationsThisWindow,
+		WindowStart:            us.WindowStart,
+	})
+	us.Tier = reset.Tier
+	us.CompilationsThisWindow = reset.CompilationsThisWindow
+	us.WindowStart = reset.WindowStart
+	return us
+}
+
 type adConfigState struct {
 	Enabled      bool   `json:"enabled"`
 	PublisherID  string `json:"publisherId"`
@@ -1941,9 +1957,10 @@ func (srv *server) adminListUsers(w http.ResponseWriter) {
 		CompilationLimit       int `json:"compilationLimit"`
 	}
 	srv.mu.RLock()
-	tier := srv.userSettings.Tier
-	compilationsThisWindow := srv.userSettings.CompilationsThisWindow
+	us := resetWindowIfExpired(srv.userSettings)
 	srv.mu.RUnlock()
+	tier := us.Tier
+	compilationsThisWindow := us.CompilationsThisWindow
 	if tier == "" {
 		tier = db.TierFree
 	}
@@ -2111,7 +2128,7 @@ func (srv *server) patchAdConfig(w http.ResponseWriter, r *http.Request) {
 
 func (srv *server) getMySettings(w http.ResponseWriter) {
 	srv.mu.RLock()
-	us := srv.userSettings
+	us := resetWindowIfExpired(srv.userSettings)
 	srv.mu.RUnlock()
 	tier := us.Tier
 	if tier == "" {
