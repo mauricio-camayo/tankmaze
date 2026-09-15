@@ -257,6 +257,8 @@ export interface AdminUser {
   lastLoginAt: number | null;
   tankCount: number;
   tankLimit: number;
+  compilationsThisWindow: number;
+  compilationLimit: number;
 }
 
 export const adminListUsers = (nextToken?: string) =>

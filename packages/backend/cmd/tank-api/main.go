@@ -216,6 +216,9 @@ type adminUserResp struct {
 	LastLoginAt *int64 `json:"lastLoginAt"`
 	TankCount   int    `json:"tankCount"`
 	TankLimit   int    `json:"tankLimit"`
+
+	CompilationsThisWindow int `json:"compilationsThisWindow"`
+	CompilationLimit       int `json:"compilationLimit"`
 }
 
 // ---- Handler ----------------------------------------------------------------
@@ -3214,9 +3217,12 @@ func (h *handler) adminListUsers(ctx context.Context, req events.APIGatewayV2HTT
 		tier := db.TierFree
 		displayName := ""
 		var lastLoginAt *int64
+		compilationsThisWindow := 0
 		if us, err := h.store.GetUserSettings(ctx, sub); err == nil {
+			us, _ = db.ResetWindowIfExpired(us)
 			tier = us.Tier
 			displayName = us.DisplayName
+			compilationsThisWindow = us.CompilationsThisWindow
 			if us.LastLoginAt != 0 {
 				lastLoginAt = &us.LastLoginAt
 			}
@@ -3239,23 +3245,25 @@ func (h *handler) adminListUsers(ctx context.Context, req events.APIGatewayV2HTT
 		if u.UserCreateDate != nil {
 			createdAt = u.UserCreateDate.UTC().Format(time.RFC3339)
 		}
-		tankLimit, _ := db.TierLimits(tier)
+		tankLimit, compileLimit := db.TierLimits(tier)
 		tankCount := 0
 		if tanks, err := h.store.ListTanksByUser(ctx, sub); err == nil {
 			tankCount = len(tanks)
 		}
 		users = append(users, adminUserResp{
-			Sub:         sub,
-			Email:       email,
-			Name:        name,
-			Enabled:     u.Enabled,
-			IsAdmin:     adminSubs[sub],
-			Tier:        tier,
-			Idp:         identityProviderName(cognitoAttr(u.Attributes, "identities")),
-			CreatedAt:   createdAt,
-			LastLoginAt: lastLoginAt,
-			TankCount:   tankCount,
-			TankLimit:   tankLimit,
+			Sub:                    sub,
+			Email:                  email,
+			Name:                   name,
+			Enabled:                u.Enabled,
+			IsAdmin:                adminSubs[sub],
+			Tier:                   tier,
+			Idp:                    identityProviderName(cognitoAttr(u.Attributes, "identities")),
+			CreatedAt:              createdAt,
+			LastLoginAt:            lastLoginAt,
+			TankCount:              tankCount,
+			TankLimit:              tankLimit,
+			CompilationsThisWindow: compilationsThisWindow,
+			CompilationLimit:       compileLimit,
 		})
 	}
 

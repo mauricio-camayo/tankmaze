@@ -111,6 +111,7 @@ export default function AdminUsers() {
                 <th style={th}>First seen</th>
                 <th style={th}>Last seen</th>
                 <th style={th}>Tanks</th>
+                <th style={th}>Compilations</th>
                 <th style={th}>Actions</th>
               </tr>
             </thead>
@@ -159,6 +160,7 @@ export default function AdminUsers() {
                     <td style={td}>{fmtDate(u.createdAt)}</td>
                     <td style={td}>{fmtDate(u.lastLoginAt ?? u.createdAt)}</td>
                     <td style={td}>{u.tankCount}/{u.tankLimit}</td>
+                    <td style={td}>{u.compilationsThisWindow}/{u.compilationLimit}</td>
                     <td style={{ ...td, display: 'flex', gap: 8, flexWrap: 'nowrap', whiteSpace: 'nowrap' }}>
                       {!isSelf && (
                         <button

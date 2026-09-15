@@ -1936,14 +1936,18 @@ func (srv *server) adminListUsers(w http.ResponseWriter) {
 		LastLoginAt *int64 `json:"lastLoginAt"`
 		TankCount   int    `json:"tankCount"`
 		TankLimit   int    `json:"tankLimit"`
+
+		CompilationsThisWindow int `json:"compilationsThisWindow"`
+		CompilationLimit       int `json:"compilationLimit"`
 	}
 	srv.mu.RLock()
 	tier := srv.userSettings.Tier
+	compilationsThisWindow := srv.userSettings.CompilationsThisWindow
 	srv.mu.RUnlock()
 	if tier == "" {
 		tier = db.TierFree
 	}
-	tankLimit, _ := db.TierLimits(tier)
+	tankLimit, compileLimit := db.TierLimits(tier)
 	users := srv.store.listUsers()
 	resp := make([]userResp, 0, len(users))
 	for _, u := range users {
@@ -1954,6 +1958,7 @@ func (srv *server) adminListUsers(w http.ResponseWriter) {
 		resp = append(resp, userResp{
 			Sub: u.Sub, Email: u.Email, Name: u.Name, Enabled: u.Enabled, IsAdmin: u.IsAdmin, Tier: tier,
 			Idp: "Email/Password", TankCount: len(srv.store.listTanksByUser(u.Sub)), TankLimit: tankLimit,
+			CompilationsThisWindow: compilationsThisWindow, CompilationLimit: compileLimit,
 		})
 	}
 	jsonOK(w, map[string]any{"users": resp})
