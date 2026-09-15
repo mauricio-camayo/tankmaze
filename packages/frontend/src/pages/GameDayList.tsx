@@ -805,7 +805,6 @@ export default function GameDayList() {
   const [error, setError] = useState<string | null>(null);
   const [deleteWarning, setDeleteWarning] = useState<string | null>(null);
   const [maps, setMaps] = useState<GameMap[]>([]);
-  const [typeFilter, setTypeFilter] = useState('');
   const [mapFilter, setMapFilter] = useState('');
   const [page, setPage] = useState(0);
 
@@ -832,19 +831,14 @@ export default function GameDayList() {
 
   useEffect(() => { load(); }, []);
   useEffect(() => { listMaps().then(setMaps).catch(() => {}); }, []);
-  useEffect(() => { setPage(0); }, [typeFilter, mapFilter]);
+  useEffect(() => { setPage(0); }, [mapFilter]);
 
   const sortedGameDays = [...gameDays].sort((a, b) => {
     const order = { active: 0, upcoming: 1, past: 2, complete: 3 };
     return order[phaseOverallStatus(a)] - order[phaseOverallStatus(b)];
   });
 
-  const typeOptions = Array.from(
-    new Set(gameDays.map((gd) => gameDayBaseName(gd.name ?? '')).filter(Boolean)),
-  ).sort((a, b) => a.localeCompare(b));
-
   const filteredGameDays = sortedGameDays.filter((gd) => {
-    if (typeFilter && gameDayBaseName(gd.name ?? '') !== typeFilter) return false;
     if (mapFilter === RANDOM_MAZE_FILTER) {
       if (!isRandomMazeGameDay(gd)) return false;
     } else if (mapFilter) {
@@ -943,12 +937,6 @@ export default function GameDayList() {
 
       {!loading && !error && gameDays.length > 0 && (
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} style={filterSelectStyle}>
-            <option value="">All types</option>
-            {typeOptions.map((t) => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </select>
           <select value={mapFilter} onChange={(e) => setMapFilter(e.target.value)} style={filterSelectStyle}>
             <option value="">All maps</option>
             <option value={RANDOM_MAZE_FILTER}>Random maze</option>
