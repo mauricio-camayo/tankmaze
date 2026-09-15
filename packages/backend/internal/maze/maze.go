@@ -54,42 +54,113 @@ func NewGrid(size int) MazeGrid {
 //
 // Layout rules:
 //   - The outer ring (row 0, row size-1, col 0, col size-1) is always wall.
-//   - The interior uses a room+passage model: rooms sit at odd coordinates
-//     (1,1),(1,3),…,(size-2,size-2); a passage between two adjacent rooms
-//     occupies the even-coordinate cell between them.
+//   - The interior uses a room+passage model, but rooms and passages are
+//     blocks at least 2 cells wide/tall rather than single cells: the
+//     interior range [1, size-2] on each axis is partitioned (see
+//     partitionInterior) into rooms of width ≥ 2 separated by single-cell
+//     walls, and a passage carved between two adjacent rooms is opened
+//     across the full width of the shared room face (also ≥ 2 cells) —
+//     never a 1-cell-wide corridor.
 //   - Every room is reachable from every other room (perfect maze, no loops).
-//   - SpawnA (1,1) and SpawnB (size-2,size-2) are always open.
+//   - SpawnA (1,1) and SpawnB (size-2,size-2) are always open: they sit in
+//     the first and last room, which the partition always places at exactly
+//     those corners regardless of size.
 func Generate(seed int64, size int) MazeGrid {
 	g := NewGrid(size)
 	rng := rand.New(rand.NewSource(seed))
-	visited := make2D(size)
 
-	r0, c0 := g.SpawnA[0], g.SpawnA[1]
-	g.Cells[r0][c0] = true
-	visited[r0][c0] = true
+	segs := partitionInterior(size)
+	n := len(segs)
+	visited := make([][]bool, n)
+	for i := range visited {
+		visited[i] = make([]bool, n)
+	}
 
-	dirs := [4][2]int{{-2, 0}, {2, 0}, {0, -2}, {0, 2}}
-
-	var dfs func(r, c int)
-	dfs = func(r, c int) {
-		rng.Shuffle(len(dirs), func(i, j int) { dirs[i], dirs[j] = dirs[j], dirs[i] })
-		for _, d := range dirs {
-			nr, nc := r+d[0], c+d[1]
-			if nr < 1 || nr > size-2 || nc < 1 || nc > size-2 {
-				continue
+	openRoom := func(bi, bj int) {
+		rs, cs := segs[bi], segs[bj]
+		for r := rs.start; r < rs.start+rs.width; r++ {
+			for c := cs.start; c < cs.start+cs.width; c++ {
+				g.Cells[r][c] = true
 			}
-			if visited[nr][nc] {
-				continue
-			}
-			g.Cells[(r+nr)/2][(c+nc)/2] = true
-			g.Cells[nr][nc] = true
-			visited[nr][nc] = true
-			dfs(nr, nc)
 		}
 	}
 
-	dfs(r0, c0)
+	// openPassage opens the full-width wall gap between two adjacent rooms
+	// (bi,bj) and (nbi,nbj); exactly one of the two indices differs by 1.
+	openPassage := func(bi, bj, nbi, nbj int) {
+		if bi == nbi {
+			col := segs[min(bj, nbj)].start + segs[min(bj, nbj)].width
+			rs := segs[bi]
+			for r := rs.start; r < rs.start+rs.width; r++ {
+				g.Cells[r][col] = true
+			}
+			return
+		}
+		row := segs[min(bi, nbi)].start + segs[min(bi, nbi)].width
+		cs := segs[bj]
+		for c := cs.start; c < cs.start+cs.width; c++ {
+			g.Cells[row][c] = true
+		}
+	}
+
+	dirs := [4][2]int{{-1, 0}, {1, 0}, {0, -1}, {0, 1}}
+
+	var dfs func(bi, bj int)
+	dfs = func(bi, bj int) {
+		openRoom(bi, bj)
+		visited[bi][bj] = true
+		rng.Shuffle(len(dirs), func(i, j int) { dirs[i], dirs[j] = dirs[j], dirs[i] })
+		for _, d := range dirs {
+			nbi, nbj := bi+d[0], bj+d[1]
+			if nbi < 0 || nbi >= n || nbj < 0 || nbj >= n {
+				continue
+			}
+			if visited[nbi][nbj] {
+				continue
+			}
+			openPassage(bi, bj, nbi, nbj)
+			dfs(nbi, nbj)
+		}
+	}
+
+	dfs(0, 0)
 	return g
+}
+
+// segment is one room's span along a single axis: absolute grid coordinates
+// [start, start+width-1], with width always ≥ 2.
+type segment struct {
+	start, width int
+}
+
+// partitionInterior splits the interior range [1, size-2] into segments of
+// width ≥ 2 separated by single-cell walls, covering the range exactly (the
+// last segment always ends at size-2, so it lines up with SpawnB). Segments
+// are nominally width 2 (a 2-cell room, matching the 2-cell passage carved
+// between rooms); any leftover cells that don't divide evenly into 3-cell
+// slots (2 room + 1 wall) are distributed round-robin as extra width so no
+// interior cell is ever left permanently walled off.
+func partitionInterior(size int) []segment {
+	length := size - 2
+	n := (length + 1) / 3
+	if n < 1 {
+		n = 1
+	}
+	widths := make([]int, n)
+	for i := range widths {
+		widths[i] = 2
+	}
+	remainder := length - (3*n - 1)
+	for i := 0; i < remainder; i++ {
+		widths[i%n]++
+	}
+	segs := make([]segment, n)
+	pos := 1
+	for i, w := range widths {
+		segs[i] = segment{start: pos, width: w}
+		pos += w + 1
+	}
+	return segs
 }
 
 // Load converts an N×N boolean layout (as stored in the tankmaze-maps DynamoDB

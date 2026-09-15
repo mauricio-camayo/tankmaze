@@ -97,6 +97,45 @@ func TestGenerate_DifferentSeedsDiffer(t *testing.T) {
 	}
 }
 
+// TestGenerate_NoNarrowCorridors asserts every open-open adjacency (an edge
+// between two orthogonally adjacent open cells) has a parallel open-open
+// edge one cell over — i.e. you can always walk two cells abreast through
+// every passage and room, never squeezing through a 1-cell-wide corridor.
+// For a horizontal edge (r,c)-(r,c+1) that means row r-1 or row r+1 has
+// both (c) and (c+1) open too; symmetrically for vertical edges.
+func TestGenerate_NoNarrowCorridors(t *testing.T) {
+	for _, seed := range []int64{0, 1, 42, 99, 1000} {
+		g := Generate(seed, DefaultSize)
+		n := g.Size
+
+		for r := 0; r < n; r++ {
+			for c := 0; c < n-1; c++ {
+				if !g.Cells[r][c] || !g.Cells[r][c+1] {
+					continue
+				}
+				above := r > 0 && g.Cells[r-1][c] && g.Cells[r-1][c+1]
+				below := r < n-1 && g.Cells[r+1][c] && g.Cells[r+1][c+1]
+				if !above && !below {
+					t.Errorf("seed %d: 1-cell-wide horizontal corridor at row %d, cols %d-%d", seed, r, c, c+1)
+				}
+			}
+		}
+
+		for r := 0; r < n-1; r++ {
+			for c := 0; c < n; c++ {
+				if !g.Cells[r][c] || !g.Cells[r+1][c] {
+					continue
+				}
+				left := c > 0 && g.Cells[r][c-1] && g.Cells[r+1][c-1]
+				right := c < n-1 && g.Cells[r][c+1] && g.Cells[r+1][c+1]
+				if !left && !right {
+					t.Errorf("seed %d: 1-cell-wide vertical corridor at col %d, rows %d-%d", seed, c, r, r+1)
+				}
+			}
+		}
+	}
+}
+
 func TestGenerate_NonDefaultSize(t *testing.T) {
 	g := Generate(42, 11)
 	if g.Size != 11 {
