@@ -350,11 +350,18 @@ function TestDialog({
   onTest: (opponent: TestOpponent, mapId: string | null) => void;
   onClose: () => void;
 }) {
-  const [opponent, setOpponent] = useState<TestOpponent>('scout');
+  const [opponent, setOpponent] = useState<TestOpponent>(
+    () => (localStorage.getItem('tankmaze:lastAiOpponent') as TestOpponent | null) ?? 'scout',
+  );
   const [mapId, setMapId] = useState<string | null>(() => {
     const saved = localStorage.getItem('tankmaze:lastMapId');
     return saved ?? null;
   });
+
+  function selectOpponent(op: TestOpponent) {
+    setOpponent(op);
+    localStorage.setItem('tankmaze:lastAiOpponent', op);
+  }
 
   function selectMap(id: string | null) {
     setMapId(id);
@@ -376,7 +383,7 @@ function TestDialog({
                 name="opponent"
                 value={op}
                 checked={opponent === op}
-                onChange={() => setOpponent(op)}
+                onChange={() => selectOpponent(op)}
               />
               <span style={{ color: '#e7f1f7', textTransform: 'capitalize', fontSize: 14 }}>{op}</span>
             </label>

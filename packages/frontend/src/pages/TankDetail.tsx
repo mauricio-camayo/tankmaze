@@ -179,9 +179,16 @@ function TestDialog({
   opponentTankName?: string;
   onChallenge?: (yourTankId: string, mapId: string | null) => void;
 }) {
-  const [opponent, setOpponent] = useState<TestOpponent>('scout');
+  const [opponent, setOpponent] = useState<TestOpponent>(
+    () => (localStorage.getItem('tankmaze:lastAiOpponent') as TestOpponent | null) ?? 'scout',
+  );
   const [yourTankId, setYourTankId] = useState('');
   const [mapId, setMapId] = useState<string | null>(() => localStorage.getItem('tankmaze:lastMapId') ?? null);
+
+  function selectOpponent(op: TestOpponent) {
+    setOpponent(op);
+    localStorage.setItem('tankmaze:lastAiOpponent', op);
+  }
 
   // Default "Your tank" to the first ready tank once the list arrives.
   useEffect(() => {
@@ -230,7 +237,7 @@ function TestDialog({
           {mode === 'ai' ? (
             (['scout', 'bruiser', 'ranger', 'randy'] as TestOpponent[]).map((op) => (
               <label key={op} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, cursor: 'pointer' }}>
-                <input type="radio" name="td-opponent" value={op} checked={opponent === op} onChange={() => setOpponent(op)} />
+                <input type="radio" name="td-opponent" value={op} checked={opponent === op} onChange={() => selectOpponent(op)} />
                 <span style={{ color: '#e7f1f7', textTransform: 'capitalize', fontSize: 14 }}>{op}</span>
               </label>
             ))
