@@ -145,7 +145,7 @@ Tank code is compiled to WASM and executed by **Wazero** (a pure-Go WASM runtime
 
 Violations (timeout, panic) are logged and result in an `Idle` action for that tick. Repeated timeouts (>20% of ticks in a match) disqualify the tank from ranked Game Days until the Author submits a fixed version.
 
-**Known gap — `math/rand` is not actually random (PRIORITIES.md item 251):** the platform's WASM host currently seeds every match's WASI random-byte source with a fixed, deterministic stream rather than real entropy, so `math/rand` inside every tank binary produces the identical sequence of "random" decisions in every match given the same map and spawn points — not the unpredictable behavior an author would reasonably expect from a random fallback or wander pattern. Confirmed live (2026-08-28) via a byte-for-byte identical tick-by-tick diff of two separate real matches. See `docs/technical-spec.md` §4.3 for the mechanism, evidence trail, and proposed fix. Not yet fixed.
+`math/rand` is real entropy today. Until 2026-08-29 the platform's WASM host seeded every match's WASI random-byte source with a fixed, deterministic stream, so `math/rand` inside every tank binary produced the identical sequence of "random" decisions in every match given the same map and spawn points — confirmed live (2026-08-28) via a byte-for-byte identical tick-by-tick diff of two separate real matches. Fixed (PRIORITIES.md item 251, commit `95f69b3`) by supplying `crypto/rand` as the WASM module's `RandSource`; see `docs/technical-spec.md` §4.3 for the mechanism and verification.
 
 ### 3.6 Stat System
 
@@ -189,7 +189,7 @@ Three reference tank implementations are built into the platform. They serve two
 - **Pursuit phase** (opponent detected in sensor range): Randy moves toward the detected opponent's position each tick and fires while doing so. It tracks the opponent as long as sensor contact is maintained.
 - **Lost contact**: if the opponent leaves sensor range, Randy immediately reverts to the wander phase.
 
-Randy requires the `math/rand` standard library. Its purpose is to be a noticeably harder baseline than pure randomness — authors must actively outmanoeuvre a pursuing enemy, not just outlast random fire. (Currently undermined by the platform-wide deterministic-randomness gap tracked in §3.5/PRIORITIES.md item 251 — Randy's wander phase is not actually random today.)
+Randy requires the `math/rand` standard library. Its purpose is to be a noticeably harder baseline than pure randomness — authors must actively outmanoeuvre a pursuing enemy, not just outlast random fire.
 
 Built-in tanks do not appear in ranked leaderboards. They cannot be beaten by the system to claim a rank.
 
