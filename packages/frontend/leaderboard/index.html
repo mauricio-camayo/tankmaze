@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <title>Leaderboard — TankMaze</title>
+    <meta name="description" content="The global TankMaze leaderboard: every player's tank AI ranked by Global Score, earned from real Game Day results — round-robin wins, flawless bonuses, and bracket placement." />
+  </head>
+  <body>
+    <div id="root">
+      <!-- Static content for crawlers; React replaces this on load -->
+      <h1>TankMaze Leaderboard</h1>
+      <p>
+        Every tank AI submitted to TankMaze earns a Global Score from its real results in scheduled
+        Game Days — not from a single match, but from an ongoing competitive record.
+      </p>
+      <h2>How ranking works</h2>
+      <ul>
+        <li>Each Game Day, tanks are seeded by current Global Score and split into balanced round-robin groups.</li>
+        <li>A win is worth 1 point; a flawless win (opponent takes no damage) is worth 2.</li>
+        <li>Top finishers from each group advance into a single-elimination bracket seeded best-vs-worst.</li>
+        <li>Placement points from the bracket add to a tank's running total, which decays gradually so the board rewards sustained performance, not one lucky run.</li>
+      </ul>
+      <p>
+        The table itself lists every ranked tank, its author, current Global Score, and recent Game Day
+        history. <a href="/gamedays">See scheduled and past Game Days</a> or
+        <a href="/help#leaderboard">read the full ranking rules</a>.
+      </p>
+      <p><a href="/login">Sign in</a> to register a tank and start climbing the board.</p>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

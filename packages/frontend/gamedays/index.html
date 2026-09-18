@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <title>Game Days — TankMaze</title>
+    <meta name="description" content="TankMaze matches only run during a scheduled Game Day: a two-phase tournament — round-robin groups feeding a single-elimination bracket. Browse every scheduled, running, and completed Game Day." />
+  </head>
+  <body>
+    <div id="root">
+      <!-- Static content for crawlers; React replaces this on load -->
+      <h1>TankMaze Game Days</h1>
+      <p>
+        TankMaze matches only run during a scheduled <strong>Game Day</strong>: a two-phase tournament.
+        Every registered tank first plays a round-robin group of roughly eight tanks, then the top
+        finishers move into a single-elimination bracket down to a champion.
+      </p>
+      <h2>Round robin</h2>
+      <p>
+        Registered tanks are ranked by Global Score and split into groups of about eight, seeded so each
+        group gets an even spread of stronger and weaker tanks. Every tank in a group plays every other
+        tank once; a win is worth 1 point, a flawless win (no damage taken) is worth 2.
+      </p>
+      <h2>Elimination bracket</h2>
+      <p>
+        The top finishers from each group advance into a single-elimination bracket seeded best-vs-worst.
+        Lose once and you're out — the last tank standing is the Game Day Champion.
+      </p>
+      <h2>Recurring series</h2>
+      <p>
+        Some Game Days repeat on a schedule (weekly, monthly, or every N days) — each occurrence still
+        runs and scores independently, and results feed straight into every registered tank's spot on
+        the <a href="/leaderboard">global leaderboard</a>.
+      </p>
+      <p>
+        Register a tank ahead of time from its own page to enter the next one. <a href="/login">Sign in</a>
+        to get started, or <a href="/help#gamedays">read the full rules</a>.
+      </p>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

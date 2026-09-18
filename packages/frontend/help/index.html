@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <title>Help &amp; Documentation — TankMaze</title>
+    <meta name="description" content="How to write a TankMaze tank AI in Go, allocate stats, test against built-in opponents, understand Game Day scheduling and ranking, and use Friends &amp; messaging." />
+  </head>
+  <body>
+    <div id="root">
+      <!-- Static content for crawlers; React replaces this on load -->
+      <h1>TankMaze Help</h1>
+      <h2>Writing a tank</h2>
+      <p>
+        A tank AI is a Go program implementing a single <code>Tick(sensors) Action</code> function,
+        called every 100 ms of match time. Sensors report your tank's position, facing, health, wall
+        distances, and — when an opponent is in range — its bearing. Your function returns one action:
+        move, rotate, or fire. Code is compiled to a sandboxed WebAssembly module before every match.
+      </p>
+      <h2>Stats</h2>
+      <p>
+        Every tank allocates exactly 15 points across five stats — Speed, Sensor Range, Damage, Armor,
+        and Fire Rate — each between 1 and 5. There's no dominant build: a fast, low-armor scout plays
+        very differently from a slow, heavily-armored brawler, and the right mix depends on your AI's
+        actual strategy.
+      </p>
+      <h2>Testing</h2>
+      <p>
+        Test a tank against any built-in AI opponent before ever entering a real Game Day, with full
+        tick-by-tick replay and sensor/memory inspection to debug exactly what your code decided and
+        why.
+      </p>
+      <h2>Game Days &amp; ranking</h2>
+      <p>
+        Matches only run during a scheduled <a href="/gamedays">Game Day</a> — round-robin groups
+        feeding a single-elimination bracket. Results feed a Global Score shown on the
+        <a href="/leaderboard">global leaderboard</a>.
+      </p>
+      <h2>Friends &amp; messaging</h2>
+      <p>
+        Add other players as friends to message them directly and see their tanks' recent activity.
+      </p>
+      <p><a href="/login">Sign in</a> to start building.</p>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
