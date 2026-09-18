@@ -12,37 +12,124 @@
     <div id="root">
       <!-- Static content for crawlers; React replaces this on load -->
       <h1>TankMaze Help</h1>
-      <h2>Writing a tank</h2>
+
+      <h2 id="tanks">Tanks &amp; Programming</h2>
+      <h3>Overview</h3>
       <p>
-        A tank AI is a Go program implementing a single <code>Tick(sensors) Action</code> function,
-        called every 100 ms of match time. Sensors report your tank's position, facing, health, wall
-        distances, and — when an opponent is in range — its bearing. Your function returns one action:
-        move, rotate, or fire. Code is compiled to a sandboxed WebAssembly module before every match.
+        TankMaze is a code-battle platform: you write a tank's AI as a Go program, compile it to
+        WebAssembly, and submit it here. Test it freely against the built-in bots, or challenge
+        another player's tank, then register it for a Game Day — a scheduled tournament where tanks
+        compete head-to-head and results feed a global ranking.
       </p>
-      <h2>Stats</h2>
+      <h3>Writing a tank</h3>
       <p>
-        Every tank allocates exactly 15 points across five stats — Speed, Sensor Range, Damage, Armor,
-        and Fire Rate — each between 1 and 5. There's no dominant build: a fast, low-armor scout plays
-        very differently from a slow, heavily-armored brawler, and the right mix depends on your AI's
-        actual strategy.
+        Implement <code>Tick(sensors Sensors) Action</code> — the server calls it once per game tick,
+        and it must return a single action. Package-level variables persist across ticks, so they're
+        your tank's memory; there's no real-time control once a match starts, and no other state to
+        manage.
       </p>
-      <h2>Testing</h2>
+      <h3>Stats</h3>
       <p>
-        Test a tank against any built-in AI opponent before ever entering a real Game Day, with full
-        tick-by-tick replay and sensor/memory inspection to debug exactly what your code decided and
-        why.
+        The Config panel allocates exactly 15 points across five stats (1–5 each): Speed, Sensor
+        Range, Damage, Armor, and Fire Rate. Save &amp; Validate rejects anything that doesn't sum to
+        15 before it even tries to compile.
       </p>
-      <h2>Game Days &amp; ranking</h2>
+      <h3>Testing</h3>
       <p>
-        Matches only run during a scheduled <a href="/gamedays">Game Day</a> — round-robin groups
-        feeding a single-elimination bracket. Results feed a Global Score shown on the
-        <a href="/leaderboard">global leaderboard</a>.
+        Test vs. AI and Challenge run unranked matches on any version, any time — neither affects your
+        ranked stats, so it's the safe way to iterate before promoting. Test vs. AI runs against a
+        built-in bot (Scout, Bruiser, Ranger, or Randy); Challenge runs against another player's tank
+        — it only appears on tanks you don't own, so open the tank's page from the Leaderboard, a Game
+        Day, or a friend's profile and challenge it from there.
       </p>
-      <h2>Friends &amp; messaging</h2>
+      <h3>Templates</h3>
       <p>
-        Add other players as friends to message them directly and see their tanks' recent activity.
+        The "Start from a template" row on your Dashboard lets you fork one of the built-in AI tanks
+        (Scout, Bruiser, Ranger, Randy) as a starting point instead of writing from a blank file.
       </p>
-      <p><a href="/login">Sign in</a> to start building.</p>
+      <h3>Saving &amp; versions</h3>
+      <p>
+        Every Save &amp; Validate bumps a minor version (v0.1, v0.2, …) — safe to do as often as you
+        like, since minors are test-only. Promote to Major turns the current minor into the next major
+        version (v1, v2, …); only major versions can be registered for a Game Day and count toward
+        ranked stats.
+      </p>
+
+      <h2 id="gamedays">Game Days</h2>
+      <h3>Overview</h3>
+      <p>
+        TankMaze matches only run during a scheduled Game Day: a two-phase tournament. Every
+        registered tank first plays a round-robin group of roughly 8 tanks, then the top finishers
+        move into a single-elimination bracket down to a champion. Register a tank ahead of time to
+        enter the next one — results feed straight into the tank's spot on the Leaderboard.
+      </p>
+      <h3>Round robin</h3>
+      <p>
+        Registered tanks are ranked by Global Score and split into groups of about 8, seeded so each
+        group gets an even spread of stronger and weaker tanks. Every tank in a group plays every
+        other tank once; a win is worth 1 point, a flawless win (no damage taken) 2 points.
+      </p>
+      <h3>Elimination bracket</h3>
+      <p>
+        The top finishers from each group advance into a single-elimination bracket seeded
+        best-vs-worst. Lose once and you're out — the last tank standing is the Game Day Champion.
+      </p>
+      <h3>Registering a tank</h3>
+      <p>
+        Registration is explicit and per-version: open your tank's page and register its current
+        major version before the window closes. Promoting a new major version later means
+        re-registering it — the old registration doesn't carry over automatically.
+      </p>
+      <h3>Status &amp; badges</h3>
+      <p>
+        Upcoming / active / complete reflect where a Game Day is in its schedule. A ↻ Recurring badge
+        marks an occurrence that belongs to a repeating series (weekly, monthly, or every N days) —
+        each occurrence still runs and scores independently. STUCK means a scheduled phase never
+        actually fired; it's a platform hiccup, not something on your end.
+      </p>
+      <h3>Reading the bracket</h3>
+      <p>
+        Slot colors mark each match's outcome: green for a win, gray for a loss, amber while a match
+        is in progress, and a dim slot for a bye (an automatic advance with no match played).
+      </p>
+
+      <h2 id="leaderboard">Leaderboard &amp; Ranking</h2>
+      <h3>Overview</h3>
+      <p>
+        Every tank's Global Score is the sum of placement points it has earned across Game Days — a
+        stronger finish in a bigger field is worth more points, and old results eventually drop off,
+        so the score reflects recent competitive form rather than one lucky run.
+      </p>
+      <h3>How ranking works</h3>
+      <p>
+        At the end of each Game Day, every tank earns placement points based on its final standing and
+        the size of the field: the champion earns points equal to the number of competitors, and each
+        lower placement is worth roughly half of the one above it.
+      </p>
+      <h3>Reading the table</h3>
+      <p>
+        Score is the Global Score described above. Best is the highest placement the tank has ever
+        achieved. Days counts Game Days participated in. Ties in score are broken by best finish, then
+        by Game Days played.
+      </p>
+
+      <h2 id="friends">Friends &amp; Messaging</h2>
+      <p>
+        Friends is TankMaze's lightweight social layer, separate from Game Day competition. Add
+        another Tank Author as a friend from their profile page — once they accept, you can send each
+        other direct messages to coordinate test matches or swap strategy. Direct messages only work
+        between accepted friends.
+      </p>
+
+      <h2 id="plans">Plans &amp; Tiers</h2>
+      <p>
+        TankMaze's tiers exist to cover the cost of compiling your tank's code, not to give anyone an
+        edge in the maze — every tier plays by the exact same rules, stats, and scoring. Paying only
+        gets you more tanks, more compilations per month, and an ad-free experience.
+      </p>
+
+      <p><a href="/leaderboard">See the leaderboard</a> · <a href="/gamedays">Browse Game Days</a> ·
+      <a href="/login">Sign in</a> to start building.</p>
     </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

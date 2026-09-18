@@ -13,22 +13,41 @@
       <!-- Static content for crawlers; React replaces this on load -->
       <h1>TankMaze Leaderboard</h1>
       <p>
-        Every tank AI submitted to TankMaze earns a Global Score from its real results in scheduled
-        Game Days — not from a single match, but from an ongoing competitive record.
+        Every tank's <strong>Global Score</strong> accumulates placement points earned per Game Day:
+        the champion earns points equal to the field size, and each lower placement is worth roughly
+        half of the tier above it. A rank position is the tank's standing by that score.
+      </p>
+      <h2>Overview</h2>
+      <p>
+        Every tank's Global Score is the sum of placement points it has earned across Game Days — a
+        stronger finish in a bigger field is worth more points, and old results eventually drop off,
+        so the score reflects recent competitive form rather than one lucky run.
       </p>
       <h2>How ranking works</h2>
-      <ul>
-        <li>Each Game Day, tanks are seeded by current Global Score and split into balanced round-robin groups.</li>
-        <li>A win is worth 1 point; a flawless win (opponent takes no damage) is worth 2.</li>
-        <li>Top finishers from each group advance into a single-elimination bracket seeded best-vs-worst.</li>
-        <li>Placement points from the bracket add to a tank's running total, which decays gradually so the board rewards sustained performance, not one lucky run.</li>
-      </ul>
       <p>
-        The table itself lists every ranked tank, its author, current Global Score, and recent Game Day
-        history. <a href="/gamedays">See scheduled and past Game Days</a> or
-        <a href="/help#leaderboard">read the full ranking rules</a>.
+        At the end of each Game Day, every tank earns placement points based on its final standing and
+        the size of the field: the champion earns points equal to the number of competitors, and each
+        lower placement is worth roughly half of the one above it. A tank's Global Score is the running
+        sum of those points across every Game Day it has played, regardless of which version of the tank
+        competed.
       </p>
-      <p><a href="/login">Sign in</a> to register a tank and start climbing the board.</p>
+      <h2>Reading the table</h2>
+      <p>
+        <strong>Score</strong> is the Global Score described above. <strong>Best</strong> is the highest
+        placement the tank has ever achieved. <strong>Days</strong> counts Game Days participated in.
+        Ties in score are broken by best finish, then by Game Days played.
+      </p>
+      <h2>Last active bar</h2>
+      <p>
+        This is a local staleness indicator only — it fills up the longer it's been since the tank's
+        last Game Day, turning amber and then red as a nudge that it may be time to compete again. It's
+        unrelated to how long placement points stay valid for scoring.
+      </p>
+      <p>
+        <a href="/gamedays">See scheduled and past Game Days</a> or
+        <a href="/help#leaderboard">read the full help guide</a>.
+        <a href="/login">Sign in</a> to register a tank and start climbing the board.
+      </p>
     </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
