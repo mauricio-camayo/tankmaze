@@ -836,7 +836,7 @@ Confirmed live on gameday `7268728d-0b10-49aa-8237-57a402646410` (2026-08-28): t
 - Cognito UserPool + UserPoolClient
 - Federated identity providers, each added conditionally when its CDK context values are set: Google, Facebook (disabled on the frontend but the CDK/IdP wiring stays live for a fast re-enable), and GitHub/Discord via the `oidc-shim` Lambda (§5.8) fronting `cognito.UserPoolIdentityProviderOidc` — neither is a built-in CDK Cognito social-provider construct, since neither speaks OIDC natively
 - `PostAuthentication` Lambda trigger (`post-auth-trigger`, §5.9) — the pool's first and only Lambda trigger
-- Custom domain (`auth.tankmaze.org`) so the Hosted UI shows a branded domain instead of the default `*.amazoncognito.com` prefix
+- Hosted UI runs on Cognito's default `*.amazoncognito.com` prefix domain (`tankmaze-auth-897722684267.auth.us-east-1.amazoncognito.com`) — a branded custom domain (`auth.tankmaze.org`) was attempted repeatedly (2026-08-25 through 2026-09-24) but `AWS::Cognito::UserPoolDomain` failed identically every time with a generic, undiagnosable `InvalidRequest`; discarded 2026-09-24 with no functional downside since login works fine on the prefix domain
 - SES email identity for verification/notification emails once `sesSenderEmail` context is set (falls back to Cognito's own default sender otherwise)
 - Exports: `userPoolId`, `userPoolClientId` (passed as CDK context strings to other stacks rather than CloudFormation cross-stack imports, so the User Pool can be recreated without an "export in use" error)
 
