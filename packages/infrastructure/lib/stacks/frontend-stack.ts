@@ -93,7 +93,7 @@ export class FrontendStack extends Stack {
         },
         contentTypeOptions: { override: true },
         frameOptions: {
-          frameOption: cloudfront.HeadersFrameOption.DENY,
+          frameOption: cloudfront.HeadersFrameOption.SAMEORIGIN,
           override: true,
         },
         referrerPolicy: {
