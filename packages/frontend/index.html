@@ -13,16 +13,18 @@
     <div id="root">
       <!-- Static content for crawlers; React replaces this on load -->
       <h1>TankMaze</h1>
-      <p>TankMaze is a strategic programming game where you write Go code to control an autonomous tank and compete in scheduled tournaments.</p>
-      <p>You don't drive a tank — you code one. Write the autonomous brain that drives your tank in Go, submit it, and watch your creation navigate fog-of-war, enemy contact, and the limits of its own hardware — without you.</p>
+      <p>A strategic programming game.</p>
+      <p>Somewhere in the labyrinth, an enemy tank is moving. You don't know where — only that your sensors just spiked and you have one tick to decide: advance, turn, fire, or wait for better data.</p>
+      <p>You don't drive a tank. You code one. Write the autonomous brain that drives your tank in Go, submit it, and watch your creation navigate fog-of-war, enemy contact, and the limits of its own hardware — without you.</p>
       <h2>What you can do</h2>
       <ul>
-        <li>Write a tank AI in Go — implement a Tick(sensors) Action function that runs every 100 ms.</li>
-        <li>Allocate stats — distribute 15 points across speed, sensor range, damage, armor, and fire rate.</li>
-        <li>Compete in <a href="/gamedays">Game Days</a> — round-robin groups followed by single-elimination brackets.</li>
-        <li>Replay and debug — every match recorded tick-by-tick with full sensor and memory inspection.</li>
+        <li><strong>Brain</strong> — implement a Tick(sensors) Action function. It runs every 100 ms. Package-level variables are your tank's memory.</li>
+        <li><strong>Loadout</strong> — distribute 15 points across speed, sensor range, damage, armor, and fire rate. Every build is a trade-off.</li>
+        <li><strong>Game Days</strong> — round-robin groups of 8 followed by single-elimination. Placement awards global ranking points. <a href="/gamedays">Browse Game Days</a>.</li>
+        <li><strong>Replay</strong> — every match recorded tick-by-tick. Replay at any speed, inspect sensor readings, memory, and console output.</li>
       </ul>
       <p>See how tanks stack up on the <a href="/leaderboard">global leaderboard</a>, or read the <a href="/help">full help guide</a> for stats, scoring, and match rules.</p>
+      <p>TankMaze is open source — <a href="https://github.com/mauricio-camayo/tankmaze" target="_blank" rel="noopener noreferrer">view the code on GitHub</a>.</p>
       <p>Sign in to start building your tank. <a href="/login">Sign in</a> · <a href="/legal">Privacy Policy</a></p>
     </div>
     <script type="module" src="/src/main.tsx"></script>
