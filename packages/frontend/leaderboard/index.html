@@ -14,9 +14,12 @@
       <!-- Static content for crawlers; React replaces this on load -->
       <h1>TankMaze Leaderboard</h1>
       <p>
-        Every tank's <strong>Global Score</strong> is the sum of placement points it has earned across
-        Game Days — a stronger finish in a bigger field is worth more points, and old results
-        eventually drop off, so the score reflects recent competitive form rather than one lucky run.
+        Every tank's <strong>Global Score</strong> accumulates placement points earned per Game Day:
+        the champion earns points equal to the field size, and each lower placement is worth roughly
+        half of the tier above it. A rank position is the tank's standing by that score; the amber/red
+        bar next to "Last active" is a local staleness indicator that fills up over 90 days since the
+        tank's last Game Day — a nudge that it may be time to compete again, not a change to the score
+        itself.
       </p>
       <h2>How ranking works</h2>
       <p>
