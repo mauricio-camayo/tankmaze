@@ -296,9 +296,13 @@ export default function Landing() {
           <div className="tm-bp-specs">
             {spec('BRAIN', <>Implement a <strong>Tick(sensors) Action</strong> function. It runs every 100&nbsp;ms. Package-level variables are your tank's memory.</>)}
             {spec('LOADOUT', <>Distribute <strong>15 points</strong> across speed, sensor range, damage, armor, and fire rate. Every build is a trade-off.</>)}
-            {spec('GAME DAYS', <>Round-robin groups of 8 followed by <strong>single-elimination</strong>. Placement awards global ranking points.</>)}
+            {spec('GAME DAYS', <>Round-robin groups of 8 followed by <strong>single-elimination</strong>. Placement awards global ranking points. <Link to="/gamedays">Browse Game Days</Link>.</>)}
             {spec('REPLAY', <>Every match recorded <strong>tick-by-tick</strong>. Replay at any speed, inspect sensor readings, memory, and console output.</>)}
           </div>
+
+          <p className="tm-bp-sub">
+            See how tanks stack up on the <Link to="/leaderboard">global leaderboard</Link>.
+          </p>
 
           <p className="tm-bp-repo-label">OPEN SOURCE — FREE TO INSPECT AND FORK</p>
           <a href="https://github.com/mauricio-camayo/tankmaze" target="_blank" rel="noopener noreferrer" className="tm-bp-repo-link">
