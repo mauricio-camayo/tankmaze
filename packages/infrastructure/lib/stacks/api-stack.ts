@@ -463,6 +463,47 @@ export class ApiStack extends Stack {
     });
     seriesMaterializerErrorAlarm.addAlarmAction(new cloudwatchActions.SnsAction(opsAlertTopic));
 
+    // item 278: SeriesMaterializerErrorAlarm above only catches the Lambda
+    // *faulting* (a panic, a timeout, an unhandled error bubbling all the
+    // way up) — it says nothing about carryForwardUserTanks silently
+    // dropping tanks on a per-tank error inside an otherwise-successful
+    // invocation, which is exactly the shape of the item 259 incident (an
+    // IAM gap dropped every carry-forward attempt for weeks before a user
+    // noticed). CARRYFORWARD_FAILURE is a stable marker logged exactly once
+    // per materializeNext run that drops at least one tank — see
+    // cmd/series-materializer/main.go's carryForwardUserTanks.
+    const carryForwardFailures = new logs.MetricFilter(this, 'SeriesMaterializerCarryForwardFailuresFilter', {
+      logGroup: seriesMaterializer.logGroup,
+      filterPattern: logs.FilterPattern.literal('"CARRYFORWARD_FAILURE"'),
+      metricNamespace: 'TankMaze',
+      metricName: 'SeriesMaterializerCarryForwardFailures',
+      metricValue: '1',
+      defaultValue: 0,
+    });
+    const carryForwardFailureAlarm = new cloudwatch.Alarm(this, 'SeriesMaterializerCarryForwardFailureAlarm', {
+      alarmName: 'tankmaze-series-materializer-carryforward-failures',
+      alarmDescription: 'series-materializer carried forward zero or fewer tanks than expected into a new recurring Game Day occurrence — a tank owner may be silently missing from upcoming matches',
+      metric: carryForwardFailures.metric({
+        period: Duration.hours(1),
+        statistic: 'Sum',
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      // NOT_BREACHING (rather than the cloudwatch.Alarm default of
+      // MISSING) is what makes a clean hourly run — no CARRYFORWARD_FAILURE
+      // line, hence no data point for that period — actually transition the
+      // alarm back to OK (and therefore fire addOkAction below) instead of
+      // leaving it stuck in INSUFFICIENT_DATA forever.
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    // Both directions: ALARM when a run drops a tank, OK when a later run
+    // (this one or any subsequent hourly tick) completes clean — so the
+    // same ops-notifier subscriber below sends a "recovered" message too,
+    // not just the initial failure.
+    carryForwardFailureAlarm.addAlarmAction(new cloudwatchActions.SnsAction(opsAlertTopic));
+    carryForwardFailureAlarm.addOkAction(new cloudwatchActions.SnsAction(opsAlertTopic));
+
     // forgot-password-worker — async-only sibling of tank-api's forgotPassword
     // handler (item 217). It has no API Gateway integration of its own, so
     // it's unreachable over HTTP at all, regardless of auth — the only way in
@@ -491,6 +532,35 @@ export class ApiStack extends Stack {
     }));
     forgotPasswordWorker.grantInvoke(tankApi);
     tankApi.addEnvironment('FORGOT_PASSWORD_WORKER_FUNCTION', forgotPasswordWorker.functionArn);
+
+    // ops-notifier (item 278) — subscribed to OpsAlertTopic, so it fans out
+    // every alarm's ALARM/OK state change (not just
+    // SeriesMaterializerCarryForwardFailureAlarm above) to SES first,
+    // falling back to ntfy only if the SES send itself errors or SES isn't
+    // configured. Reuses sesSenderEmail/opsAlertEmail — the same two
+    // context values forgotPasswordWorker and OpsAlertTopic's plain SNS
+    // email subscription above already depend on — as the SES source/
+    // destination, so this is inert (SES branch) until those are set,
+    // exactly like forgotPasswordWorker's own SES guard. ntfyUrl/ntfyTopic
+    // are new, independently-optional context values with no existing
+    // equivalent in this stack.
+    const ntfyUrl = this.node.tryGetContext('ntfyUrl') as string | undefined;
+    const ntfyTopic = this.node.tryGetContext('ntfyTopic') as string | undefined;
+    const opsNotifier = goLambda('OpsNotifier', 'ops-notifier', {
+      SES_SENDER_EMAIL: sesSenderEmail ?? '',
+      OPS_ALERT_EMAIL:  opsAlertEmail ?? '',
+      NTFY_URL:         ntfyUrl ?? '',
+      NTFY_TOPIC:       ntfyTopic ?? '',
+    });
+    // Same '*'-scoped SES grant as forgotPasswordWorker, for the same
+    // reason (avoids a cross-stack reference to AuthStack's EmailIdentity
+    // before it's verified; the code-level guard on empty env vars keeps
+    // this inert either way).
+    opsNotifier.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+      resources: ['*'],
+    }));
+    opsAlertTopic.addSubscription(new snsSubscriptions.LambdaSubscription(opsNotifier));
 
     // CloudWatch alarms: tank-api serves every REST route behind one Lambda
     // (ADR-004/ADR-005), so an init panic, OOM kill, or account-level

@@ -241,19 +241,23 @@ func (h *handler) carryForwardUserTanks(ctx context.Context, series db.GameDaySe
 		return // this is the series' first occurrence — nothing to carry forward
 	}
 
+	var attempted, failed int
 	for _, mt := range prev.RegisteredTanks {
 		tankID := db.RealTankID(mt.TankID)
 		if strings.HasPrefix(tankID, "builtin-") {
 			continue
 		}
+		attempted++
 		versions, err := h.store.ListVersionsByTank(ctx, tankID)
 		if err != nil {
 			log.Printf("series %s: carry-forward: list versions for tank %s: %v", series.SeriesID, tankID, err)
+			failed++
 			continue
 		}
 		latest, ok := db.LatestMajorVersion(versions)
 		if !ok {
 			log.Printf("series %s: carry-forward: tank %s has no major version — skipping", series.SeriesID, tankID)
+			failed++
 			continue
 		}
 		tankName := mt.TankName
@@ -271,12 +275,28 @@ func (h *handler) carryForwardUserTanks(ctx context.Context, series db.GameDaySe
 			return h.store.AddRosterEntry(ctx, gd.GameDayID, tankID, latest, tankName)
 		}); err != nil {
 			log.Printf("series %s: carry-forward: add roster entry tank %s version %s: %v", series.SeriesID, tankID, latest, err)
+			failed++
 			continue
 		}
 		if err := h.store.AddVersionRegistration(ctx, tankID, latest, gd.GameDayID); err != nil {
 			log.Printf("series %s: carry-forward: add version registration tank %s version %s: %v", series.SeriesID, tankID, latest, err)
+			failed++
 			continue
 		}
 		log.Printf("series %s: carried forward tank %s at %s into occurrence %s", series.SeriesID, tankID, latest, gd.GameDayID)
+	}
+
+	// item 278: carryForwardUserTanks used to swallow every one of the four
+	// error sites above via a bare continue, with nothing distinguishing a
+	// successful invocation-with-silent-partial-failure from a clean run —
+	// exactly the shape of the item 259 incident (an IAM gap dropped every
+	// carry-forward attempt for weeks before a user noticed a missing tank).
+	// This single line is deliberately a stable, greppable marker matched by
+	// a CloudWatch Logs MetricFilter (api-stack.ts) rather than folded into
+	// the per-tank log lines above, so the metric — and the alarm it drives
+	// — reflects "this run dropped N tanks" exactly once per run, not once
+	// per tank.
+	if failed > 0 {
+		log.Printf("CARRYFORWARD_FAILURE series=%s occurrence=%s attempted=%d failed=%d", series.SeriesID, gd.GameDayID, attempted, failed)
 	}
 }
