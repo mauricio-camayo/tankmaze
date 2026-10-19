@@ -94,10 +94,15 @@ export class ApiStack extends Stack {
     const opsAlertTopic = new sns.Topic(this, 'OpsAlertTopic', {
       topicName: 'tankmaze-ops-alerts',
     });
+    // item 278: the plain SNS EmailSubscription this block used to add
+    // directly has been superseded by ops-notifier (see opsAlertEmail's
+    // other use, below, near forgotPasswordWorker) — it was double-sending
+    // every alert (the generic "AWS Notifications" boilerplate here, plus
+    // ops-notifier's branded SES email) once ops-notifier was confirmed
+    // working end-to-end via a live smoke test. opsAlertEmail itself stays
+    // read here (not moved) since it's still this topic's intended
+    // destination, just delivered through ops-notifier's SES path now.
     const opsAlertEmail = this.node.tryGetContext('opsAlertEmail') as string | undefined;
-    if (opsAlertEmail) {
-      opsAlertTopic.addSubscription(new snsSubscriptions.EmailSubscription(opsAlertEmail));
-    }
 
     // ---- EventBridge Scheduler group -----------------------------------
     // Individual schedules (one per Game Day phase) are created at runtime
