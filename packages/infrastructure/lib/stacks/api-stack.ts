@@ -495,19 +495,16 @@ export class ApiStack extends Stack {
       threshold: 1,
       evaluationPeriods: 1,
       comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-      // NOT_BREACHING (rather than the cloudwatch.Alarm default of
-      // MISSING) is what makes a clean hourly run — no CARRYFORWARD_FAILURE
-      // line, hence no data point for that period — actually transition the
-      // alarm back to OK (and therefore fire addOkAction below) instead of
-      // leaving it stuck in INSUFFICIENT_DATA forever.
+      // NOT_BREACHING (rather than the cloudwatch.Alarm default of MISSING)
+      // is what lets a clean hourly run — no CARRYFORWARD_FAILURE line,
+      // hence no data point for that period — transition the alarm back to
+      // OK on its own instead of leaving it stuck in INSUFFICIENT_DATA
+      // forever. No addOkAction is wired below on purpose (tried, then
+      // explicitly removed 2026-10-19 per Mauricio — a recovery email on
+      // every single clean hourly tick is noise, not signal; ALARM only).
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    // Both directions: ALARM when a run drops a tank, OK when a later run
-    // (this one or any subsequent hourly tick) completes clean — so the
-    // same ops-notifier subscriber below sends a "recovered" message too,
-    // not just the initial failure.
     carryForwardFailureAlarm.addAlarmAction(new cloudwatchActions.SnsAction(opsAlertTopic));
-    carryForwardFailureAlarm.addOkAction(new cloudwatchActions.SnsAction(opsAlertTopic));
 
     // forgot-password-worker — async-only sibling of tank-api's forgotPassword
     // handler (item 217). It has no API Gateway integration of its own, so
