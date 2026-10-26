@@ -217,9 +217,9 @@ export class AuthStack extends Stack {
     // Cognito's idpresponse endpoint.
     const oidcShimBackendDir = path.join(__dirname, '../../../backend');
     const oidcShimGoBin = require('fs').existsSync(
-      '/home/macaco/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.22.12.linux-amd64/bin/go',
+      '/home/macaco/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.linux-amd64/bin/go',
     )
-      ? '/home/macaco/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.22.12.linux-amd64/bin/go'
+      ? '/home/macaco/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.linux-amd64/bin/go'
       : (process.env.GO_BIN ?? 'go');
 
     const buildOidcShimLambda = (id: string, env: Record<string, string>): lambda.Function =>

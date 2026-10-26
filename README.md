@@ -69,7 +69,7 @@ tankmaze/
 
 ## Development Setup
 
-> Prerequisites: Go 1.22+, Node.js 18+, pnpm 8+
+> Prerequisites: Go 1.26+, Node.js 18+, pnpm 8+
 
 ### Local testing (no AWS required)
 
@@ -99,7 +99,7 @@ The `.env.local` file in `packages/frontend/` points the frontend at `localhost:
 
 ### Cloud deployment
 
-> Prerequisites: Go 1.22+, AWS CLI configured, AWS CDK v2
+> Prerequisites: Go 1.26+, AWS CLI configured, AWS CDK v2
 
 ```bash
 # Build and test backend

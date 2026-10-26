@@ -43,8 +43,8 @@ export class ApiStack extends Stack {
 
     // Resolve the correct Go binary. The system go may be older than what
     // go.work requires; prefer the cached toolchain if it exists.
-    const go122 = '/home/macaco/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.22.12.linux-amd64/bin/go';
-    const goBin = require('fs').existsSync(go122) ? go122 : (process.env.GO_BIN ?? 'go');
+    const go126 = '/home/macaco/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.linux-amd64/bin/go';
+    const goBin = require('fs').existsSync(go126) ? go126 : (process.env.GO_BIN ?? 'go');
 
     // ---- Helper: build a Go Lambda from cmd/<name> ----------------------
 

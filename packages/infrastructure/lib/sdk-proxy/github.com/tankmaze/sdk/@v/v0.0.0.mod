@@ -1,3 +1,3 @@
 module github.com/tankmaze/sdk
 
-go 1.21
+go 1.26

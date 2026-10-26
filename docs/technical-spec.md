@@ -7,7 +7,7 @@
 | Frontend | React 18 + TypeScript + Phaser 3 | Component model; Canvas rendering; strong typing |
 | Code Editor | Monaco Editor (Go syntax) | VS Code engine; Go language support built-in |
 | Auth Client | AWS Amplify v6 | First-class Cognito integration |
-| Backend Language | Go 1.22 | Lambda cold start ~100 ms; compiled; low memory; native concurrency |
+| Backend Language | Go 1.26 | Lambda cold start ~100 ms; compiled; low memory; native concurrency |
 | Tank Language | Go → WebAssembly (`GOOS=wasip1 GOARCH=wasm`) | User code sandboxed by WASM isolation |
 | WASM Runtime | Wazero (pure-Go) | No CGO; runs in Lambda; deterministic fuel-based time limit |
 | Tank Compilation | AWS CodeBuild | Isolated build environment with Go toolchain; avoids Lambda timeout constraints |
@@ -850,7 +850,7 @@ Confirmed live on gameday `7268728d-0b10-49aa-8237-57a402646410` (2026-08-28): t
 
 ### `BuildStack`
 - CodeBuild project: `tank-compiler`
-  - Managed image with Go 1.22
+  - Managed image with Go 1.26
   - VPC isolated; no internet egress after Go module cache is seeded
   - Artifacts → `wasm-artifacts` S3 bucket
   - Buildspec: `go build -o tank.wasm`, SHA-256 computation, S3 upload, DynamoDB update

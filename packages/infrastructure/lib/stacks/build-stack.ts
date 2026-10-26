@@ -66,7 +66,10 @@ export class BuildStack extends Stack {
     props.tables.tankVersions.grantWriteData(role);
 
     // Buildspec — downloads source from S3, builds WASM, uploads artifact.
-    // Uses Go 1.21 from the standard managed image (highest available in STANDARD_7_0).
+    // Uses Go 1.26 from the standard managed image (confirmed available on
+    // Ubuntu 22.04 standard:7.0 per AWS's runtime-versions docs as of
+    // 2026-10-26 — a prior "1.21, highest available" comment here was stale;
+    // AWS had since added newer Go versions to the same image).
     // The SDK module is served from a GOPROXY file:// directory seeded in S3 so
     // no external module downloads are needed and no replace directives are required.
     const buildSpec = codebuild.BuildSpec.fromObject({
@@ -81,7 +84,7 @@ export class BuildStack extends Stack {
       },
       phases: {
         install: {
-          'runtime-versions': { golang: '1.21' },
+          'runtime-versions': { golang: '1.26' },
         },
         pre_build: {
           commands: [
@@ -95,7 +98,7 @@ export class BuildStack extends Stack {
             'aws s3 cp s3://$WASM_BUCKET/$SOURCE_S3_KEY /tmp/build/tank/source.go',
 
             // go.mod — no replace directive needed; GOPROXY resolves the SDK locally
-            'printf "module tank\\ngo 1.21\\nrequire github.com/tankmaze/sdk v0.0.0\\n" > /tmp/build/go.mod',
+            'printf "module tank\\ngo 1.26\\nrequire github.com/tankmaze/sdk v0.0.0\\n" > /tmp/build/go.mod',
 
             // Inject the package main wrapper that wires the host WASM imports to
             // the user's Tick/Config exports. Without this, go build produces a .a
